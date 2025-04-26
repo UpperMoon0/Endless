@@ -6,7 +6,8 @@
   "client": [
   ],
   "mixins": [
-    "LevelHeightAccessorMixin"
+    "LevelHeightAccessorMixin",
+    "BelowZeroRetrogenMixin"
   ],
   "injectors": {
     "defaultRequire": 1

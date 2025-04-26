@@ -4,12 +4,12 @@
   "compatibilityLevel": "JAVA_17",
   "minVersion": "0.8",
   "client": [
-  ],
-  "mixins": [
+  ],  "mixins": [
     "LevelHeightAccessorMixin",
     "HeightmapMixin",
     "SimpleBitStorageMixin",
-    "LevelChunkMixin"
+    "LevelChunkMixin",
+    "BelowZeroRetrogenMixin"
   ],
   "injectors": {
     "defaultRequire": 1

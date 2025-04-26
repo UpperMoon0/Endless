@@ -107,11 +107,10 @@ public class EndlessConfig {
         private boolean removeBuildHeightLimit = false;
         
         public int getMinBuildHeight() {
-            return removeBuildHeightLimit ? -30000000 : minBuildHeight;
+            return removeBuildHeightLimit ? Integer.MIN_VALUE / 2 : minBuildHeight;
         }
-        
-        public int getMaxBuildHeight() {
-            return removeBuildHeightLimit ? 30000000 : maxBuildHeight;
+          public int getMaxBuildHeight() {
+            return removeBuildHeightLimit ? Integer.MAX_VALUE / 2 : maxBuildHeight;
         }
         
         public boolean isRemoveBuildHeightLimit() {

@@ -32,8 +32,7 @@ public interface LevelHeightAccessorMixin {
     default boolean isOutsideBuildHeight(net.minecraft.core.BlockPos blockPos) {
         return isOutsideBuildHeight(blockPos.getY());
     }
-    
-    /**
+      /**
      * @author Endless
      * @reason Modify maximum build height based on config
      */

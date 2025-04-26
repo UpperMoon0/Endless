@@ -1,7 +1,6 @@
 package com.nstut.endless;
 
 import com.nstut.endless.config.EndlessConfig;
-
 /**
  * Main entry point for the Endless mod.
  */

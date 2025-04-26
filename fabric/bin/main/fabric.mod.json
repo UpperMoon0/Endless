@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "endless",
+  "version": "${version}",
+  "name": "Endless",
+  "description": "",
+  "authors": [
+    "NsTut"
+  ],
+  "contact": {
+    "homepage": ""
+  },
+  "license": "All-Rights-Reserved",
+  "icon": "assets/endless/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.nstut.endless.fabric.EndlessFabric"
+    ],
+    "client": [
+      "com.nstut.endless.fabric.EndlessFabric"
+    ],
+    "server": [
+      "com.nstut.endless.fabric.EndlessFabric"
+    ]
+  },
+  "mixins": [
+    "endless.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.14",
+    "minecraft": "~1.20.1",
+    "java": ">=17",
+    "architectury": ">=9.2.14",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "another-mod": "*"
+  }
+}

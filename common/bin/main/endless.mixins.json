@@ -6,10 +6,7 @@
   "client": [
   ],
   "mixins": [
-    "LevelHeightAccessorMixin",
-    "HeightmapMixin",
-    "SimpleBitStorageMixin",
-    "LevelChunkMixin"
+    "LevelHeightAccessorMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -9,7 +9,8 @@
     "HeightmapMixin",
     "SimpleBitStorageMixin",
     "LevelChunkMixin",
-    "BelowZeroRetrogenMixin"
+    "BelowZeroRetrogenMixin",
+    "LevelReaderMixin"
   ],
   "injectors": {
     "defaultRequire": 1

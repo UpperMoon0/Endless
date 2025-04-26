@@ -1,6 +1,7 @@
 package com.nstut.endless.mixin;
 
 import net.minecraft.util.SimpleBitStorage;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -14,6 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(SimpleBitStorage.class)
 public class SimpleBitStorageMixin {
     
+    @Final
     @Shadow private long mask;
     
     /**

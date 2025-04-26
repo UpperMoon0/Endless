@@ -19,7 +19,6 @@ public class LevelChunkMixin {
     /**
      * Intercept the block state setting to conditionally skip heightmap updates
      * when blocks are placed at extreme heights (greater than 511 or less than 0).
-     * 
      * The injection point is right after the block state is updated but before
      * any heightmap operations happen.
      */

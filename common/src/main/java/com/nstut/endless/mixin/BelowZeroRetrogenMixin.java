@@ -15,10 +15,11 @@ public class BelowZeroRetrogenMixin {
     /**
      * @author Endless
      * @reason Modify minimum build height based on config
-     */
+     
     @Inject(method = "getMinBuildHeight", at = @At("HEAD"), cancellable = true)
     private void getMinBuildHeight(CallbackInfoReturnable<Integer> cir) {
         // Replace the default minimum build height with our configured value
         cir.setReturnValue(EndlessConfig.getInstance().getBuildHeight().getMinBuildHeight());
     }
+    */
 }

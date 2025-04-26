@@ -1,16 +1,30 @@
 package com.nstut.endless.fabric;
 
-import com.nstut.endless.Endless;
+import com.nstut.endless.EndlessMod;
+import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.api.DedicatedServerModInitializer;
 
-public final class EndlessFabric implements ModInitializer {
+/**
+ * Fabric-specific implementation of the Endless mod.
+ */
+public class EndlessFabric implements ModInitializer, ClientModInitializer, DedicatedServerModInitializer {
+
     @Override
     public void onInitialize() {
-        // This code runs as soon as Minecraft is in a mod-load-ready state.
-        // However, some things (like resources) may still be uninitialized.
-        // Proceed with mild caution.
+        // Common initialization code
+        EndlessMod.init();
+    }
 
-        // Run our common setup.
-        Endless.init();
+    @Override
+    public void onInitializeClient() {
+        // Client-specific initialization code
+        EndlessMod.clientInit();
+    }
+
+    @Override
+    public void onInitializeServer() {
+        // Server-specific initialization code
+        EndlessMod.serverInit();
     }
 }

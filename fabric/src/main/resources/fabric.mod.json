@@ -18,7 +18,10 @@
       "com.nstut.endless.fabric.EndlessFabric"
     ],
     "client": [
-      "com.nstut.endless.fabric.client.EndlessFabricClient"
+      "com.nstut.endless.fabric.EndlessFabric"
+    ],
+    "server": [
+      "com.nstut.endless.fabric.EndlessFabric"
     ]
   },
   "mixins": [

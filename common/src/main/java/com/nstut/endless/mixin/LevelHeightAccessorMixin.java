@@ -10,15 +10,14 @@ import org.spongepowered.asm.mixin.Overwrite;
  */
 @Mixin(LevelHeightAccessor.class)
 public interface LevelHeightAccessorMixin {
-    
-    /**
+      /**
      * @author Endless
      * @reason Remove build height limit
      */
     @Overwrite
     default boolean isOutsideBuildHeight(int y) {
         if (!EndlessConfig.getInstance().getBuildHeight().isRemoveBuildHeightLimit()) {
-            int minHeight = getMinBuildHeight();
+            int minHeight = ((LevelHeightAccessor) this).getMinBuildHeight();
             int maxHeight = getMaxBuildHeight();
             return y < minHeight || y >= maxHeight;
         }
@@ -32,15 +31,6 @@ public interface LevelHeightAccessorMixin {
     @Overwrite
     default boolean isOutsideBuildHeight(net.minecraft.core.BlockPos blockPos) {
         return isOutsideBuildHeight(blockPos.getY());
-    }
-    
-    /**
-     * @author Endless
-     * @reason Modify minimum build height based on config
-     */
-    @Overwrite
-    default int getMinBuildHeight() {
-        return EndlessConfig.getInstance().getBuildHeight().getMinBuildHeight();
     }
     
     /**

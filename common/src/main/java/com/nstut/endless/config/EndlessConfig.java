@@ -102,8 +102,8 @@ public class EndlessConfig {
      * Configuration for build height limits.
      */
     public static class BuildHeightConfig {
-        private int minBuildHeight = -64;  // Default Minecraft value
-        private int maxBuildHeight = 320;  // Default Minecraft value
+        private int minBuildHeight = -64;  
+        private int maxBuildHeight = 320; 
         private boolean removeBuildHeightLimit = false;
         
         public int getMinBuildHeight() {

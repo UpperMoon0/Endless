@@ -1,6 +1,6 @@
 package com.nstut.endless.forge;
 
-import com.nstut.endless.EndlessMod;
+import com.nstut.endless.Endless;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -12,7 +12,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 /**
  * Forge-specific implementation of the Endless mod.
  */
-@Mod(EndlessMod.MOD_ID)
+@Mod(Endless.MOD_ID)
 public class EndlessForge {
 
     public EndlessForge() {
@@ -26,17 +26,17 @@ public class EndlessForge {
 
     private void setup(final FMLCommonSetupEvent event) {
         // Common setup code
-        EndlessMod.init();
+        Endless.init();
     }
 
     private void clientSetup(final FMLClientSetupEvent event) {
         // Client-specific setup code
-        EndlessMod.clientInit();
+        Endless.clientInit();
     }
 
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
         // Server-specific setup code
-        EndlessMod.serverInit();
+        Endless.serverInit();
     }
 }

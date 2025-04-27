@@ -1,6 +1,6 @@
 modLoader = "javafml"
 loaderVersion = "[47,)"
-#issueTrackerURL = ""
+#issueTrackerURL = "https://github.com/UpperMoon0/Endless/issues"
 license = "All Rights Reserved"
 
 [[mods]]
@@ -9,9 +9,11 @@ version = "${version}"
 displayName = "Endless"
 authors = "NsTut"
 description = '''
-
+A Minecraft mod that removes or customizes the build height limits.
+Allows building beyond vanilla height restrictions through simple configuration.
+Configure minimum/maximum build heights or remove limits entirely.
 '''
-#logoFile = ""
+logoFile = "assets/endless/icon.png"
 
 [[dependencies.endless]]
 modId = "forge"

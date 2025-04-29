@@ -1,6 +1,7 @@
 # Endless
 
 Endless is a Minecraft mod that removes or customizes the build height limits of the game, allowing you to build beyond the vanilla restrictions.
+CurseForge: https://www.curseforge.com/minecraft/mc-mods/nstut-endless
 
 ![Endless](assets/icon.png)
 

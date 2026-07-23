@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Read mod version
+        id: version
+        shell: bash
+        run: |
+          version="$(sed -n 's/^mod_version=//p' gradle.properties | tr -d '\r' | xargs)"
+          if [[ -z "$version" ]]; then
+            echo "mod_version is missing from gradle.properties" >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests
+        run: ./gradlew test --no-daemon --no-configuration-cache
+
+      - name: Build release JARs
+        run: ./gradlew build --no-daemon --no-configuration-cache
+
+      - name: Verify release JARs
+        shell: bash
+        run: |
+          jars=(
+            "forge/build/libs/endless-forge-${{ steps.version.outputs.value }}.jar"
+            "fabric/build/libs/endless-fabric-${{ steps.version.outputs.value }}.jar"
+          )
+          for jar_path in "${jars[@]}"; do
+            if [[ ! -f "$jar_path" ]]; then
+              echo "Expected release JAR was not produced: $jar_path" >&2
+              exit 1
+            fi
+          done
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: endless-${{ steps.version.outputs.value }}
+          path: |
+            forge/build/libs/endless-forge-${{ steps.version.outputs.value }}.jar
+            fabric/build/libs/endless-fabric-${{ steps.version.outputs.value }}.jar
+          if-no-files-found: error
+
+      - name: Create version tag
+        shell: bash
+        run: |
+          tag="v${{ steps.version.outputs.value }}"
+          if git show-ref --tags --verify --quiet "refs/tags/$tag"; then
+            tagged_commit="$(git rev-list -n 1 "$tag")"
+            if [[ "$tagged_commit" != "$GITHUB_SHA" ]]; then
+              echo "Tag $tag already points to $tagged_commit. Bump mod_version before releasing another commit." >&2
+              exit 1
+            fi
+            echo "Tag $tag already points to this commit; reusing it."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$tag" -m "Endless $tag" "$GITHUB_SHA"
+            git push origin "$tag"
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.value }}
+          target_commitish: ${{ github.sha }}
+          name: Endless v${{ steps.version.outputs.value }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            forge/build/libs/endless-forge-${{ steps.version.outputs.value }}.jar
+            fabric/build/libs/endless-fabric-${{ steps.version.outputs.value }}.jar

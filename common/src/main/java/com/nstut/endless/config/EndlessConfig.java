@@ -18,48 +18,42 @@ public class EndlessConfig {
     private static final String CONFIG_DIR = "config";
     private static final String CONFIG_FILENAME = "endless.json";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    
+
+    public static final int MIN_BUILD_HEIGHT_MIN = -4096;
+    public static final int MAX_BUILD_HEIGHT_MAX = 8192;
+
     private static EndlessConfig instance;
-    
-    // Config values
+
     private BuildHeightConfig buildHeight = new BuildHeightConfig();
-    
-    /**
-     * Get the singleton instance of the config.
-     */
+
     public static EndlessConfig getInstance() {
         if (instance == null) {
             instance = new EndlessConfig();
         }
         return instance;
     }
-    
-    /**
-     * Load the configuration from file or create default if it doesn't exist.
-     */
+
     public void load() {
         Path configDir = Paths.get(CONFIG_DIR);
         Path configFile = configDir.resolve(CONFIG_FILENAME);
-        
+
         try {
-            // Create config directory if it doesn't exist
             if (!Files.exists(configDir)) {
                 Files.createDirectories(configDir);
             }
-            
+
             File file = configFile.toFile();
-            
-            // Create default config if file doesn't exist
+
             if (!file.exists()) {
-                save(); // Save default values
+                save();
                 return;
             }
-            
-            // Read and parse the config file
+
             try (FileReader reader = new FileReader(file)) {
                 EndlessConfig loadedConfig = GSON.fromJson(reader, EndlessConfig.class);
                 if (loadedConfig != null) {
                     this.buildHeight = loadedConfig.buildHeight;
+                    this.buildHeight.clamp();
                 }
             }
         } catch (IOException e) {
@@ -67,21 +61,16 @@ public class EndlessConfig {
             e.printStackTrace();
         }
     }
-    
-    /**
-     * Save the current configuration to file.
-     */
+
     public void save() {
         Path configDir = Paths.get(CONFIG_DIR);
         Path configFile = configDir.resolve(CONFIG_FILENAME);
-        
+
         try {
-            // Create config directory if it doesn't exist
             if (!Files.exists(configDir)) {
                 Files.createDirectories(configDir);
             }
-            
-            // Write config to file
+
             try (FileWriter writer = new FileWriter(configFile.toFile())) {
                 GSON.toJson(this, writer);
             }
@@ -90,43 +79,40 @@ public class EndlessConfig {
             e.printStackTrace();
         }
     }
-    
-    /**
-     * Get the build height configuration.
-     */
+
     public BuildHeightConfig getBuildHeight() {
         return buildHeight;
     }
-    
-    /**
-     * Configuration for build height limits.
-     */
+
     public static class BuildHeightConfig {
-        private int minBuildHeight = -64;  
-        private int maxBuildHeight = 320; 
-        private boolean removeBuildHeightLimit = false;
-        
+        private int minBuildHeight = -64;
+        private int maxBuildHeight = 320;
+
         public int getMinBuildHeight() {
-            return removeBuildHeightLimit ? Integer.MIN_VALUE / 2 : minBuildHeight;
+            return minBuildHeight;
         }
-          public int getMaxBuildHeight() {
-            return removeBuildHeightLimit ? Integer.MAX_VALUE / 2 : maxBuildHeight;
+
+        public int getMaxBuildHeight() {
+            return maxBuildHeight;
         }
-        
-        public boolean isRemoveBuildHeightLimit() {
-            return removeBuildHeightLimit;
+
+        public void clamp() {
+            minBuildHeight = Math.max(minBuildHeight, MIN_BUILD_HEIGHT_MIN);
+            maxBuildHeight = Math.min(maxBuildHeight, MAX_BUILD_HEIGHT_MAX);
+            if (minBuildHeight >= maxBuildHeight) {
+                System.err.println("Endless: minBuildHeight (" + minBuildHeight + ") >= maxBuildHeight ("
+                    + maxBuildHeight + "), resetting to defaults");
+                minBuildHeight = -64;
+                maxBuildHeight = 320;
+            }
         }
-        
+
         public void setMinBuildHeight(int minBuildHeight) {
             this.minBuildHeight = minBuildHeight;
         }
-        
+
         public void setMaxBuildHeight(int maxBuildHeight) {
             this.maxBuildHeight = maxBuildHeight;
-        }
-        
-        public void setRemoveBuildHeightLimit(boolean removeBuildHeightLimit) {
-            this.removeBuildHeightLimit = removeBuildHeightLimit;
         }
     }
 }

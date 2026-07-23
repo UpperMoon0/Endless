@@ -5,39 +5,44 @@ import net.minecraft.world.level.LevelHeightAccessor;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
 
-/**
- * Mixin that modifies the build height limits of the world.
- */
 @Mixin(LevelHeightAccessor.class)
 public interface LevelHeightAccessorMixin {
-      /**
-     * @author Endless
-     * @reason Remove build height limit
-     */
-    @Overwrite
-    default boolean isOutsideBuildHeight(int y) {
-        if (!EndlessConfig.getInstance().getBuildHeight().isRemoveBuildHeightLimit()) {
-            int minHeight = ((LevelHeightAccessor) this).getMinBuildHeight();
-            int maxHeight = getMaxBuildHeight();
-            return y < minHeight || y >= maxHeight;
-        }
-        return false; // When limits are removed, no position is outside build height
-    }
-    
+
     /**
      * @author Endless
-     * @reason Remove build height limit for block positions
+     * @reason Use configured min build height
      */
     @Overwrite
-    default boolean isOutsideBuildHeight(net.minecraft.core.BlockPos blockPos) {
-        return isOutsideBuildHeight(blockPos.getY());
+    default int getMinBuildHeight() {
+        return EndlessConfig.getInstance().getBuildHeight().getMinBuildHeight();
     }
-      /**
+
+    /**
      * @author Endless
-     * @reason Modify maximum build height based on config
+     * @reason Use configured max build height
      */
     @Overwrite
     default int getMaxBuildHeight() {
         return EndlessConfig.getInstance().getBuildHeight().getMaxBuildHeight();
+    }
+
+    /**
+     * @author Endless
+     * @reason Use configured build height bounds
+     */
+    @Overwrite
+    default boolean isOutsideBuildHeight(int y) {
+        int minHeight = EndlessConfig.getInstance().getBuildHeight().getMinBuildHeight();
+        int maxHeight = EndlessConfig.getInstance().getBuildHeight().getMaxBuildHeight();
+        return y < minHeight || y >= maxHeight;
+    }
+
+    /**
+     * @author Endless
+     * @reason Use configured build height bounds for block positions
+     */
+    @Overwrite
+    default boolean isOutsideBuildHeight(net.minecraft.core.BlockPos blockPos) {
+        return isOutsideBuildHeight(blockPos.getY());
     }
 }

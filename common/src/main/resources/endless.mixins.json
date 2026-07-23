@@ -9,6 +9,9 @@
     "HeightmapMixin",
     "SimpleBitStorageMixin",
     "LevelChunkMixin",
+    "ChunkAccessMixin",
+    "LayerLightSectionStorageMixin",
+    "LevelLightEngineMixin",
     "BelowZeroRetrogenMixin",
     "LevelReaderMixin"
   ],

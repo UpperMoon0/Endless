@@ -7,9 +7,11 @@ CurseForge: https://www.curseforge.com/minecraft/mc-mods/nstut-endless
 
 ## Features
 
-- **Customizable Build Height**: Modify the minimum and maximum build heights in Minecraft through a simple configuration file
+- **Customizable Build Height**: Extend the minimum and maximum build heights through a configuration file (up to Y=8192 / Y=-4096)
 - **Remove Height Limits**: Optionally remove build height restrictions entirely, allowing building at extreme heights
 - **Cross-Platform**: Compatible with both Forge and Fabric mod loaders
+
+> **Note:** Lighting engine range is limited to y=-1024 to 1024 to prevent memory issues. Blocks placed outside this range may not receive dynamic light updates.
 
 ![Demo image](assets/demo_1.png)
 ![Demo image](assets/demo_2.png)
@@ -22,17 +24,15 @@ After launching Minecraft with the mod for the first time, a configuration file 
 {
   "buildHeight": {
     "minBuildHeight": -64,
-    "maxBuildHeight": 320,
-    "removeBuildHeightLimit": false
+    "maxBuildHeight": 320
   }
 }
 ```
 
 Options:
 
-- `minBuildHeight`: The minimum Y-level at which blocks can be placed (default: -64)
-- `maxBuildHeight`: The maximum Y-level at which blocks can be placed (default: 320)
-- `removeBuildHeightLimit`: Set to `true` to remove build height limits entirely (default: false)
+- `minBuildHeight`: The minimum Y-level at which blocks can be placed (default: -64, max: -4096)
+- `maxBuildHeight`: The maximum Y-level at which blocks can be placed (default: 320, max: 8192)
 
 ## Development
 

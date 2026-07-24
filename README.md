@@ -1,24 +1,28 @@
 # Endless
 
-Endless is a Minecraft mod that removes or customizes the build height limits of the game, allowing you to build beyond the vanilla restrictions.
+Endless is a Minecraft mod that extends the build height limits of the game, allowing you to build up to Y=8192 and down to Y=-4096.
 CurseForge: https://www.curseforge.com/minecraft/mc-mods/nstut-endless
 
 ![Endless](assets/icon.png)
 
 ## Features
 
-- **Customizable Build Height**: Extend the minimum and maximum build heights through a configuration file (up to Y=8192 / Y=-4096)
-- **Remove Height Limits**: Optionally remove build height restrictions entirely, allowing building at extreme heights
-- **Cross-Platform**: Compatible with both Forge and Fabric mod loaders
+- **Expanded Build Height** — Configure minimum and maximum build heights up to Y=8192 / Y=-4096
+- **All Dimensions** — Works simultaneously in Overworld, Nether, and End
+- **Cross-Platform** — Compatible with both Forge and Fabric
+- **Void Damage** — Void damage triggers 64 blocks below your configured minimum, giving you room to build at the bottom
+- **Waystones Compatible** — Place waystones anywhere within your expanded build range
 
-> **Note:** Lighting engine range is limited to y=-1024 to 1024 to prevent memory issues. Blocks placed outside this range may not receive dynamic light updates.
+> **Note:** Dynamic lighting updates are limited to y=-1024 to 1024 to prevent memory issues. Blocks placed outside this range may appear incorrectly lit.
+
+> **Note:** Extending build height increases memory usage. Each chunk allocates 768 sections at max height (vs 24 in vanilla).
 
 ![Demo image](assets/demo_1.png)
 ![Demo image](assets/demo_2.png)
 
 ## Configuration
 
-After launching Minecraft with the mod for the first time, a configuration file will be generated at `config/endless.json`. You can edit this file to customize the mod behavior:
+After launching Minecraft with the mod for the first time, a configuration file is generated at `config/endless.json`:
 
 ```json
 {
@@ -31,24 +35,56 @@ After launching Minecraft with the mod for the first time, a configuration file 
 
 Options:
 
-- `minBuildHeight`: The minimum Y-level at which blocks can be placed (default: -64, max: -4096)
-- `maxBuildHeight`: The maximum Y-level at which blocks can be placed (default: 320, max: 8192)
+- `minBuildHeight`: Lowest Y-level for block placement (default: -64, minimum: -4096)
+- `maxBuildHeight`: Highest Y-level for block placement (default: 320, maximum: 8192)
+
+### Example: Full Height
+
+```json
+{
+  "buildHeight": {
+    "minBuildHeight": -4096,
+    "maxBuildHeight": 8192
+  }
+}
+```
+
+### Recommended Balanced Range
+
+```json
+{
+  "buildHeight": {
+    "minBuildHeight": -512,
+    "maxBuildHeight": 1024
+  }
+}
+```
 
 ## Development
 
 ### Project Structure
 
-- `common/`: Common code shared between all mod loaders
-- `fabric/`: Fabric-specific implementation
-- `forge/`: Forge-specific implementation
+- `common/` — Shared code for all mod loaders
+- `forge/` — Forge-specific implementation
+- `fabric/` — Fabric-specific implementation
 
-### Building from Source
+### Building
 
-1. Clone the repository
-2. Run `./gradlew build` to build all mod versions
-3. Find the built JARs in:
-   - `fabric/build/libs/`
-   - `forge/build/libs/`
+```bash
+git clone https://github.com/NsTut/Endless.git
+cd Endless
+./gradlew build
+```
+
+Output JARs in `forge/build/libs/` and `fabric/build/libs/`.
+
+### Testing
+
+```bash
+./gradlew test          # Unit tests
+./gradlew runClient     # Launch Forge client
+./gradlew runServer     # Launch dedicated server
+```
 
 ## License
 

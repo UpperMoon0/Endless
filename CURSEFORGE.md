@@ -6,6 +6,8 @@ Endless lets you build higher and dig deeper than ever before. Tired of hitting 
 - **All Dimensions Supported** — Works in the Overworld, Nether, and End simultaneously.
 - **Compatible with Existing Worlds** — Apply expanded build limits to worlds you already have.
 - **Works with Forge and Fabric** — Pick your loader, the mod works the same on both.
+- **Waystones Compatible** — Place waystone blocks anywhere within your expanded build range.
+- **Void Damage at Boundary** — Void damage triggers 64 blocks below your configured minimum, giving you safe space to build at the bottom of the world.
 
 ## Configuration
 
@@ -38,7 +40,21 @@ Want to unlock the full height range? Set both values to their extremes:
 }
 ```
 
+### Recommended Balanced Range
+
+For a good balance of freedom and performance:
+
+```json
+{
+  "buildHeight": {
+    "minBuildHeight": -512,
+    "maxBuildHeight": 1024
+  }
+}
+```
+
 ## Limitations
 
-- **Lighting range**: Dynamic lighting updates (block light and sky light) are limited to y=-1024 to y=1024 to keep the game running smoothly. Blocks placed far outside this range may appear incorrectly lit. Natural light from the sky should still reach all heights.
-- **Performance**: Expanding the build height increases memory usage. For most players, a range of y=-512 to y=1024 provides a great balance of freedom and performance.
+- **Lighting range**: Dynamic lighting updates (block light and sky light) are limited to y=-1024 to y=1024 to keep the game running smoothly. Blocks placed far outside this range may appear incorrectly lit. Natural light from the sky still reaches all heights.
+- **Memory usage**: Expanding the build height significantly increases memory usage. At maximum settings (Y=-4096 to 8192), each chunk allocates 768 sections instead of vanilla's 24. Allocate more RAM to Minecraft if using extreme settings.
+- **World generation**: Terrain generation respects vanilla height rules. Expanded build height gives you more *buildable* space, but world generation patterns remain unchanged below Y=-64 and above Y=320. Use tools like WorldEdit or datapacks for custom terrain.

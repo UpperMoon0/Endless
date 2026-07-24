@@ -1,0 +1,19 @@
+Endless v0.3
+===========
+
+Fixes
+-----
+- Blocks can now be placed across the full build height (previously
+  placement silently failed below Y=-3713)
+
+- World no longer crashes on load at extreme heights
+
+- No more out-of-memory errors when using max build height
+
+- Void damage triggers at the right depth (64 blocks below your
+  configured minimum)
+
+Compatibility
+-------------
+- Waystones mod: waystone blocks can now be placed anywhere within
+  your expanded build height

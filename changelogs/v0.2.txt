@@ -1,0 +1,17 @@
+Endless v0.2
+===========
+
+New
+---
+- Customisable build height via config/endless.json (up to Y=-4096 to Y=8192)
+- Works in all dimensions (Overworld, Nether, End)
+
+Fixes
+-----
+- No more crashes when extending the build height
+- Light engine no longer freezes the game at extreme heights
+
+Changed
+-------
+- Removed "removeBuildHeightLimit" option (could crash the game)
+- Old configs automatically upgrade to the new format

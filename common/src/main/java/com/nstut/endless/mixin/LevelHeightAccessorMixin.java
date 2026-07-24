@@ -19,11 +19,12 @@ public interface LevelHeightAccessorMixin {
 
     /**
      * @author Endless
-     * @reason Use configured max build height
+     * @reason Use configured height for section allocation and Y-range calculations
      */
     @Overwrite
-    default int getMaxBuildHeight() {
-        return EndlessConfig.getInstance().getBuildHeight().getMaxBuildHeight();
+    default int getHeight() {
+        EndlessConfig.BuildHeightConfig config = EndlessConfig.getInstance().getBuildHeight();
+        return config.getMaxBuildHeight() - config.getMinBuildHeight();
     }
 
     /**

@@ -16,4 +16,14 @@ public interface LevelReaderMixin {
     default int getMinBuildHeight() {
         return EndlessConfig.getInstance().getBuildHeight().getMinBuildHeight();
     }
+
+    /**
+     * @author Endless
+     * @reason Replace default height with configured value for section allocation
+     */
+    @Overwrite
+    default int getHeight() {
+        EndlessConfig.BuildHeightConfig config = EndlessConfig.getInstance().getBuildHeight();
+        return config.getMaxBuildHeight() - config.getMinBuildHeight();
+    }
 }

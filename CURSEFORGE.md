@@ -1,4 +1,4 @@
-Endless lets you build higher and dig deeper than ever before. Tired of hitting the build limit? With Endless, you control how tall your world can be — up to Y=8192 and down to Y=-4096.
+Endless lets you build higher and dig deeper than ever before. Tired of hitting the build limit? With Endless, you control how tall your world can be — up to Y=2,097,152 and down to Y=-2,097,152.
 
 ## Features
 
@@ -22,8 +22,9 @@ After launching the game once with Endless installed, a config file is created a
 }
 ```
 
-- **minBuildHeight** — Lowest Y-level you can place blocks (default: -64, minimum: -4096)
-- **maxBuildHeight** — Highest Y-level you can place blocks (default: 320, maximum: 8192)
+- **minBuildHeight** — Lowest Y-level you can place blocks (default: -64, minimum: -2,097,152)
+- **maxBuildHeight** — Highest Y-level you can place blocks (default: 320, maximum: 2,097,152)
+- **Max effective range**: ~1,048,576 blocks (65,536 sections). The config accepts wider values but the section array caps at 65,536 to stay within 512KB per chunk. Beyond that, system memory limits apply.
 
 Change the values to whatever range you want, save the file, and restart the game.
 
@@ -34,8 +35,8 @@ Want to unlock the full height range? Set both values to their extremes:
 ```json
 {
   "buildHeight": {
-    "minBuildHeight": -4096,
-    "maxBuildHeight": 8192
+    "minBuildHeight": -2097152,
+    "maxBuildHeight": 2097152
   }
 }
 ```
@@ -55,6 +56,6 @@ For a good balance of freedom and performance:
 
 ## Limitations
 
-- **Lighting range**: Dynamic lighting updates (block light and sky light) are limited to y=-1024 to y=1024 to keep the game running smoothly. Blocks placed far outside this range may appear incorrectly lit. Natural light from the sky still reaches all heights.
-- **Memory usage**: Expanding the build height significantly increases memory usage. At maximum settings (Y=-4096 to 8192), each chunk allocates 768 sections instead of vanilla's 24. Allocate more RAM to Minecraft if using extreme settings.
-- **World generation**: Terrain generation respects vanilla height rules. Expanded build height gives you more *buildable* space, but world generation patterns remain unchanged below Y=-64 and above Y=320. Use tools like WorldEdit or datapacks for custom terrain.
+- **Rendering**: Blocks outside the vanilla render range (y=-384 to 384) are not visible. This prevents GPU buffer exhaustion at extreme heights. Blocks are still placeable, saved, and fully functional everywhere in your configured range — they just won't render beyond the camera's practical view limits.
+- **World generation**: Terrain generation only uses the vanilla height range. Extended build height gives you more *buildable* space, but natural terrain still generates between y=-64 and y=320.
+- **Block positions**: Y values beyond approximately ±2 million may not serialize correctly due to BlockPos bit limitations. Stay within the configurable range.

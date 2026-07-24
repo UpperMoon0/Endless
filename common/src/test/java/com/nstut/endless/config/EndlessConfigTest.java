@@ -25,19 +25,19 @@ class EndlessConfigTest {
     @Test
     void clampsMinBuildHeight_toAllowedRange() {
         EndlessConfig.BuildHeightConfig config = new EndlessConfig.BuildHeightConfig();
-        config.setMinBuildHeight(-8192);
+        config.setMinBuildHeight(-5000000);
         config.clamp();
-        assertEquals(-4096, config.getMinBuildHeight(),
-            "minBuildHeight below -4096 should clamp to -4096");
+        assertEquals(-2097152, config.getMinBuildHeight(),
+            "minBuildHeight below limit should clamp to -2097152");
     }
 
     @Test
     void clampsMaxBuildHeight_toAllowedRange() {
         EndlessConfig.BuildHeightConfig config = new EndlessConfig.BuildHeightConfig();
-        config.setMaxBuildHeight(32768);
+        config.setMaxBuildHeight(5000000);
         config.clamp();
-        assertEquals(8192, config.getMaxBuildHeight(),
-            "maxBuildHeight above 8192 should clamp to 8192");
+        assertEquals(2097152, config.getMaxBuildHeight(),
+            "maxBuildHeight above limit should clamp to 2097152");
     }
 
     @Test

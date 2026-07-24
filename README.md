@@ -1,6 +1,6 @@
 # Endless
 
-Endless is a Minecraft mod that extends the build height limits of the game, allowing you to build up to Y=8192 and down to Y=-4096.
+Endless is a Minecraft mod that extends the build height limits of the game, allowing you to build up to Y=2,097,152 and down to Y=-2,097,152.
 CurseForge: https://www.curseforge.com/minecraft/mc-mods/nstut-endless
 
 ![Endless](assets/icon.png)
@@ -35,8 +35,8 @@ After launching Minecraft with the mod for the first time, a configuration file 
 
 Options:
 
-- `minBuildHeight`: Lowest Y-level for block placement (default: -64, minimum: -4096)
-- `maxBuildHeight`: Highest Y-level for block placement (default: 320, maximum: 8192)
+- `minBuildHeight`: Lowest Y-level for block placement (default: -64, minimum: -2,097,152)
+- `maxBuildHeight`: Highest Y-level for block placement (default: 320, maximum: 2,097,152)
 
 ### Example: Full Height
 

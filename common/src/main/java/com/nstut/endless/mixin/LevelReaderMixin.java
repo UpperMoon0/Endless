@@ -24,6 +24,7 @@ public interface LevelReaderMixin {
     @Overwrite
     default int getHeight() {
         EndlessConfig.BuildHeightConfig config = EndlessConfig.getInstance().getBuildHeight();
-        return config.getMaxBuildHeight() - config.getMinBuildHeight();
+        int rawHeight = config.getMaxBuildHeight() - config.getMinBuildHeight();
+        return Math.min(rawHeight, EndlessConfig.MAX_SECTIONS * 16);
     }
 }

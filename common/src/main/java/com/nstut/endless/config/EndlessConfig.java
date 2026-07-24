@@ -19,8 +19,16 @@ public class EndlessConfig {
     private static final String CONFIG_FILENAME = "endless.json";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-    public static final int MIN_BUILD_HEIGHT_MIN = -4096;
-    public static final int MAX_BUILD_HEIGHT_MAX = 8192;
+    public static final int MIN_BUILD_HEIGHT_MIN = -2097152;
+    public static final int MAX_BUILD_HEIGHT_MAX = 2097152;
+
+    /**
+     * Soft safety cap on section count per chunk.
+     * The section array is 8 bytes per slot — even 32768 sections is 256KB, negligible.
+     * Real danger is O(n) iteration in vanilla code; our BitSet handles that.
+     * This cap only prevents truly absurd values (billions) from crashing during alloc.
+     */
+    public static final int MAX_SECTIONS = 65536;
 
     private static EndlessConfig instance;
 

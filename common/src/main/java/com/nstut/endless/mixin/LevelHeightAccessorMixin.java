@@ -24,7 +24,8 @@ public interface LevelHeightAccessorMixin {
     @Overwrite
     default int getHeight() {
         EndlessConfig.BuildHeightConfig config = EndlessConfig.getInstance().getBuildHeight();
-        return config.getMaxBuildHeight() - config.getMinBuildHeight();
+        int rawHeight = config.getMaxBuildHeight() - config.getMinBuildHeight();
+        return Math.min(rawHeight, EndlessConfig.MAX_SECTIONS * 16);
     }
 
     /**
@@ -33,9 +34,8 @@ public interface LevelHeightAccessorMixin {
      */
     @Overwrite
     default boolean isOutsideBuildHeight(int y) {
-        int minHeight = EndlessConfig.getInstance().getBuildHeight().getMinBuildHeight();
-        int maxHeight = EndlessConfig.getInstance().getBuildHeight().getMaxBuildHeight();
-        return y < minHeight || y >= maxHeight;
+        int minHeight = getMinBuildHeight();
+        return y < minHeight || y >= minHeight + getHeight();
     }
 
     /**

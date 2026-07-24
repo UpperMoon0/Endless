@@ -5,6 +5,19 @@ plugins {
 loom {
     forge {
         mixinConfig "endless.mixins.json"
+
+        runs {
+            client {
+                client()
+                vmArg "-Xmx6G"
+                vmArg "-Xms2G"
+            }
+            server {
+                server()
+                vmArg "-Xmx6G"
+                vmArg "-Xms2G"
+            }
+        }
     }
 }
 

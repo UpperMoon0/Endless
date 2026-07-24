@@ -37,6 +37,15 @@ dependencies {
 
     common(project(path: ':common', configuration: 'namedElements')) { transitive false }
     shadowBundle project(path: ':common', configuration: 'transformProductionForge')
+
+    modRuntimeOnly "net.blay09.mods:balm-forge:7.3.37+1.20.1"
+    modRuntimeOnly "net.blay09.mods:waystones-forge:14.1.20+1.20.1"
+}
+
+repositories {
+    flatDir {
+        dirs 'libs'
+    }
 }
 
 processResources {

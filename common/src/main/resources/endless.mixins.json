@@ -13,7 +13,8 @@
     "LayerLightSectionStorageMixin",
     "LevelLightEngineMixin",
     "BelowZeroRetrogenMixin",
-    "LevelReaderMixin"
+    "LevelReaderMixin",
+    "compat.WaystoneBlockBaseMixin"
   ],
   "injectors": {
     "defaultRequire": 1

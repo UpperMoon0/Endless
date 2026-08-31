@@ -67,4 +67,4 @@ Each world records the build range it was created with. Widening the config expa
 
 - **Rendering**: The client renders a vertical window of 32 sections (512 blocks) that follows the camera. Blocks outside the window are still placeable, saved, and fully functional — they simply are not rendered until you get closer vertically.
 - **World generation**: Terrain generation only uses the vanilla height range. Extended build height gives you more *buildable* space, but natural terrain still generates between y=-64 and y=320.
-- **Vanilla clients**: A client without Endless cannot correctly join a server whose build range is extended (chunk sections carry no Y coordinates on the wire). Keep vanilla clients on vanilla-range servers.
+- **Vanilla clients**: A client without Endless cannot correctly read chunk data from a server whose build range is extended (chunk sections carry no Y coordinates on the wire). Such clients are disconnected with a clear message on those servers; they can still join servers whose range is vanilla.

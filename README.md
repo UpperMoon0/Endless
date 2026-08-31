@@ -20,7 +20,7 @@ Every packed `BlockPos` long — heightmaps, block entity positions, block-updat
 - **Waystones Compatible** — Place waystones anywhere within your expanded build range
 - **Camera-Following Render Window** — The client renders a vertical window around the camera instead of allocating render chunks for the entire height
 - **World-Persistent Ranges** — The build range is stored in the world save; it only ever widens, so saved chunks can never become unreachable when the config changes
-- **Server-Authoritative Sync** — Servers send their build range to clients during login, before any chunk data; clients always use the server's layout in multiplayer
+- **Server-Authoritative Sync** — Servers send their build range to clients during login, before any chunk data; clients without the mod are rejected when the server's range is extended
 
 > **Note:** Extending build height increases memory usage. Each chunk allocates 16 sections per 256 blocks of configured height (vanilla allocates 24 sections for its 384 blocks).
 
@@ -46,12 +46,12 @@ If the config file is malformed, the mod falls back to defaults and preserves yo
 
 ### World persistence
 
-The config file expresses what you *want*; each world records the range it was actually built with in its save data (`endless_build_heights`). On load, the effective range is the *union* of the world's stored range and the config:
+The config file expresses what you *want*; each world records the range it was actually built with in its save (`data/endless_build_heights.dat`). On load — before any chunk is deserialized — the effective range is the *union* of the world's stored range and the config:
 
 - Widening the config expands the world (existing chunks keep working).
 - Narrowing the config is rejected with a log warning, because shrinking the section array would silently drop saved chunks above or below the new bounds.
 
-In multiplayer the world's range is what the server syncs to clients.
+In multiplayer the world's range is what the server syncs to clients. Clients without the mod can join servers whose range is vanilla; on servers with an extended range they are disconnected with a clear message instead of loading mismatched chunk data.
 
 ### Example: Tall World
 

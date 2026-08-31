@@ -3,8 +3,8 @@ package com.nstut.endless.network;
 import net.minecraft.server.level.ServerPlayer;
 
 /**
- * Loader-agnostic sender for the height sync packet. Fabric and Forge register
- * their transport-specific implementations at startup.
+ * Loader-agnostic transport for the height sync packet. Fabric and Forge
+ * register their transport-specific implementations at startup.
  */
 public final class EndlessNetworking {
 
@@ -17,6 +17,15 @@ public final class EndlessNetworking {
         EndlessNetworking.sender = sender;
     }
 
+    /**
+     * Whether the joining player's client can receive the height sync (i.e.
+     * has Endless installed and listening on the sync channel).
+     */
+    public static boolean canSend(ServerPlayer player) {
+        Sender current = sender;
+        return current != null && current.canSend(player);
+    }
+
     public static void sendHeights(ServerPlayer player, int minBuildHeight, int maxBuildHeight) {
         Sender current = sender;
         if (current != null) {
@@ -24,8 +33,9 @@ public final class EndlessNetworking {
         }
     }
 
-    @FunctionalInterface
     public interface Sender {
+        boolean canSend(ServerPlayer player);
+
         void send(ServerPlayer player, int minBuildHeight, int maxBuildHeight);
     }
 }

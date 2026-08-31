@@ -12,6 +12,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
 
 /**
  * Fabric-specific implementation of the Endless mod.
@@ -26,15 +27,25 @@ public class EndlessFabric implements ModInitializer, ClientModInitializer, Dedi
         // Common initialization code
         Endless.init();
 
-        EndlessNetworking.registerSender((player, min, max) -> {
-            FriendlyByteBuf buf = new FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
-            buf.writeVarInt(min);
-            buf.writeVarInt(max);
-            ServerPlayNetworking.send(player, HEIGHT_SYNC_CHANNEL, buf);
+        EndlessNetworking.registerSender(new EndlessNetworking.Sender() {
+            @Override
+            public boolean canSend(ServerPlayer player) {
+                return ServerPlayNetworking.canSend(player, HEIGHT_SYNC_CHANNEL);
+            }
+
+            @Override
+            public void send(ServerPlayer player, int min, int max) {
+                FriendlyByteBuf buf = new FriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+                buf.writeVarInt(min);
+                buf.writeVarInt(max);
+                ServerPlayNetworking.send(player, HEIGHT_SYNC_CHANNEL, buf);
+            }
         });
 
-        // Apply the world-persisted range once worlds exist and before players join.
-        ServerLifecycleEvents.SERVER_STARTED.register(EndlessHeights::applyWorldRange);
+        // Read the world's persisted range before any level exists so chunk
+        // deserialization uses it, then mirror it into SavedData once loaded.
+        ServerLifecycleEvents.SERVER_STARTING.register(EndlessHeights::loadPersistedRange);
+        ServerLifecycleEvents.SERVER_STARTED.register(EndlessHeights::syncWorldData);
     }
 
     @Override
@@ -45,7 +56,7 @@ public class EndlessFabric implements ModInitializer, ClientModInitializer, Dedi
         ClientPlayNetworking.registerGlobalReceiver(HEIGHT_SYNC_CHANNEL, (client, handler, buf, responseSender) -> {
             int min = buf.readVarInt();
             int max = buf.readVarInt();
-            // Must run before the login packet creates the client world.
+            // Runs before the login packet creates the client world.
             client.execute(() -> EndlessHeights.applyEffective(min, max));
         });
 

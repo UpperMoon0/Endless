@@ -11,15 +11,21 @@ Behavior changes:
   guard band at each edge (exactly vanilla's DimensionType span) keeps
   neighboring-block operations like BlockPos.offset and light propagation
   from wrapping into the opposite end of the world.
-- The build range is persisted per world (endless_build_heights save data).
-  On load, the effective range is the union of the world's stored range and
-  the config: widening the config expands the world; narrowing is rejected
-  with a log warning so saved chunks above/below the new bounds can never be
-  silently dropped.
+- The build range is persisted per world (data/endless_build_heights.dat in
+  the world root). It is read before any level is created, so chunk
+  deserialization always uses the world's range; the effective range is the
+  union of the world's stored range and the config: widening the config
+  expands the world, narrowing is rejected with a log warning so saved
+  chunks above/below the new bounds can never be silently dropped.
 - Multiplayer servers are authoritative: the build range is sent to every
-  client at login, before any chunk packet. Chunk packets carry no Y
-  coordinates per section, so a mismatched client previously could map
-  section payloads to the wrong Y positions.
+  client as the first play packet of the join, before the login packet and
+  any chunk packet. Chunk packets carry no Y coordinates per section, so a
+  mismatched client previously could map section payloads to the wrong Y
+  positions. Clients without the mod are disconnected with a clear message
+  when the server's range is extended; they can still join vanilla-range
+  servers. The sync packet is registered strictly server-to-client on Forge
+  and validated on receipt, so a spoofed client packet cannot change the
+  server's range.
 - Chunk sections are no longer left null outside the world-generation range.
   All sections in the configured range are real sections, matching vanilla
   invariants for saving, networking, lighting, and mod integrations.
@@ -63,9 +69,8 @@ Known limitations:
 - True heights beyond the guarded packed-Y envelope would require replacing
   Minecraft's position serialization itself; that is out of scope for this
   release.
-- Vanilla clients (without Endless) cannot correctly join servers with an
-  extended range, because chunk packets serialize sections without Y
-  coordinates. Keep vanilla clients on vanilla-range servers.
+- Vanilla clients (without Endless) are disconnected from servers with an
+  extended range; keep vanilla clients on vanilla-range servers.
 - Free-camera mods can move the camera while the player stays in the same
   section; the render window then follows the camera only on the next
   vanilla-triggered update.

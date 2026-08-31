@@ -2,6 +2,7 @@ package com.nstut.endless.forge;
 
 import com.nstut.endless.heights.EndlessHeights;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraftforge.network.NetworkDirection;
 import net.minecraftforge.network.NetworkEvent;
 
 import java.util.function.Supplier;
@@ -31,6 +32,11 @@ public class SyncHeightPacket {
     }
 
     public static void handle(SyncHeightPacket msg, Supplier<NetworkEvent.Context> ctx) {
+        // The message is registered strictly PLAY_TO_CLIENT; validate anyway so
+        // a spoofed C2S packet can never modify the server's effective range.
+        if (ctx.get().getDirection() != NetworkDirection.PLAY_TO_CLIENT) {
+            return;
+        }
         ctx.get().enqueueWork(() -> EndlessHeights.applyEffective(msg.minBuildHeight, msg.maxBuildHeight));
         ctx.get().setPacketHandled(true);
     }

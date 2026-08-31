@@ -4,7 +4,9 @@ import com.nstut.endless.Endless;
 import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.network.EndlessNetworking;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.server.ServerAboutToStartEvent;
 import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -34,17 +36,34 @@ public class EndlessForge {
 
         channel = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(Endless.MOD_ID, "main"),
-            () -> PROTOCOL, PROTOCOL::equals, PROTOCOL::equals);
+            () -> PROTOCOL,
+            // acceptMissingOr: vanilla clients are not rejected here; the
+            // join-time sync check in EndlessHeights.syncOnJoin rejects them
+            // only when the world's range is extended.
+            NetworkRegistry.acceptMissingOr(PROTOCOL::equals),
+            NetworkRegistry.acceptMissingOr(PROTOCOL::equals));
+        // Strictly server-to-client: the height sync is authoritative and must
+        // never be accepted from a client (direction assertion + handler check).
         channel.registerMessage(0, SyncHeightPacket.class,
-            SyncHeightPacket::encode, SyncHeightPacket::decode, SyncHeightPacket::handle);
+            SyncHeightPacket::encode, SyncHeightPacket::decode, SyncHeightPacket::handle,
+            java.util.Optional.of(net.minecraftforge.network.NetworkDirection.PLAY_TO_CLIENT));
     }
 
     private void setup(final FMLCommonSetupEvent event) {
         // Common setup code
         Endless.init();
 
-        event.enqueueWork(() -> EndlessNetworking.registerSender((player, min, max) ->
-            channel.send(PacketDistributor.PLAYER.with(() -> player), new SyncHeightPacket(min, max))));
+        event.enqueueWork(() -> EndlessNetworking.registerSender(new EndlessNetworking.Sender() {
+            @Override
+            public boolean canSend(ServerPlayer player) {
+                return channel.isRemotePresent(player.connection.connection);
+            }
+
+            @Override
+            public void send(ServerPlayer player, int min, int max) {
+                channel.send(PacketDistributor.PLAYER.with(() -> player), new SyncHeightPacket(min, max));
+            }
+        }));
     }
 
     private void clientSetup(final FMLClientSetupEvent event) {
@@ -53,11 +72,17 @@ public class EndlessForge {
     }
 
     @SubscribeEvent
-    public void onServerStarted(ServerStartedEvent event) {
+    public void onServerAboutToStart(ServerAboutToStartEvent event) {
         // Server-specific setup code
         Endless.serverInit();
-        // Worlds exist and no player has joined yet: apply the world-persisted
-        // range so every chunk packet uses it.
-        EndlessHeights.applyWorldRange(event.getServer());
+        // Fires before levels are created: read the world's persisted range so
+        // chunk deserialization uses it from the very first chunk.
+        EndlessHeights.loadPersistedRange(event.getServer());
+    }
+
+    @SubscribeEvent
+    public void onServerStarted(ServerStartedEvent event) {
+        // Worlds are loaded: mirror the effective range into SavedData.
+        EndlessHeights.syncWorldData(event.getServer());
     }
 }

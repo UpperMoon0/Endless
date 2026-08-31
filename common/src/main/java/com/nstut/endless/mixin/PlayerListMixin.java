@@ -10,16 +10,24 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Sends the authoritative build range to the player at the very start of
- * {@code placeNewPlayer}, before the login packet and any chunk packet.
+ * Sends the authoritative build range to the player at the {@code sendLevelInfo}
+ * call inside {@code placeNewPlayer}: by that point the
+ * {@code ServerGamePacketListenerImpl} exists ({@code player.connection} is
+ * assigned), and it fires before the login packet and any chunk packet.
  * Chunk packets serialize sections without Y coordinates, so a client with a
  * different range would map section payloads to the wrong Y positions.
  */
 @Mixin(PlayerList.class)
 public class PlayerListMixin {
 
-    @Inject(method = "placeNewPlayer", at = @At("HEAD"))
+    @Inject(
+        method = "placeNewPlayer",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/server/players/PlayerList;sendLevelInfo(Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/server/level/ServerLevel;)V"
+        )
+    )
     private void endless$syncHeights(Connection connection, ServerPlayer player, CallbackInfo ci) {
-        EndlessHeights.sendToPlayer(player);
+        EndlessHeights.syncOnJoin(player);
     }
 }

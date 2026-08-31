@@ -2,24 +2,40 @@ package com.nstut.endless.heights;
 
 import com.nstut.endless.config.EndlessConfig;
 import com.nstut.endless.network.EndlessNetworking;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtIo;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.LevelResource;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 /**
  * Runtime holder for the effective build range. The file config expresses user
  * intent; the effective range is what the world actually uses:
  *
  * <ul>
- *   <li>Dedicated/integrated servers: merged from the config and the
- *       world-persisted range ({@link EndlessWorldData}) when the server
- *       starts. The range only ever widens, so saved chunks above and below
- *       the current world stay addressable.</li>
- *   <li>Remote clients: received from the server before any chunk packet
- *       (see {@code PlayerListMixin}); resets to the local config on
+ *   <li>Dedicated/integrated servers: {@link #loadPersistedRange} runs before
+ *       any ServerLevel exists (Fabric SERVER_STARTING / Forge
+ *       ServerAboutToStart) and reads the range persisted in the world save
+ *       directly from disk, so chunk deserialization sees the world's range,
+ *       not a possibly-shrunk config. {@link #syncWorldData} then mirrors the
+ *       effective range into the regular SavedData store after worlds load.
+ *       The range only ever widens, so saved sections above and below the
+ *       current world stay addressable.</li>
+ *   <li>Remote clients: received from the server with the player's first
+ *       packets (see {@code PlayerListMixin}); resets to the local config on
  *       disconnect.</li>
  * </ul>
  */
 public final class EndlessHeights {
+
+    public static final int VANILLA_MIN_BUILD_HEIGHT = -64;
+    public static final int VANILLA_MAX_BUILD_HEIGHT = 320;
 
     private static volatile boolean applied;
     private static volatile int effectiveMin;
@@ -61,35 +77,79 @@ public final class EndlessHeights {
         return new int[]{Math.min(savedMin, configMin), Math.max(savedMax, configMax)};
     }
 
-    /**
-     * Load or create the world's persisted range, merge it with the file
-     * config (never shrinking), apply the result and persist it. Call once
-     * per server start, after worlds exist and before players join.
-     */
-    public static void applyWorldRange(MinecraftServer server) {
+    private static EndlessConfig.BuildHeightConfig clampedFileConfig() {
         EndlessConfig.BuildHeightConfig tmp = new EndlessConfig.BuildHeightConfig();
-        tmp.setMinBuildHeight(EndlessConfig.getInstance().getBuildHeight().getMinBuildHeight());
-        tmp.setMaxBuildHeight(EndlessConfig.getInstance().getBuildHeight().getMaxBuildHeight());
+        EndlessConfig.BuildHeightConfig file = EndlessConfig.getInstance().getBuildHeight();
+        tmp.setMinBuildHeight(file.getMinBuildHeight());
+        tmp.setMaxBuildHeight(file.getMaxBuildHeight());
         tmp.clamp();
+        return tmp;
+    }
 
+    /**
+     * Apply the world's persisted range. Called before any ServerLevel is
+     * created: the saved {@code data/endless_build_heights.dat} is read raw
+     * from the world root, because the overworld's SavedData storage only
+     * becomes available after the world exists — too late for chunk
+     * deserialization, which uses the effective range to size section arrays.
+     */
+    public static void loadPersistedRange(MinecraftServer server) {
+        int[] saved = readSavedRange(server);
+        EndlessConfig.BuildHeightConfig cfg = clampedFileConfig();
+        int[] merged;
+        if (saved == null) {
+            merged = new int[]{cfg.getMinBuildHeight(), cfg.getMaxBuildHeight()};
+        } else {
+            merged = mergeRange(saved[0], saved[1], cfg.getMinBuildHeight(), cfg.getMaxBuildHeight());
+            if (cfg.getMinBuildHeight() > saved[0] || cfg.getMaxBuildHeight() < saved[1]) {
+                System.err.println("Endless: config range [" + cfg.getMinBuildHeight() + ", " + cfg.getMaxBuildHeight()
+                    + ") is narrower than this world's persisted range [" + saved[0] + ", " + saved[1]
+                    + "); keeping the wider world range. Saved chunks would be unreachable otherwise.");
+            }
+        }
+        applyEffective(merged[0], merged[1]);
+    }
+
+    /**
+     * Mirror the effective range into the regular SavedData store so it is
+     * checkpointed with the world save. Call after worlds are loaded; reading
+     * at startup is handled by {@link #loadPersistedRange}.
+     */
+    public static void syncWorldData(MinecraftServer server) {
         EndlessWorldData data = server.overworld().getDataStorage()
             .computeIfAbsent(EndlessWorldData::load, EndlessWorldData::new, EndlessWorldData.DATA_NAME);
-
-        int savedMin = data.getMinBuildHeight();
-        int savedMax = data.getMaxBuildHeight();
-        int[] merged = mergeRange(savedMin, savedMax, tmp.getMinBuildHeight(), tmp.getMaxBuildHeight());
-
-        if (tmp.getMinBuildHeight() > savedMin || tmp.getMaxBuildHeight() < savedMax) {
-            System.err.println("Endless: config range [" + tmp.getMinBuildHeight() + ", " + tmp.getMaxBuildHeight()
-                + ") is narrower than this world's persisted range [" + savedMin + ", " + savedMax
-                + "); keeping the wider world range. Saved chunks would be unreachable otherwise.");
+        if (data.getMinBuildHeight() != getMinBuildHeight()
+            || data.getMaxBuildHeight() != getMaxBuildHeight()) {
+            data.set(getMinBuildHeight(), getMaxBuildHeight());
         }
-        if (merged[0] != savedMin || merged[1] != savedMax) {
-            data.set(merged[0], merged[1]);
-        }
-        // Always dirty so a fresh (never-saved) range gets written out.
         data.setDirty();
-        applyEffective(merged[0], merged[1]);
+    }
+
+    private static int[] readSavedRange(MinecraftServer server) {
+        try {
+            // getWorldPath: the overworld lives at the world root, and the
+            // range must be readable before any ServerLevel (and its
+            // DimensionDataStorage) exists.
+            Path file = server.getWorldPath(new LevelResource("data"))
+                .resolve(EndlessWorldData.DATA_NAME + ".dat");
+            if (!Files.isRegularFile(file)) {
+                return null;
+            }
+            CompoundTag root = NbtIo.readCompressed(file.toFile());
+            CompoundTag data = root.getCompound("data");
+            if (!data.contains("MinBuildHeight") || !data.contains("MaxBuildHeight")) {
+                return null;
+            }
+            EndlessConfig.BuildHeightConfig tmp = new EndlessConfig.BuildHeightConfig();
+            tmp.setMinBuildHeight(data.getInt("MinBuildHeight"));
+            tmp.setMaxBuildHeight(data.getInt("MaxBuildHeight"));
+            tmp.clamp();
+            return new int[]{tmp.getMinBuildHeight(), tmp.getMaxBuildHeight()};
+        } catch (IOException | RuntimeException e) {
+            System.err.println("Endless: could not read persisted build range ("
+                + e.getMessage() + "); falling back to file config");
+            return null;
+        }
     }
 
     /**
@@ -114,8 +174,23 @@ public final class EndlessHeights {
         applied = false;
     }
 
-    /** Push the effective range to a client during login, before chunk packets. */
-    public static void sendToPlayer(ServerPlayer player) {
-        EndlessNetworking.sendHeights(player, getMinBuildHeight(), getMaxBuildHeight());
+    /**
+     * Deliver the authoritative range to a joining player. Called after the
+     * player's connection exists and before the login packet creates the
+     * client world. Clients that cannot receive the sync (mod not installed)
+     * are only allowed when the range is vanilla; an extended range on the
+     * wire has no Y coordinates per section, so such a client would map
+     * section payloads to the wrong Y positions.
+     */
+    public static void syncOnJoin(ServerPlayer player) {
+        int min = getMinBuildHeight();
+        int max = getMaxBuildHeight();
+        if (EndlessNetworking.canSend(player)) {
+            EndlessNetworking.sendHeights(player, min, max);
+        } else if (min != VANILLA_MIN_BUILD_HEIGHT || max != VANILLA_MAX_BUILD_HEIGHT) {
+            player.connection.disconnect(Component.literal(
+                "This server requires the Endless mod: its build range ["
+                    + min + ", " + max + ") is extended beyond vanilla."));
+        }
     }
 }

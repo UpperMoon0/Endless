@@ -3,17 +3,10 @@ package com.nstut.endless.config;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
-import java.io.FileWriter;
-import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class EndlessConfigTest {
-
-    @TempDir
-    Path tempDir;
 
     @Test
     void defaultsAreVanilla() {
@@ -23,43 +16,58 @@ class EndlessConfigTest {
     }
 
     @Test
-    void clampsMinBuildHeight_toAllowedRange() {
+    void clampsMinBuildHeight_toPackedBlockPosEnvelope() {
         EndlessConfig.BuildHeightConfig config = new EndlessConfig.BuildHeightConfig();
         config.setMinBuildHeight(-5000000);
         config.clamp();
-        assertEquals(-2097152, config.getMinBuildHeight(),
-            "minBuildHeight below limit should clamp to -2097152");
+        assertEquals(-2048, config.getMinBuildHeight(),
+            "minBuildHeight below the packed Y envelope must clamp to -2048");
     }
 
     @Test
-    void clampsMaxBuildHeight_toAllowedRange() {
+    void clampsMaxBuildHeight_toPackedBlockPosEnvelope() {
         EndlessConfig.BuildHeightConfig config = new EndlessConfig.BuildHeightConfig();
         config.setMaxBuildHeight(5000000);
         config.clamp();
-        assertEquals(2097152, config.getMaxBuildHeight(),
-            "maxBuildHeight above limit should clamp to 2097152");
+        assertEquals(2048, config.getMaxBuildHeight(),
+            "maxBuildHeight above the packed Y envelope must clamp to 2048");
     }
 
     @Test
-    void resetsWhenMinExceedsMax() {
+    void maxIsExclusiveSoEnvelopeTopIsY2047() {
+        // isOutsideBuildHeight treats maxBuildHeight as exclusive; 2048 itself is
+        // outside the 12-bit packed BlockPos range, so it must not be placeable.
+        assertEquals(2047, EndlessConfig.MAX_BUILD_HEIGHT_MAX - 1);
+    }
+
+    @Test
+    void resetsWhenRangeIsInverted() {
         EndlessConfig.BuildHeightConfig config = new EndlessConfig.BuildHeightConfig();
-        config.setMaxBuildHeight(10);
-        config.setMinBuildHeight(10);
+        config.setMinBuildHeight(1000);
+        config.setMaxBuildHeight(200);
         config.clamp();
         assertEquals(-64, config.getMinBuildHeight(),
-            "Invalid config should reset min to -64");
+            "Inverted config should reset min to -64");
         assertEquals(320, config.getMaxBuildHeight(),
-            "Invalid config should reset max to 320");
+            "Inverted config should reset max to 320");
     }
 
     @Test
-    void clampsRespectsValidCustomRange() {
+    void normalizesToSectionBoundaries() {
         EndlessConfig.BuildHeightConfig config = new EndlessConfig.BuildHeightConfig();
         config.setMinBuildHeight(-128);
         config.setMaxBuildHeight(620);
         config.clamp();
         assertEquals(-128, config.getMinBuildHeight());
-        assertEquals(620, config.getMaxBuildHeight());
+        assertEquals(624, config.getMaxBuildHeight(),
+            "maxBuildHeight should snap up to a 16-block section boundary");
+    }
+
+    @Test
+    void sectionCapCoversFullEnvelope() {
+        int envelopeSpan = EndlessConfig.MAX_BUILD_HEIGHT_MAX - EndlessConfig.MIN_BUILD_HEIGHT_MIN;
+        assertEquals(EndlessConfig.MAX_SECTIONS * 16, envelopeSpan,
+            "getHeight() caps at MAX_SECTIONS*16, so the cap must cover the whole envelope");
     }
 
     @Test
@@ -81,6 +89,6 @@ class EndlessConfigTest {
         Gson gson = new GsonBuilder().create();
         EndlessConfig loaded = gson.fromJson(legacyJson, EndlessConfig.class);
         loaded.getBuildHeight().clamp();
-        assertEquals(620, loaded.getBuildHeight().getMaxBuildHeight());
+        assertEquals(624, loaded.getBuildHeight().getMaxBuildHeight());
     }
 }

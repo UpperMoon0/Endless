@@ -30,7 +30,7 @@ public abstract class LayerLightSectionStorageMixin {
     )
     private DataLayer guardGetStoredLevelLayer(DataLayer layer) {
         if (layer == null) {
-            return new DataLayer(2048);
+            return new DataLayer();
         }
         return layer;
     }
@@ -42,7 +42,7 @@ public abstract class LayerLightSectionStorageMixin {
     )
     private DataLayer guardSetStoredLevelLayer(DataLayer layer) {
         if (layer == null) {
-            return new DataLayer(2048);
+            return new DataLayer();
         }
         return layer;
     }

@@ -1,0 +1,42 @@
+Endless v0.4 — Engine trust fixes
+
+This release fixes correctness bugs found in review and caps the supported
+build range to what the game's packed coordinates can actually represent.
+
+Behavior changes:
+- Build height is now capped to the vanilla packed BlockPos envelope:
+  min >= -2048, max <= 2048 (exclusive top, highest placeable Y = 2047).
+  Previously advertised ±2,097,152 was not representable — packed positions
+  and block-update packets silently wrapped beyond Y 2047 / -2048.
+- Chunk sections are no longer left null outside the world-generation range.
+  All sections in the configured range are real sections, matching vanilla
+  invariants for saving, networking, lighting, and mod integrations.
+- Height values are normalized to 16-block section boundaries on load.
+- Config changes that produce an invalid range reset to vanilla defaults.
+- Malformed config files no longer risk breaking startup: parse errors fall
+  back to defaults and the original file is preserved as endless.json.broken.
+
+Fixes:
+- isYSpaceEmpty() reported non-empty for ranges above all blocks because
+  BitSet.nextSetBit() returns -1 when no later bit exists.
+- Lighting fallbacks passed 2048 (outside the valid 0-15 nibble range) as a
+  default light value; they now create empty dark layers.
+- The global SimpleBitStorage error suppression was removed: invalid heightmap
+  writes are caught by the heightmap fix instead of being silently discarded
+  everywhere.
+- The periodic section cleanup no longer loads or generates chunks (the
+  synchronous 7x7 getChunk(..., create=true) scan around every player was
+  removed together with the null-section purge it existed to serve).
+- The client render grid is now a window that follows the camera vertically
+  (32 sections, rebased with hysteresis) instead of a fixed slab anchored at
+  minBuildHeight.
+- Initialization is idempotent across Fabric mod/client/server entry points
+  and Forge common/client setup.
+- README no longer contradicts the implementation (exclusive maxBuildHeight,
+  real section counts, correct repository URL).
+
+Known limitations:
+- Config is still per-side (no server-authoritative sync): servers and their
+  clients must use matching build heights.
+- True heights beyond the packed-Y envelope would require replacing Minecraft's
+  position serialization itself; that is out of scope for this release.

@@ -1,5 +1,6 @@
 package com.nstut.endless.mixin;
 
+import com.nstut.endless.util.SectionMask;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
@@ -29,60 +30,15 @@ public abstract class ChunkAccessMixin {
 
     @Shadow public abstract ChunkPos getPos();
 
-    @Unique
-    private BitSet endless$nonEmptyMask;
-
-    @Unique
-    private int endless$highestCached = -1;
-
-    @Unique
-    private boolean endless$maskReady;
-
-    @Unique
-    private void endless$ensureMask() {
-        if (endless$maskReady) return;
-        endless$nonEmptyMask = new BitSet(sections.length);
-        for (int i = 0; i < sections.length; i++) {
-            LevelChunkSection sec = sections[i];
-            if (sec != null && !sec.hasOnlyAir()) {
-                endless$nonEmptyMask.set(i);
-                if (i > endless$highestCached) endless$highestCached = i;
-            }
-        }
-        endless$maskReady = true;
-    }
-
-    @Unique
-    private void endless$updateSection(int idx, LevelChunkSection sec) {
-        if (!endless$maskReady) return;
-        if (sec != null && !sec.hasOnlyAir()) {
-            endless$nonEmptyMask.set(idx);
-            if (idx > endless$highestCached) endless$highestCached = idx;
-        } else {
-            if (endless$nonEmptyMask.get(idx)) {
-                endless$nonEmptyMask.clear(idx);
-                if (idx == endless$highestCached) {
-                    endless$highestCached = endless$nonEmptyMask.length() - 1;
-                    while (endless$highestCached >= 0 && !endless$nonEmptyMask.get(endless$highestCached))
-                        endless$highestCached--;
-                }
-            }
-        }
-    }
-
     @Inject(method = "getHighestFilledSectionIndex", at = @At("HEAD"), cancellable = true, require = 0)
     private void onGetHighestFilledSectionIndex(CallbackInfoReturnable<Integer> cir) {
-        endless$ensureMask();
-        cir.setReturnValue(endless$highestCached);
+        BitSet mask = endless$buildMask();
+        cir.setReturnValue(mask.isEmpty() ? -1 : mask.length() - 1);
     }
 
     @Inject(method = "isYSpaceEmpty", at = @At("HEAD"), cancellable = true, require = 0)
     private void onIsYSpaceEmpty(int minY, int maxY, CallbackInfoReturnable<Boolean> cir) {
-        endless$ensureMask();
-        if (endless$nonEmptyMask.isEmpty()) {
-            cir.setReturnValue(true);
-            return;
-        }
+        BitSet mask = endless$buildMask();
         ChunkAccess self = (ChunkAccess) (Object) this;
         int absMin = getMinBuildHeight();
         int absMax = self.getMaxBuildHeight();
@@ -92,32 +48,16 @@ public abstract class ChunkAccessMixin {
         int maxIdx = self.getSectionIndex(maxY);
         if (minIdx < 0) minIdx = 0;
         if (maxIdx >= sections.length) maxIdx = sections.length - 1;
-        if (minIdx > maxIdx) {
-            cir.setReturnValue(true);
-            return;
-        }
-        cir.setReturnValue(endless$nonEmptyMask.nextSetBit(minIdx) > maxIdx);
-    }
-
-    @Inject(method = "isSectionEmpty", at = @At("HEAD"), cancellable = true, require = 0)
-    private void onIsSectionEmpty(int sectionY, CallbackInfoReturnable<Boolean> cir) {
-        endless$ensureMask();
-        ChunkAccess self = (ChunkAccess) (Object) this;
-        int idx = self.getSectionIndexFromSectionY(sectionY);
-        if (idx < 0 || idx >= sections.length) {
-            cir.setReturnValue(true);
-            return;
-        }
-        cir.setReturnValue(!endless$nonEmptyMask.get(idx));
+        cir.setReturnValue(SectionMask.isEmptyInRange(mask, minIdx, maxIdx));
     }
 
     @Inject(method = "findBlocks", at = @At("HEAD"), cancellable = true, require = 0)
     private void onFindBlocks(Predicate<BlockState> predicate, BiConsumer<BlockPos, BlockState> consumer, CallbackInfo ci) {
         ci.cancel();
-        endless$ensureMask();
+        BitSet mask = endless$buildMask();
         ChunkAccess self = (ChunkAccess) (Object) this;
         BlockPos.MutableBlockPos mpos = new BlockPos.MutableBlockPos();
-        int bitIdx = endless$nonEmptyMask.nextSetBit(0);
+        int bitIdx = mask.nextSetBit(0);
         while (bitIdx >= 0) {
             LevelChunkSection sec = sections[bitIdx];
             if (sec.maybeHas(predicate)) {
@@ -135,13 +75,19 @@ public abstract class ChunkAccessMixin {
                     }
                 }
             }
-            bitIdx = endless$nonEmptyMask.nextSetBit(bitIdx + 1);
+            bitIdx = mask.nextSetBit(bitIdx + 1);
         }
     }
 
-    @Inject(method = "setBlockState", at = @At("RETURN"), require = 0)
-    private void onSetBlockState(BlockPos pos, BlockState state, boolean isMoving, CallbackInfoReturnable<BlockState> cir) {
-        if (!endless$maskReady) return;
-        endless$maskReady = false; // force rebuild on next access
+    @Unique
+    private BitSet endless$buildMask() {
+        BitSet mask = new BitSet(sections.length);
+        for (int i = 0; i < sections.length; i++) {
+            LevelChunkSection sec = sections[i];
+            if (sec != null && !sec.hasOnlyAir()) {
+                mask.set(i);
+            }
+        }
+        return mask;
     }
 }

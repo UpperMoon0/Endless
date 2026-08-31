@@ -8,14 +8,12 @@
   ],  "mixins": [
     "LevelHeightAccessorMixin",
     "HeightmapMixin",
-    "SimpleBitStorageMixin",
     "LevelChunkMixin",
     "ChunkAccessMixin",
-    "SectionInitMixin",
     "LayerLightSectionStorageMixin",
+    "DataLayerStorageMapMixin",
     "BelowZeroRetrogenMixin",
     "LevelReaderMixin",
-    "ServerChunkCacheMixin",
     "compat.WaystoneBlockBaseMixin"
   ],
   "injectors": {

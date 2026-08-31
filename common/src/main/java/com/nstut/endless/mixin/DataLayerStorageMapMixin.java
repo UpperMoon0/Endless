@@ -17,7 +17,7 @@ public abstract class DataLayerStorageMapMixin {
     )
     private Object redirectGetLayerGet(Long2ObjectOpenHashMap<DataLayer> map, long key) {
         DataLayer layer = map.get(key);
-        return layer != null ? layer : new DataLayer(2048);
+        return layer != null ? layer : new DataLayer();
     }
 
     @Redirect(
@@ -27,6 +27,6 @@ public abstract class DataLayerStorageMapMixin {
     )
     private Object redirectCopyDataLayerGet(Long2ObjectOpenHashMap<DataLayer> map, long key) {
         DataLayer layer = map.get(key);
-        return layer != null ? layer : new DataLayer(2048);
+        return layer != null ? layer : new DataLayer();
     }
 }

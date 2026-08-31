@@ -20,8 +20,8 @@ class EndlessConfigTest {
         EndlessConfig.BuildHeightConfig config = new EndlessConfig.BuildHeightConfig();
         config.setMinBuildHeight(-5000000);
         config.clamp();
-        assertEquals(-2048, config.getMinBuildHeight(),
-            "minBuildHeight below the packed Y envelope must clamp to -2048");
+        assertEquals(-2032, config.getMinBuildHeight(),
+            "minBuildHeight below the guarded packed Y envelope must clamp to -2032");
     }
 
     @Test
@@ -29,15 +29,17 @@ class EndlessConfigTest {
         EndlessConfig.BuildHeightConfig config = new EndlessConfig.BuildHeightConfig();
         config.setMaxBuildHeight(5000000);
         config.clamp();
-        assertEquals(2048, config.getMaxBuildHeight(),
-            "maxBuildHeight above the packed Y envelope must clamp to 2048");
+        assertEquals(2032, config.getMaxBuildHeight(),
+            "maxBuildHeight above the guarded packed Y envelope must clamp to 2032");
     }
 
     @Test
-    void maxIsExclusiveSoEnvelopeTopIsY2047() {
-        // isOutsideBuildHeight treats maxBuildHeight as exclusive; 2048 itself is
-        // outside the 12-bit packed BlockPos range, so it must not be placeable.
-        assertEquals(2047, EndlessConfig.MAX_BUILD_HEIGHT_MAX - 1);
+    void maxIsExclusiveSoEnvelopeTopIsY2031() {
+        // isOutsideBuildHeight treats maxBuildHeight as exclusive; the highest
+        // placeable block must be vanilla's DimensionType.MAX_Y (2031). The
+        // equality with DimensionType itself is pinned in EndlessEnvelopeTest,
+        // which bootstraps vanilla registries.
+        assertEquals(2031, EndlessConfig.MAX_BUILD_HEIGHT_MAX - 1);
     }
 
     @Test
@@ -71,8 +73,8 @@ class EndlessConfigTest {
         config.setMinBuildHeight(Integer.MIN_VALUE);
         config.setMaxBuildHeight(Integer.MAX_VALUE);
         config.clamp();
-        assertEquals(-2048, config.getMinBuildHeight());
-        assertEquals(2048, config.getMaxBuildHeight(),
+        assertEquals(-2032, config.getMinBuildHeight());
+        assertEquals(2032, config.getMaxBuildHeight(),
             "maxBuildHeight must clamp to the envelope, not reset via overflow");
     }
 

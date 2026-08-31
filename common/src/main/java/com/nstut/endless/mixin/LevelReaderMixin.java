@@ -1,6 +1,6 @@
 package com.nstut.endless.mixin;
 
-import com.nstut.endless.config.EndlessConfig;
+import com.nstut.endless.heights.EndlessHeights;
 import net.minecraft.world.level.LevelReader;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
@@ -10,21 +10,19 @@ public interface LevelReaderMixin {
 
     /**
      * @author Endless
-     * @reason Replace default min build height with configured value
+     * @reason Replace default min build height with the effective value
      */
     @Overwrite
     default int getMinBuildHeight() {
-        return EndlessConfig.getInstance().getBuildHeight().getMinBuildHeight();
+        return EndlessHeights.getMinBuildHeight();
     }
 
     /**
      * @author Endless
-     * @reason Replace default height with configured value for section allocation
+     * @reason Replace default height with the effective value for section allocation
      */
     @Overwrite
     default int getHeight() {
-        EndlessConfig.BuildHeightConfig config = EndlessConfig.getInstance().getBuildHeight();
-        int rawHeight = config.getMaxBuildHeight() - config.getMinBuildHeight();
-        return Math.min(rawHeight, EndlessConfig.MAX_SECTIONS * 16);
+        return EndlessHeights.getHeight();
     }
 }

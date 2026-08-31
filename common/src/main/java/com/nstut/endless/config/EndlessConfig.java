@@ -21,20 +21,22 @@ public class EndlessConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     /**
-     * Hard limits on the supported build height. They match the packed BlockPos
-     * envelope: vanilla packs Y into 12 bits, so any coordinate outside
-     * [-2048, 2048) silently wraps when a BlockPos long or a block-update packet
-     * is produced. Values beyond that envelope are not usable in production until
-     * position serialization itself is extended, so the config clamps to it.
+     * Hard limits on the supported build height. Vanilla intentionally reserves
+     * a 16-block guard band at each edge of the packed BlockPos envelope
+     * (DimensionType spans [-2032, 2032) of the raw 12-bit Y range
+     * [-2048, 2048)). Engine operations like BlockPos.offset and light
+     * propagation step to neighboring packed positions; without the guard band
+     * the neighbor of the top block would wrap to the bottom of the world.
+     * The config clamps to the same banded range vanilla dimensions use.
      */
-    public static final int MIN_BUILD_HEIGHT_MIN = -2048;
-    public static final int MAX_BUILD_HEIGHT_MAX = 2048;
+    public static final int MIN_BUILD_HEIGHT_MIN = -2032;
+    public static final int MAX_BUILD_HEIGHT_MAX = 2032;
 
     /**
-     * Hard cap on section count per chunk. 4096 blocks (the full packed-Y
-     * envelope) is 256 sections; the config cannot request more.
+     * Hard cap on section count per chunk. 4064 blocks (the guard-banded
+     * envelope) is 254 sections; the config cannot request more.
      */
-    public static final int MAX_SECTIONS = 256;
+    public static final int MAX_SECTIONS = 254;
 
     private static EndlessConfig instance;
 

@@ -7,10 +7,9 @@
     "ViewAreaMixin"
   ],  "mixins": [
     "LevelHeightAccessorMixin",
-    "HeightmapMixin",
-    "LevelChunkMixin",
-    "BelowZeroRetrogenMixin",
     "LevelReaderMixin",
+    "PlayerListMixin",
+    "LevelChunkMixin",
     "compat.WaystoneBlockBaseMixin"
   ],
   "injectors": {

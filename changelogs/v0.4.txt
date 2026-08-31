@@ -4,10 +4,22 @@ This release fixes correctness bugs found in review and caps the supported
 build range to what the game's packed coordinates can actually represent.
 
 Behavior changes:
-- Build height is now capped to the vanilla packed BlockPos envelope:
-  min >= -2048, max <= 2048 (exclusive top, highest placeable Y = 2047).
+- Build height is now capped to vanilla's guarded packed BlockPos envelope:
+  min >= -2032, max <= 2032 (exclusive top, highest placeable Y = 2031).
   Previously advertised ±2,097,152 was not representable — packed positions
-  and block-update packets silently wrapped beyond Y 2047 / -2048.
+  and block-update packets silently wrapped beyond the envelope. The 16-block
+  guard band at each edge (exactly vanilla's DimensionType span) keeps
+  neighboring-block operations like BlockPos.offset and light propagation
+  from wrapping into the opposite end of the world.
+- The build range is persisted per world (endless_build_heights save data).
+  On load, the effective range is the union of the world's stored range and
+  the config: widening the config expands the world; narrowing is rejected
+  with a log warning so saved chunks above/below the new bounds can never be
+  silently dropped.
+- Multiplayer servers are authoritative: the build range is sent to every
+  client at login, before any chunk packet. Chunk packets carry no Y
+  coordinates per section, so a mismatched client previously could map
+  section payloads to the wrong Y positions.
 - Chunk sections are no longer left null outside the world-generation range.
   All sections in the configured range are real sections, matching vanilla
   invariants for saving, networking, lighting, and mod integrations.
@@ -24,6 +36,11 @@ Fixes:
 - Vanilla lighting storage semantics restored: the synthetic dark-layer and
   copy-on-write overrides were removed, so missing light sections stay null
   exactly as vanilla expects.
+- The below-zero retrogen accessor was left untouched: the old override
+  pointed vanilla's legacy chunk migration machinery at the mod's extended
+  range, which could shift upgraded generation into an unrelated Y band.
+- The heightmap mixin was removed; vanilla sizes and stores heightmaps from
+  the effective chunk height, which the mod already provides.
 - The global SimpleBitStorage error suppression was removed: invalid heightmap
   writes are caught by the heightmap fix instead of being silently discarded
   everywhere.
@@ -38,8 +55,17 @@ Fixes:
 - README no longer contradicts the implementation (exclusive maxBuildHeight,
   real section counts, correct repository URL).
 
+Developer:
+- Added a PR validation workflow (build + tests on every pull request and
+  non-master push), ahead of the existing release workflow.
+
 Known limitations:
-- Config is still per-side (no server-authoritative sync): servers and their
-  clients must use matching build heights.
-- True heights beyond the packed-Y envelope would require replacing Minecraft's
-  position serialization itself; that is out of scope for this release.
+- True heights beyond the guarded packed-Y envelope would require replacing
+  Minecraft's position serialization itself; that is out of scope for this
+  release.
+- Vanilla clients (without Endless) cannot correctly join servers with an
+  extended range, because chunk packets serialize sections without Y
+  coordinates. Keep vanilla clients on vanilla-range servers.
+- Free-camera mods can move the camera while the player stays in the same
+  section; the render window then follows the camera only on the next
+  vanilla-triggered update.

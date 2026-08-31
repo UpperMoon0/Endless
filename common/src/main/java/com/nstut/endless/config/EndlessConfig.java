@@ -72,14 +72,24 @@ public class EndlessConfig {
                 // types) and must never kill startup. Keep defaults and preserve
                 // the broken file so the user can recover it.
                 Path broken = configFile.resolveSibling(CONFIG_FILENAME + ".broken");
+                boolean preserved = false;
                 try {
                     Files.copy(configFile, broken, StandardCopyOption.REPLACE_EXISTING);
+                    preserved = true;
                 } catch (IOException copyError) {
                     System.err.println("Endless: failed to back up broken config: " + copyError.getMessage());
                 }
-                System.err.println("Endless: malformed config (" + e.getMessage()
-                    + "), using defaults. Original saved as " + broken.getFileName());
-                save();
+                if (preserved) {
+                    System.err.println("Endless: malformed config (" + e.getMessage()
+                        + "), using defaults. Original saved as " + broken.getFileName());
+                    save();
+                } else {
+                    // Only defaults in memory; never overwrite the original when
+                    // it could not be backed up.
+                    System.err.println("Endless: malformed config (" + e.getMessage()
+                        + "), using defaults in memory; original left untouched at "
+                        + configFile);
+                }
                 return;
             }
 
@@ -139,10 +149,14 @@ public class EndlessConfig {
         public void clamp() {
             // Section math (getSectionIndex, section arrays, lighting) assumes the
             // bounds are 16-aligned; snap outward before applying the envelope.
-            minBuildHeight = minBuildHeight & ~15;
-            maxBuildHeight = (maxBuildHeight + 15) & ~15;
+            // Clamp first so huge JSON integers cannot overflow during alignment,
+            // then align in long math and re-clamp.
             minBuildHeight = Math.max(minBuildHeight, MIN_BUILD_HEIGHT_MIN);
             maxBuildHeight = Math.min(maxBuildHeight, MAX_BUILD_HEIGHT_MAX);
+            long min = (long) minBuildHeight & ~15L;
+            long max = ((long) maxBuildHeight + 15L) & ~15L;
+            minBuildHeight = (int) Math.max(min, MIN_BUILD_HEIGHT_MIN);
+            maxBuildHeight = (int) Math.min(max, MAX_BUILD_HEIGHT_MAX);
             if (minBuildHeight >= maxBuildHeight) {
                 System.err.println("Endless: minBuildHeight (" + minBuildHeight + ") >= maxBuildHeight ("
                     + maxBuildHeight + "), resetting to defaults");

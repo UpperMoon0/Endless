@@ -9,9 +9,6 @@
     "LevelHeightAccessorMixin",
     "HeightmapMixin",
     "LevelChunkMixin",
-    "ChunkAccessMixin",
-    "LayerLightSectionStorageMixin",
-    "DataLayerStorageMapMixin",
     "BelowZeroRetrogenMixin",
     "LevelReaderMixin",
     "compat.WaystoneBlockBaseMixin"

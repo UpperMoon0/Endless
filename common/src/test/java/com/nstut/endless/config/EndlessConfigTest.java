@@ -64,6 +64,19 @@ class EndlessConfigTest {
     }
 
     @Test
+    void clampSurvivesIntegerMaxValue() {
+        // (2147483647 + 15) overflows int and would turn negative, silently
+        // resetting the config; alignment must use long math.
+        EndlessConfig.BuildHeightConfig config = new EndlessConfig.BuildHeightConfig();
+        config.setMinBuildHeight(Integer.MIN_VALUE);
+        config.setMaxBuildHeight(Integer.MAX_VALUE);
+        config.clamp();
+        assertEquals(-2048, config.getMinBuildHeight());
+        assertEquals(2048, config.getMaxBuildHeight(),
+            "maxBuildHeight must clamp to the envelope, not reset via overflow");
+    }
+
+    @Test
     void sectionCapCoversFullEnvelope() {
         int envelopeSpan = EndlessConfig.MAX_BUILD_HEIGHT_MAX - EndlessConfig.MIN_BUILD_HEIGHT_MIN;
         assertEquals(EndlessConfig.MAX_SECTIONS * 16, envelopeSpan,

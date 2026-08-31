@@ -14,13 +14,16 @@ Behavior changes:
 - Height values are normalized to 16-block section boundaries on load.
 - Config changes that produce an invalid range reset to vanilla defaults.
 - Malformed config files no longer risk breaking startup: parse errors fall
-  back to defaults and the original file is preserved as endless.json.broken.
+  back to defaults. When the original can be copied to endless.json.broken it
+  is overwritten with defaults; if the backup fails, defaults apply in memory
+  only and the original file is left untouched.
 
 Fixes:
-- isYSpaceEmpty() reported non-empty for ranges above all blocks because
-  BitSet.nextSetBit() returns -1 when no later bit exists.
-- Lighting fallbacks passed 2048 (outside the valid 0-15 nibble range) as a
-  default light value; they now create empty dark layers.
+- Custom ChunkAccess section helpers (isYSpaceEmpty mask, highest-filled
+  scan, findBlocks) were removed; vanilla logic runs unchanged.
+- Vanilla lighting storage semantics restored: the synthetic dark-layer and
+  copy-on-write overrides were removed, so missing light sections stay null
+  exactly as vanilla expects.
 - The global SimpleBitStorage error suppression was removed: invalid heightmap
   writes are caught by the heightmap fix instead of being silently discarded
   everywhere.

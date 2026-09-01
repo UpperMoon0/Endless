@@ -57,11 +57,24 @@ class LegacyRegionScannerTest {
         // saved section around block Y=592 from an older wider configuration.
         CompoundTag chunk = chunkWithSection(37, "minecraft:stone");
         LegacyRegionScanner.WorldEvidence evidence =
-            LegacyRegionScanner.inspectChunkAgainstCandidate(chunk, -64, 320, 384);
+            LegacyRegionScanner.inspectChunkAgainstCandidate(chunk, -64, 320, -64, 320);
 
         assertTrue(evidence.meaningfulDataOutsideCandidate());
         assertEquals(37, evidence.outsideSectionY());
         assertTrue(evidence.blocksMigration());
+    }
+
+    @Test
+    void airOnlySavedSectionStillProvesWiderHistoricalArray() {
+        // Vanilla serializes block_states/biomes for every real section in the
+        // current section array. Even an air-only Y=37 tag therefore proves
+        // this chunk was saved with a range wider than [-64,320).
+        CompoundTag chunk = chunkWithSection(37, "minecraft:air");
+        LegacyRegionScanner.WorldEvidence evidence =
+            LegacyRegionScanner.inspectChunkAgainstCandidate(chunk, -64, 320, -64, 320);
+
+        assertTrue(evidence.meaningfulDataOutsideCandidate());
+        assertEquals(37, evidence.outsideSectionY());
     }
 
     @Test
@@ -72,7 +85,7 @@ class LegacyRegionScannerTest {
         chunk.put("Heightmaps", heightmaps);
 
         LegacyRegionScanner.WorldEvidence evidence =
-            LegacyRegionScanner.inspectChunkAgainstCandidate(chunk, -64, 320, 384);
+            LegacyRegionScanner.inspectChunkAgainstCandidate(chunk, -64, 320, -64, 320);
 
         assertTrue(evidence.heightmapLayoutMismatch());
         assertEquals(64, evidence.savedHeightmapLongs());
@@ -88,11 +101,31 @@ class LegacyRegionScannerTest {
         chunk.put("Heightmaps", heightmaps);
 
         LegacyRegionScanner.WorldEvidence evidence =
-            LegacyRegionScanner.inspectChunkAgainstCandidate(chunk, -2032, 2032, 4096);
+            LegacyRegionScanner.inspectChunkAgainstCandidate(chunk, -2032, 2032, -2048, 2048);
 
         assertFalse(evidence.heightmapLayoutMismatch());
         assertFalse(evidence.meaningfulDataOutsideCandidate());
         assertFalse(evidence.blocksMigration());
+    }
+
+    @Test
+    void airOnlyRawGuardSectionMayStillBeDiscarded() {
+        CompoundTag chunk = chunkWithSection(127, "minecraft:air");
+        LegacyRegionScanner.WorldEvidence evidence =
+            LegacyRegionScanner.inspectChunkAgainstCandidate(chunk, -2032, 2032, -2048, 2048);
+
+        assertFalse(evidence.meaningfulDataOutsideCandidate());
+        assertFalse(evidence.blocksMigration());
+    }
+
+    @Test
+    void meaningfulRawGuardSectionStillRefuses() {
+        CompoundTag chunk = chunkWithSection(-128, "minecraft:stone");
+        LegacyRegionScanner.WorldEvidence evidence =
+            LegacyRegionScanner.inspectChunkAgainstCandidate(chunk, -2032, 2032, -2048, 2048);
+
+        assertTrue(evidence.meaningfulDataOutsideCandidate());
+        assertEquals(-128, evidence.outsideSectionY());
     }
 
     @Test

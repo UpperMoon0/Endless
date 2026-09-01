@@ -8,8 +8,6 @@ import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.chunk.DataLayer;
 import net.minecraft.world.level.lighting.LayerLightEventListener;
 
-import javax.annotation.Nullable;
-
 /** Delegates vanilla lighting inside the dense core and serves sparse light outside it. */
 public final class EndlessLayerLightEventListener implements LayerLightEventListener {
     private final Level level;
@@ -23,7 +21,6 @@ public final class EndlessLayerLightEventListener implements LayerLightEventList
     }
 
     @Override
-    @Nullable
     public DataLayer getDataLayerData(SectionPos pos) {
         return delegate.getDataLayerData(pos);
     }

@@ -27,8 +27,9 @@ import java.nio.file.Path;
  *       effective range into the regular SavedData store after worlds load.
  *       The range only ever widens, so saved sections above and below the
  *       current world stay addressable.</li>
- *   <li>Remote clients: received from the server with the player's first
- *       packets (see {@code PlayerListMixin}); resets to the local config on
+ *   <li>Remote clients: received from the server during the login phase on
+ *       Fabric (via {@code ServerLoginNetworking}) and during the play phase
+ *       on Forge (via {@code PlayerListMixin}); reset to the local config on
  *       disconnect.</li>
  * </ul>
  */
@@ -175,14 +176,26 @@ public final class EndlessHeights {
     }
 
     /**
-     * Deliver the authoritative range to a joining player. Called after the
-     * player's connection exists and before the login packet creates the
-     * client world. Clients that cannot receive the sync (mod not installed)
-     * are only allowed when the range is vanilla; an extended range on the
-     * wire has no Y coordinates per section, so such a client would map
-     * section payloads to the wrong Y positions.
+     * Deliver the authoritative range to a joining player. Loader dispatch:
+     *
+     * <ul>
+     *   <li>Fabric has a login-phase handshake installed; the play-phase
+     *       call here is a no-op because {@link EndlessNetworking#shouldEnforceRange}
+     *       returns false. The range has already been applied on the client
+     *       during login, and vanilla clients have already been disconnected
+     *       by the login pipeline.</li>
+     *   <li>Forge delivers the range in the play phase right before
+     *       {@code sendLevelInfo}. If the joining client has the play channel
+     *       registered we send the sync; if it does not and the range is
+     *       extended we disconnect it, because section payloads on the wire
+     *       carry no Y coordinates and would be mapped to the wrong Y
+     *       positions on a vanilla client.</li>
+     * </ul>
      */
     public static void syncOnJoin(ServerPlayer player) {
+        if (!EndlessNetworking.shouldEnforceRange(player)) {
+            return;
+        }
         int min = getMinBuildHeight();
         int max = getMaxBuildHeight();
         if (EndlessNetworking.canSend(player)) {

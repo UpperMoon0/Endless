@@ -16,26 +16,38 @@ Behavior changes:
 - The build range is persisted per world in data/endless_build_heights.dat.
   It is read before any level is created, so chunk deserialization uses the
   world's layout. Once persisted, effective range = union(world, config):
-  widening expands the world; narrowing is rejected so saved sections cannot
-  become unreachable.
+  widening expands the world; a narrower config cannot shrink the persisted
+  world range and make saved sections unreachable.
 - Played pre-v0.4 worlds now pass a fail-closed migration gate before any
-  ServerLevel/chunk is loaded. The exact pre-clamp config is preserved until
-  classification completes. A safe legacy range inside [-2032, 2032) migrates
-  automatically. Raw edge ranges such as [-2048, 2048) are inspected across
-  legacy region files for meaningful block data at section Y=-128/Y=127; only
-  air-only edge sections may be clamped away. Non-air blocks, block entities,
-  malformed/unreadable edge data, ranges outside the signed-byte section-Y
-  envelope, spans over 4096 blocks, or an untrusted legacy config stop startup
-  instead of risking silent section loss. World range metadata is created only
-  after migration succeeds.
+  ServerLevel/chunk is loaded. Because pre-v0.4 used one global endless.json,
+  the current raw config is only a migration candidate, not proof of a
+  particular world's historical layout. The exact pre-clamp config is
+  preserved until classification completes, then all dimension region files
+  are inspected before the candidate is accepted.
+- Saved normal section payloads or block entities outside the candidate range
+  prove that a played world had a wider historical section array and stop
+  migration, even when the saved section's block palette is air-only. Saved
+  heightmap packing is also checked against the raw legacy span; for example a
+  64-long 1.20.1 heightmap paired with a current narrow config is conflicting
+  history and fails closed instead of being rebuilt under a guessed range.
+- Raw edge ranges such as [-2048, 2048) may clamp away section Y=-128/Y=127
+  only when those guard sections are provably air-only and contain no block
+  entity. Non-air blocks, malformed edge data, unreadable region data, ranges
+  outside the signed-byte section-Y envelope, spans over 4096 blocks, or an
+  untrusted legacy config stop startup instead of risking silent section loss.
+  World range metadata is created only after migration succeeds.
 - Existing but unreadable/invalid v0.4 world-range metadata also fails closed
   rather than being treated as missing and replaced from the current config.
 - Multiplayer servers are authoritative during the login phase, before
   ClientboundLoginPacket constructs the client world and before any chunk data
   can arrive. Fabric uses a login query held open until the client applies the
-  range; Forge uses a login packet plus protocol/version gating. Remote clients
-  establish a vanilla baseline at the start of every new connection so local
-  extended config or stale login state cannot leak onto vanilla-range servers.
+  range; Forge uses a login packet plus protocol/version gating.
+- Every new remote login now forces the vanilla baseline from the
+  ClientHandshakePacketListenerImpl constructor, not from ClientboundHelloPacket.
+  This covers offline-mode servers that skip the authentication hello entirely
+  and prevents an applied range from a failed previous login leaking into the
+  next connection. Integrated-server memory connections preserve the shared
+  server-authoritative range.
 - Chunk sections are real LevelChunkSection instances across the configured
   range, matching vanilla invariants for saving, networking, lighting and mod
   integrations.
@@ -52,7 +64,9 @@ Fixes:
   removing synthetic DataLayer overrides.
 - Left vanilla below-zero retrogen accessors untouched.
 - Removed the duplicate Heightmap mixin; vanilla sizes heightmaps from the
-  effective chunk height and rebuilds incompatible persisted layouts.
+  effective chunk height and rebuilds incompatible persisted layouts only
+  after v0.4 has first verified that the saved packing agrees with migration
+  history.
 - Removed global SimpleBitStorage error suppression.
 - Removed the old synchronous chunk-loading section cleanup and sparse/null
   section machinery.
@@ -62,8 +76,8 @@ Fixes:
   instead of the live file config.
 - Fabric and Forge both synchronize build height before client world creation;
   failed/rejected logins cannot leave stale authoritative range state for the
-  next connection.
-- Release workflow now checks changelog/tag collisions before builds/uploads,
+  next connection, including an offline-mode vanilla-server follow-up.
+- Release workflow checks changelog/tag collisions before builds/uploads,
   validates exact loader artifacts, gates publishing behind tests/live joins,
   and does not publish merely because a PR merged to master.
 - Development run tasks are loader-explicit (runFabricClient,
@@ -73,11 +87,15 @@ Fixes:
 Developer / validation:
 - PR Validate workflow compiles/tests the shared, Fabric and Forge projects.
 - Unit regressions cover the guarded envelope, config overflow/preservation,
-  world-range merging, fail-closed legacy classification, raw-edge section NBT
-  detection (non-air blocks/block entities/malformed palettes), and storage.
+  world-range merging, fail-closed legacy classification, changed-global-config
+  history (including saved Y=37 sections), 64-long heightmap disagreement,
+  raw-edge section handling, and storage.
 - Real-client live-join CI covers: extended server authority, an Endless server
   with vanilla range against an extended client config, and a genuine Mojang
-  vanilla server against an extended Endless client config, on both loaders.
+  offline-mode vanilla server against an extended Endless client config, on
+  both loaders. The vanilla-server scenario deliberately pre-seeds applied=true
+  with an extended stale range before connection, so the every-connection
+  constructor reset is exercised instead of relying on a fresh JVM baseline.
 
 Known limitations:
 - True heights beyond the guarded packed-Y envelope require replacing position

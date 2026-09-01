@@ -19,16 +19,16 @@ import java.nio.file.Path;
  *       any ServerLevel exists (Fabric SERVER_STARTING / Forge
  *       ServerAboutToStart). v0.4 worlds read their persisted range directly
  *       from disk. Pre-v0.4 played worlds are classified before any chunk can
- *       deserialize: safe legacy ranges migrate, raw edge sections are scanned
- *       for meaningful data, and ambiguous/unrepresentable histories fail
- *       closed instead of silently dropping sections.</li>
+ *       deserialize: the raw global config is only a candidate, all saved
+ *       region evidence is checked against it, and ambiguous/unrepresentable
+ *       histories fail closed instead of silently dropping sections.</li>
  *   <li>Remote clients: begin every remote connection with the vanilla range
  *       and adopt the server's range during the login phase only if the
  *       server provides one (Fabric via {@code ServerLoginNetworking}, Forge
- *       via a Forge login packet). The baseline is established at the start
- *       of the login phase ({@code ClientHandshakePacketListenerImpl
- *       .handleHello}) via {@link #applyVanillaBaselineForNewConnection}, and
- *       re-established defensively at the login packet via
+ *       via a Forge login packet). The baseline is established when
+ *       {@code ClientHandshakePacketListenerImpl} is constructed, before
+ *       authentication-specific packets can be skipped, and re-established
+ *       defensively at the login packet via
  *       {@link #applyVanillaBaselineIfUnapplied}.</li>
  * </ul>
  */
@@ -141,22 +141,25 @@ public final class EndlessHeights {
             throw migrationFailure(resolution.reason(), null);
         }
 
-        if (resolution.status() == LegacyWorldMigration.Status.INSPECT_EDGE_SECTIONS) {
-            final LegacyRegionScanner.EdgeUsage edgeUsage;
-            try {
-                edgeUsage = LegacyRegionScanner.scanEdgeSections(
-                    worldRoot, resolution.inspectBottomEdge(), resolution.inspectTopEdge());
-            } catch (IOException e) {
-                throw migrationFailure("could not safely inspect legacy edge sections", e);
-            }
-            resolution = LegacyWorldMigration.resolveEdgeInspection(
-                resolution,
-                edgeUsage.bottomHasMeaningfulData(),
-                edgeUsage.topHasMeaningfulData()
+        // Pre-v0.4 config was global, not per-world. Even a syntactically safe
+        // raw config is therefore only a candidate: World A may have been last
+        // played with a wider range before the user changed endless.json for
+        // World B. Scan every saved chunk before constructing any level.
+        final LegacyRegionScanner.WorldEvidence evidence;
+        try {
+            evidence = LegacyRegionScanner.scanWorldAgainstCandidate(
+                worldRoot,
+                resolution.migratedMin(),
+                resolution.migratedMax(),
+                resolution.legacyHeight()
             );
-            if (resolution.status() == LegacyWorldMigration.Status.REFUSE) {
-                throw migrationFailure(resolution.reason(), null);
-            }
+        } catch (IOException | RuntimeException e) {
+            throw migrationFailure("could not safely inspect legacy world data against the candidate range", e);
+        }
+
+        resolution = LegacyWorldMigration.resolveWorldInspection(resolution, evidence);
+        if (resolution.status() == LegacyWorldMigration.Status.REFUSE) {
+            throw migrationFailure(resolution.reason(), null);
         }
 
         System.err.println("Endless: safely classified pre-v0.4 world. Raw legacy config ["
@@ -220,8 +223,13 @@ public final class EndlessHeights {
         }
     }
 
-    public static void applyVanillaBaselineForNewConnection(boolean singleplayer) {
-        if (singleplayer) {
+    /**
+     * Force the vanilla baseline for every remote login connection. A local
+     * memory connection belongs to the integrated server and shares the
+     * already-authoritative effective range in this JVM, so it is left alone.
+     */
+    public static void applyVanillaBaselineForNewConnection(boolean memoryConnection) {
+        if (memoryConnection) {
             return;
         }
         applyEffective(VANILLA_MIN_BUILD_HEIGHT, VANILLA_MAX_BUILD_HEIGHT);

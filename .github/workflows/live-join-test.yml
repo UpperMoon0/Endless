@@ -9,6 +9,7 @@ on:
       - "fabric/**"
       - "forge/**"
       - "tools/live_join_test.py"
+      - ".github/gradle/**"
       - ".github/workflows/live-join-test.yml"
 
 jobs:
@@ -32,6 +33,18 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          # Let one matrix leg seed Gradle state for later runs; the other is
+          # read-only so parallel jobs never contend while saving the same cache.
+          cache-read-only: ${{ matrix.target == 'forge-1.20.1' }}
+
+      - name: Configure CI Maven Central mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GRADLE_USER_HOME/init.d"
+          cp .github/gradle/ci-maven-central-mirror.init.gradle \
+            "$GRADLE_USER_HOME/init.d/ci-maven-central-mirror.init.gradle"
 
       - name: Make gradlew executable
         run: chmod +x gradlew

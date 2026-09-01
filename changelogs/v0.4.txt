@@ -1,76 +1,92 @@
 Endless v0.4 — Engine trust fixes
 
 This release fixes correctness bugs found in review and caps the supported
-build range to what the game's packed coordinates can actually represent.
+build range to what Minecraft 1.20.1 can safely represent.
 
 Behavior changes:
-- Build height is now capped to vanilla's guarded packed BlockPos envelope:
+- Build height is capped to vanilla's guarded packed BlockPos envelope:
   min >= -2032, max <= 2032 (exclusive top, highest placeable Y = 2031).
   Previously advertised ±2,097,152 was not representable — packed positions
-  and block-update packets silently wrapped beyond the envelope. The 16-block
-  guard band at each edge (exactly vanilla's DimensionType span) keeps
-  neighboring-block operations like BlockPos.offset and light propagation
-  from wrapping into the opposite end of the world.
-- The build range is persisted per world (data/endless_build_heights.dat in
-  the world root). It is read before any level is created, so chunk
-  deserialization always uses the world's range; the effective range is the
-  union of the world's stored range and the config: widening the config
-  expands the world, narrowing is rejected with a log warning so saved
-  chunks above/below the new bounds can never be silently dropped.
-- Multiplayer servers are authoritative: the build range is sent to every
-  client as the first play packet of the join, before the login packet and
-  any chunk packet. Chunk packets carry no Y coordinates per section, so a
-  mismatched client previously could map section payloads to the wrong Y
-  positions. Clients without the mod are disconnected with a clear message
-  when the server's range is extended; they can still join vanilla-range
-  servers. The sync packet is registered strictly server-to-client on Forge
-  and validated on receipt, so a spoofed client packet cannot change the
-  server's range.
-- Chunk sections are no longer left null outside the world-generation range.
-  All sections in the configured range are real sections, matching vanilla
-  invariants for saving, networking, lighting, and mod integrations.
-- Height values are normalized to 16-block section boundaries on load.
-- Config changes that produce an invalid range reset to vanilla defaults.
-- Malformed config files no longer risk breaking startup: parse errors fall
-  back to defaults. When the original can be copied to endless.json.broken it
-  is overwritten with defaults; if the backup fails, defaults apply in memory
-  only and the original file is left untouched.
+  and block-update packets silently wrapped beyond the 12-bit Y envelope. The
+  16-block guard band at each edge matches vanilla's DimensionType span and
+  keeps neighboring-position operations from wrapping to the opposite end.
+- Minecraft 1.20.1 chunk files store each section's absolute section Y as a
+  signed byte (-128..127, raw block coverage [-2048, 2048)). v0.4 never
+  reinterprets wrapped section coordinates during migration.
+- The build range is persisted per world in data/endless_build_heights.dat.
+  It is read before any level is created, so chunk deserialization uses the
+  world's layout. Once persisted, effective range = union(world, config):
+  widening expands the world; narrowing is rejected so saved sections cannot
+  become unreachable.
+- Played pre-v0.4 worlds now pass a fail-closed migration gate before any
+  ServerLevel/chunk is loaded. The exact pre-clamp config is preserved until
+  classification completes. A safe legacy range inside [-2032, 2032) migrates
+  automatically. Raw edge ranges such as [-2048, 2048) are inspected across
+  legacy region files for meaningful block data at section Y=-128/Y=127; only
+  air-only edge sections may be clamped away. Non-air blocks, block entities,
+  malformed/unreadable edge data, ranges outside the signed-byte section-Y
+  envelope, spans over 4096 blocks, or an untrusted legacy config stop startup
+  instead of risking silent section loss. World range metadata is created only
+  after migration succeeds.
+- Existing but unreadable/invalid v0.4 world-range metadata also fails closed
+  rather than being treated as missing and replaced from the current config.
+- Multiplayer servers are authoritative during the login phase, before
+  ClientboundLoginPacket constructs the client world and before any chunk data
+  can arrive. Fabric uses a login query held open until the client applies the
+  range; Forge uses a login packet plus protocol/version gating. Remote clients
+  establish a vanilla baseline at the start of every new connection so local
+  extended config or stale login state cannot leak onto vanilla-range servers.
+- Chunk sections are real LevelChunkSection instances across the configured
+  range, matching vanilla invariants for saving, networking, lighting and mod
+  integrations.
+- Height values are normalized to 16-block section boundaries.
+- Malformed configs use defaults in memory and are copied to
+  endless.json.broken when possible. Config normalization is deferred until
+  world migration has been classified; if the malformed-file backup cannot be
+  created, the original config is never overwritten automatically.
 
 Fixes:
-- Custom ChunkAccess section helpers (isYSpaceEmpty mask, highest-filled
-  scan, findBlocks) were removed; vanilla logic runs unchanged.
-- Vanilla lighting storage semantics restored: the synthetic dark-layer and
-  copy-on-write overrides were removed, so missing light sections stay null
-  exactly as vanilla expects.
-- The below-zero retrogen accessor was left untouched: the old override
-  pointed vanilla's legacy chunk migration machinery at the mod's extended
-  range, which could shift upgraded generation into an unrelated Y band.
-- The heightmap mixin was removed; vanilla sizes and stores heightmaps from
-  the effective chunk height, which the mod already provides.
-- The global SimpleBitStorage error suppression was removed: invalid heightmap
-  writes are caught by the heightmap fix instead of being silently discarded
-  everywhere.
-- The periodic section cleanup no longer loads or generates chunks (the
-  synchronous 7x7 getChunk(..., create=true) scan around every player was
-  removed together with the null-section purge it existed to serve).
-- The client render grid is now a window that follows the camera vertically
-  (32 sections, rebased with hysteresis) instead of a fixed slab anchored at
-  minBuildHeight.
-- Initialization is idempotent across Fabric mod/client/server entry points
-  and Forge common/client setup.
-- README no longer contradicts the implementation (exclusive maxBuildHeight,
-  real section counts, correct repository URL).
+- Removed custom ChunkAccess section masks/helpers; vanilla highest-filled,
+  isYSpaceEmpty and findBlocks logic runs unchanged.
+- Restored vanilla lighting-storage lifecycle and copy-on-write semantics by
+  removing synthetic DataLayer overrides.
+- Left vanilla below-zero retrogen accessors untouched.
+- Removed the duplicate Heightmap mixin; vanilla sizes heightmaps from the
+  effective chunk height and rebuilds incompatible persisted layouts.
+- Removed global SimpleBitStorage error suppression.
+- Removed the old synchronous chunk-loading section cleanup and sparse/null
+  section machinery.
+- The client render grid is now a 32-section camera-following vertical window
+  with hysteresis instead of a fixed slab anchored at minBuildHeight.
+- Waystones compatibility reads the effective world/server-authoritative max
+  instead of the live file config.
+- Fabric and Forge both synchronize build height before client world creation;
+  failed/rejected logins cannot leave stale authoritative range state for the
+  next connection.
+- Release workflow now checks changelog/tag collisions before builds/uploads,
+  validates exact loader artifacts, gates publishing behind tests/live joins,
+  and does not publish merely because a PR merged to master.
+- Development run tasks are loader-explicit (runFabricClient,
+  runForgeClient, runFabricServer, runForgeServer); ambiguous bare runClient /
+  runServer selectors fail with a clear message.
 
-Developer:
-- Added a PR validation workflow (build + tests on every pull request and
-  non-master push), ahead of the existing release workflow.
+Developer / validation:
+- PR Validate workflow compiles/tests the shared, Fabric and Forge projects.
+- Unit regressions cover the guarded envelope, config overflow/preservation,
+  world-range merging, fail-closed legacy classification, raw-edge section NBT
+  detection (non-air blocks/block entities/malformed palettes), and storage.
+- Real-client live-join CI covers: extended server authority, an Endless server
+  with vanilla range against an extended client config, and a genuine Mojang
+  vanilla server against an extended Endless client config, on both loaders.
 
 Known limitations:
-- True heights beyond the guarded packed-Y envelope would require replacing
-  Minecraft's position serialization itself; that is out of scope for this
-  release.
-- Vanilla clients (without Endless) are disconnected from servers with an
-  extended range; keep vanilla clients on vanilla-range servers.
-- Free-camera mods can move the camera while the player stays in the same
-  section; the render window then follows the camera only on the next
-  vanilla-triggered update.
+- True heights beyond the guarded packed-Y envelope require replacing position
+  serialization and are out of scope.
+- Vanilla clients cannot join an extended-range Endless server.
+- Free-camera mods can move the camera independently of the player; the render
+  window may wait for the next vanilla-triggered update before following it.
+- Maximum-height memory/GC behavior is a separate performance validation item.
+  Empty vanilla sections use compact single-value palettes and lazy light data,
+  but 254 real section object graphs per chunk are still ~10.6x vanilla's 24;
+  fresh-world profiling at vanilla, 128-section and 254-section ranges remains
+  required before treating maximum-height OOM behavior as resolved.

@@ -7,7 +7,9 @@
     "ViewAreaMixin",
     "ClientHandshakePacketListenerMixin",
     "ClientPacketListenerMixin"
-  ],  "mixins": [
+  ],
+  "mixins": [
+    "FriendlyByteBufMixin",
     "LevelHeightAccessorMixin",
     "LevelReaderMixin",
     "LevelChunkMixin",

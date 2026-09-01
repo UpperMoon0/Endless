@@ -5,8 +5,9 @@ import com.nstut.endless.config.EndlessConfig;
 /**
  * Pure classification for pre-v0.4 worlds that do not yet have
  * endless_build_heights.dat. Older versions did not persist the world range,
- * so the only trustworthy automatic-migration input is the raw config that
- * existed before v0.4 clamps it to the guarded envelope.
+ * so the raw global config is only a migration candidate, never proof of the
+ * range with which a particular world was last saved. Played worlds must also
+ * be checked against their saved region evidence before migration is accepted.
  */
 public final class LegacyWorldMigration {
     /** Signed-byte section Y can represent exactly these raw block bounds. */
@@ -24,6 +25,8 @@ public final class LegacyWorldMigration {
 
     public record Resolution(
         Status status,
+        int legacyMin,
+        int legacyMax,
         int migratedMin,
         int migratedMax,
         boolean inspectBottomEdge,
@@ -32,6 +35,10 @@ public final class LegacyWorldMigration {
     ) {
         public boolean canMigrate() {
             return status == Status.MIGRATE;
+        }
+
+        public int legacyHeight() {
+            return legacyMax - legacyMin;
         }
     }
 
@@ -42,6 +49,11 @@ public final class LegacyWorldMigration {
      * v0.4 guard band first. This preserves evidence such as [-2048, 2048),
      * which would otherwise be silently rewritten to [-2032, 2032) before we
      * had a chance to inspect the two unsafe edge sections.</p>
+     *
+     * <p>A MIGRATE result here is only a syntactic candidate. For a played
+     * world, callers must still scan saved sections/heightmaps and pass the
+     * result through {@link #resolveWorldInspection} because pre-v0.4 config
+     * was global and could have changed after this world was last played.</p>
      */
     public static Resolution classify(int rawMin, int rawMax) {
         long min = (long) rawMin & ~15L;
@@ -65,6 +77,8 @@ public final class LegacyWorldMigration {
         if (inspectBottom || inspectTop) {
             return new Resolution(
                 Status.INSPECT_EDGE_SECTIONS,
+                (int) min,
+                (int) max,
                 migratedMin,
                 migratedMax,
                 inspectBottom,
@@ -77,13 +91,15 @@ public final class LegacyWorldMigration {
             Status.MIGRATE,
             (int) min,
             (int) max,
+            (int) min,
+            (int) max,
             false,
             false,
-            "legacy range is fully inside the guarded envelope"
+            "legacy config is syntactically inside the guarded envelope; world evidence must still agree"
         );
     }
 
-    /** Finish an edge-section migration after the region scan. */
+    /** Finish the old edge-only check after the region scan. */
     public static Resolution resolveEdgeInspection(
         Resolution preliminary,
         boolean bottomEdgeHasMeaningfulData,
@@ -100,6 +116,8 @@ public final class LegacyWorldMigration {
         }
         return new Resolution(
             Status.MIGRATE,
+            preliminary.legacyMin,
+            preliminary.legacyMax,
             preliminary.migratedMin,
             preliminary.migratedMax,
             false,
@@ -108,7 +126,36 @@ public final class LegacyWorldMigration {
         );
     }
 
+    /**
+     * Resolve a played world's full region evidence against the migration
+     * candidate. This is the corruption-safety gate that prevents the current
+     * global config from being mistaken for per-world history.
+     */
+    public static Resolution resolveWorldInspection(
+        Resolution preliminary,
+        LegacyRegionScanner.WorldEvidence evidence
+    ) {
+        if (preliminary.status == Status.REFUSE) {
+            return preliminary;
+        }
+        if (evidence.meaningfulDataOutsideCandidate()) {
+            return refuse("saved legacy section/block-entity data exists outside candidate range ["
+                + preliminary.migratedMin + ", " + preliminary.migratedMax + ") at section Y="
+                + evidence.outsideSectionY() + "; the current global config is not trustworthy world history");
+        }
+        if (evidence.heightmapLayoutMismatch()) {
+            return refuse("saved legacy heightmap layout uses " + evidence.savedHeightmapLongs()
+                + " longs but raw config range [" + preliminary.legacyMin + ", " + preliminary.legacyMax
+                + ") expects " + evidence.expectedHeightmapLongs()
+                + "; the current global config disagrees with the world's saved vertical layout");
+        }
+        if (preliminary.status == Status.INSPECT_EDGE_SECTIONS) {
+            return resolveEdgeInspection(preliminary, false, false);
+        }
+        return preliminary;
+    }
+
     private static Resolution refuse(String reason) {
-        return new Resolution(Status.REFUSE, 0, 0, false, false, reason);
+        return new Resolution(Status.REFUSE, 0, 0, 0, 0, false, false, reason);
     }
 }

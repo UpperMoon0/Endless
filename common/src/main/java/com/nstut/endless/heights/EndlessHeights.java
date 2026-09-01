@@ -151,7 +151,8 @@ public final class EndlessHeights {
                 worldRoot,
                 resolution.migratedMin(),
                 resolution.migratedMax(),
-                resolution.legacyHeight()
+                resolution.legacyMin(),
+                resolution.legacyMax()
             );
         } catch (IOException | RuntimeException e) {
             throw migrationFailure("could not safely inspect legacy world data against the candidate range", e);

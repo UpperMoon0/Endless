@@ -52,19 +52,21 @@ If the config file is malformed, Endless uses defaults in memory and attempts to
 The config file expresses what you *want*; each v0.4+ world records the range it actually uses in its save (`data/endless_build_heights.dat`). On load — before any chunk is deserialized — the effective range is the union of the world's stored range and the config:
 
 - Widening the config expands the world.
-- Narrowing the config is rejected, because vanilla sizes the chunk section array from the current world height and skips saved section Y values that fall outside it.
+- Narrowing the config cannot shrink the persisted world range, because vanilla sizes the chunk section array from the current world height and skips saved section Y values that fall outside it.
 - An existing but unreadable/invalid persisted range is treated as a startup error rather than silently falling back to the current config.
 
-Played worlds created before v0.4 have no persisted range, so v0.4 performs a one-time migration gate **before any `ServerLevel` or chunk is loaded**. The raw legacy config is kept unchanged on disk until this classification succeeds:
+Played worlds created before v0.4 have no per-world persisted range. Their old `endless.json` was global, so the current raw config is only a **migration candidate**, not proof of the range with which this particular world was last saved. v0.4 therefore performs a one-time fail-closed migration gate **before any `ServerLevel` or chunk is loaded** and keeps the raw config unchanged on disk until that gate succeeds.
 
-- A legacy range fully inside `[-2032, 2032)` is adopted automatically.
-- A raw-edge range such as `[-2048, 2048)` causes every legacy region file (including dimensions) to be inspected for meaningful data in section `Y=-128` and/or `Y=127`. Empty/air-only edge sections may be discarded and the world migrates to the guarded envelope; non-air blocks, block entities, malformed edge palettes, or unreadable region data make startup fail closed.
-- A legacy range outside the signed-byte section-Y envelope, or a span greater than 4096 blocks, is not automatically reconstructable and startup is refused. Back up the world and use an explicit conversion path instead of forcing a narrower config.
-- A played legacy world whose old build-height config cannot be trusted is also refused rather than guessed.
+For every played pre-v0.4 world:
 
-Only after a successful classification may the config be normalized and the new world-persistent range be created. This prevents the first v0.4 launch from erasing the only evidence of the old layout or resaving chunks after silently dropping out-of-range sections.
+- The raw legacy config is first normalized without applying the new guard clamp. Ranges outside the signed-byte section-Y envelope `[-2048, 2048)`, spans greater than 4096 blocks, missing/untrusted config, or malformed/unreadable migration inputs are refused.
+- Every legacy dimension region file is then inspected with vanilla `RegionFile`/NBT readers. Saved section payloads or block entities outside the candidate range prove that the global config no longer describes this world's historical layout, so startup fails closed instead of loading a narrower section array.
+- Saved heightmap packing is checked against the raw legacy span. For example, a current `[-64, 320)` config expects 37 longs per 1.20.1 heightmap; a saved 64-long heightmap is evidence of a 4096-block historical span and causes migration to stop rather than guess.
+- The only sections v0.4 may intentionally discard are raw guard sections `Y=-128` and/or `Y=127` when migrating a legacy range that reached `-2048`/`2048`. Those sections are outside the safe v0.4 envelope and are discarded only when their block palette is provably air-only and no block entity occupies them. Meaningful or malformed edge data fails closed.
 
-In multiplayer the world's range is what the server syncs to clients. Clients without the mod can join servers whose range is vanilla; on servers with an extended range they are disconnected with a clear message instead of loading mismatched chunk data.
+Only after all saved-world evidence agrees with the candidate may Endless apply the effective range, normalize the config, and create the new world-persistent range. This prevents a changed global config from making old high/low sections unreachable and then permanently erasing them on resave.
+
+In multiplayer the world's range is what the server syncs to clients. Every **remote login connection** starts from the vanilla baseline when `ClientHandshakePacketListenerImpl` is constructed; this works for both online- and offline-mode servers. Fabric/Forge login sync may then overwrite that baseline before `ClientboundLoginPacket` constructs the client world. Integrated-server memory connections keep the shared server-authoritative range. Clients without the mod can join servers whose range is vanilla; on servers with an extended range they are disconnected with a clear message instead of loading mismatched chunk data.
 
 ### Example: Tall World
 

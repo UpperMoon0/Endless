@@ -3,10 +3,12 @@ package com.nstut.endless.fabric;
 import com.nstut.endless.Endless;
 import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.network.EndlessNetworking;
+import com.nstut.endless.testing.LiveJoinTest;
 import io.netty.buffer.Unpooled;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientLoginConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientLoginNetworking;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -128,6 +130,10 @@ public class EndlessFabric implements ModInitializer, ClientModInitializer, Dedi
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
             EndlessHeights.resetToLocalConfig());
+
+        if (LiveJoinTest.isArmed()) {
+            ClientTickEvents.END_CLIENT_TICK.register(client -> LiveJoinTest.tick());
+        }
     }
 
     @Override

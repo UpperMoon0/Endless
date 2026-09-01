@@ -3,9 +3,11 @@ package com.nstut.endless.forge;
 import com.nstut.endless.Endless;
 import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.network.EndlessNetworking;
+import com.nstut.endless.testing.LiveJoinTest;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.server.ServerAboutToStartEvent;
 import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -84,5 +86,13 @@ public class EndlessForge {
     public void onServerStarted(ServerStartedEvent event) {
         // Worlds are loaded: mirror the effective range into SavedData.
         EndlessHeights.syncWorldData(event.getServer());
+    }
+
+    @SubscribeEvent
+    public void onClientTick(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) {
+            return;
+        }
+        LiveJoinTest.tick();
     }
 }

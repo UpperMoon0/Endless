@@ -2,6 +2,22 @@ plugins {
     id 'com.github.johnrengelman.shadow'
 }
 
+loom {
+    runs {
+        liveJoinTestClient {
+            client()
+            runDir("run/live-join/client")
+            property "endless.liveJoinTest", "true"
+            programArgs "--quickPlayMultiplayer", "127.0.0.1:25575"
+        }
+        liveJoinTestServer {
+            server()
+            runDir("run/live-join/server")
+            programArg "nogui"
+        }
+    }
+}
+
 architectury {
     platformSetupLoomIde()
     fabric()

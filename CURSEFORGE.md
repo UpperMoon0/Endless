@@ -64,14 +64,15 @@ For a good balance of freedom and performance:
 
 ### World persistence and old-world safety
 
-Each v0.4+ world records the build range it uses. Widening the config expands that world; narrowing the config is rejected so saved sections above or below a smaller range are never silently dropped.
+Each v0.4+ world records the build range it uses. Widening the config expands that world; a later narrower config cannot shrink the persisted world range, so saved sections above or below it never become unreachable.
 
-Played pre-v0.4 worlds have no persisted range, so their first v0.4 startup is classified before any chunk is loaded:
+Played pre-v0.4 worlds have no per-world range. Their old `endless.json` was global, so the current config is only a candidate and may not match the range with which this particular world was last saved. Before any chunk loads, v0.4 checks the candidate against the actual region data:
 
-- A legacy range already inside `[-2032, 2032)` migrates automatically.
-- A raw-edge range such as `[-2048, 2048)` is scanned for meaningful data in legacy section `Y=-128` / `Y=127`. Air-only edge sections may be clamped away; non-air blocks, block entities, malformed edge data, or unreadable region files stop startup instead of discarding data.
-- Legacy ranges outside the signed-byte section-Y envelope or wider than 4096 blocks are refused and require an explicit conversion path.
-- Endless preserves the raw legacy config until this decision is complete, then writes the new persisted world range only after migration succeeds.
+- Every saved section payload and block entity is checked against the candidate range. A saved section outside it — even an air-only normal section, which vanilla writes as part of the historical section array — proves the world was saved with a wider layout and stops startup.
+- Saved heightmap packing is checked against the raw legacy span. A narrow current config paired with a 64-long heightmap is treated as conflicting historical evidence and fails closed.
+- A raw-edge range such as `[-2048, 2048)` may clamp away only section `Y=-128` / `Y=127`, and only when those guard sections are provably air-only and contain no block entity. Meaningful, malformed, or unreadable edge data stops startup.
+- Legacy ranges outside the signed-byte section-Y envelope, spans wider than 4096 blocks, missing/untrusted legacy config, or unreadable region data are refused and require an explicit conversion/recovery path.
+- Endless preserves the raw legacy config until the decision is complete, then creates the new persisted world range only after migration succeeds.
 
 Back up important old worlds before upgrading. If Endless refuses a legacy world, do not force a narrower range and resave it; convert or recover the old layout first.
 

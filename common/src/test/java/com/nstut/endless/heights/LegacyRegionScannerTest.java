@@ -51,6 +51,57 @@ class LegacyRegionScannerTest {
         assertTrue(usage.bottomHasMeaningfulData());
     }
 
+    @Test
+    void changedGlobalConfigCannotHideMeaningfulSavedSection() {
+        // Current/raw config says vanilla [-64,320), but this world contains a
+        // saved section around block Y=592 from an older wider configuration.
+        CompoundTag chunk = chunkWithSection(37, "minecraft:stone");
+        LegacyRegionScanner.WorldEvidence evidence =
+            LegacyRegionScanner.inspectChunkAgainstCandidate(chunk, -64, 320, 384);
+
+        assertTrue(evidence.meaningfulDataOutsideCandidate());
+        assertEquals(37, evidence.outsideSectionY());
+        assertTrue(evidence.blocksMigration());
+    }
+
+    @Test
+    void saved64LongHeightmapRejectsNarrowCurrentConfig() {
+        CompoundTag chunk = chunkWithSection(0, "minecraft:stone");
+        CompoundTag heightmaps = new CompoundTag();
+        heightmaps.putLongArray("MOTION_BLOCKING", new long[64]);
+        chunk.put("Heightmaps", heightmaps);
+
+        LegacyRegionScanner.WorldEvidence evidence =
+            LegacyRegionScanner.inspectChunkAgainstCandidate(chunk, -64, 320, 384);
+
+        assertTrue(evidence.heightmapLayoutMismatch());
+        assertEquals(64, evidence.savedHeightmapLongs());
+        assertEquals(LegacyRegionScanner.heightmapStorageLongs(384), evidence.expectedHeightmapLongs());
+        assertTrue(evidence.blocksMigration());
+    }
+
+    @Test
+    void raw4096HistoryAccepts64LongHeightmapWhenGuardEdgesAreEmpty() {
+        CompoundTag chunk = chunkWithSection(0, "minecraft:stone");
+        CompoundTag heightmaps = new CompoundTag();
+        heightmaps.putLongArray("MOTION_BLOCKING", new long[64]);
+        chunk.put("Heightmaps", heightmaps);
+
+        LegacyRegionScanner.WorldEvidence evidence =
+            LegacyRegionScanner.inspectChunkAgainstCandidate(chunk, -2032, 2032, 4096);
+
+        assertFalse(evidence.heightmapLayoutMismatch());
+        assertFalse(evidence.meaningfulDataOutsideCandidate());
+        assertFalse(evidence.blocksMigration());
+    }
+
+    @Test
+    void vanillaHeightmapPackingLengthsMatchKnownLayouts() {
+        assertEquals(37, LegacyRegionScanner.heightmapStorageLongs(384));
+        assertEquals(52, LegacyRegionScanner.heightmapStorageLongs(4064));
+        assertEquals(64, LegacyRegionScanner.heightmapStorageLongs(4096));
+    }
+
     private static CompoundTag chunkWithSection(int sectionY, String blockName) {
         CompoundTag chunk = new CompoundTag();
         ListTag sections = new ListTag();

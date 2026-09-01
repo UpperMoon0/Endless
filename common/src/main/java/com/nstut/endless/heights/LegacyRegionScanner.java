@@ -28,8 +28,94 @@ final class LegacyRegionScanner {
     record EdgeUsage(boolean bottomHasMeaningfulData, boolean topHasMeaningfulData) {
     }
 
+    /**
+     * Evidence that the candidate range does not match the layout with which
+     * the chunk was saved. Sentinel values are -1 when the corresponding flag
+     * is false.
+     */
+    record WorldEvidence(
+        boolean meaningfulDataOutsideCandidate,
+        int outsideSectionY,
+        boolean heightmapLayoutMismatch,
+        int savedHeightmapLongs,
+        int expectedHeightmapLongs
+    ) {
+        static WorldEvidence none(int expectedHeightmapLongs) {
+            return new WorldEvidence(false, -1, false, -1, expectedHeightmapLongs);
+        }
+
+        boolean blocksMigration() {
+            return meaningfulDataOutsideCandidate || heightmapLayoutMismatch;
+        }
+    }
+
     static boolean hasPlayedRegionData(Path worldRoot) throws IOException {
         return !findRegionFiles(worldRoot).isEmpty();
+    }
+
+    /**
+     * Inspect every saved chunk in every dimension before accepting a
+     * pre-v0.4 migration candidate.
+     *
+     * <p>The candidate range is where v0.4 would construct its section array.
+     * Any meaningful saved section or block entity outside that range would be
+     * skipped by vanilla ChunkSerializer and therefore makes migration unsafe.
+     * Heightmaps are compared against the normalized raw legacy span (not the
+     * guard-clamped candidate), because their packed-array length is a useful
+     * historical clue: for example a 64-long 1.20.1 heightmap is incompatible
+     * with a current narrow config even when no outside section happens to
+     * contain non-air blocks.</p>
+     */
+    static WorldEvidence scanWorldAgainstCandidate(
+        Path worldRoot,
+        int candidateMin,
+        int candidateMax,
+        int expectedLegacyHeight
+    ) throws IOException {
+        int expectedHeightmapLongs = heightmapStorageLongs(expectedLegacyHeight);
+
+        for (Path regionPath : findRegionFiles(worldRoot)) {
+            Matcher matcher = REGION_FILE.matcher(regionPath.getFileName().toString());
+            if (!matcher.matches()) {
+                continue;
+            }
+
+            final int regionX;
+            final int regionZ;
+            try {
+                regionX = Integer.parseInt(matcher.group(1));
+                regionZ = Integer.parseInt(matcher.group(2));
+            } catch (NumberFormatException e) {
+                throw new IOException("Invalid region filename: " + regionPath, e);
+            }
+
+            try (RegionFile region = new RegionFile(regionPath, regionPath.getParent(), false)) {
+                for (int localX = 0; localX < 32; localX++) {
+                    for (int localZ = 0; localZ < 32; localZ++) {
+                        ChunkPos pos = new ChunkPos((regionX << 5) + localX, (regionZ << 5) + localZ);
+                        try (DataInputStream in = region.getChunkDataInputStream(pos)) {
+                            if (in == null) {
+                                continue;
+                            }
+                            CompoundTag chunk = NbtIo.read(in);
+                            if (chunk == null) {
+                                throw new IOException("Chunk " + pos + " in " + regionPath + " had no readable NBT root");
+                            }
+
+                            WorldEvidence evidence = inspectChunkAgainstCandidate(
+                                chunk, candidateMin, candidateMax, expectedLegacyHeight);
+                            if (evidence.blocksMigration()) {
+                                return evidence;
+                            }
+                        } catch (RuntimeException e) {
+                            throw new IOException("Failed to inspect chunk " + pos + " in " + regionPath, e);
+                        }
+                    }
+                }
+            }
+        }
+
+        return WorldEvidence.none(expectedHeightmapLongs);
     }
 
     static EdgeUsage scanEdgeSections(Path worldRoot, boolean inspectBottom, boolean inspectTop) throws IOException {
@@ -118,6 +204,71 @@ final class LegacyRegionScanner {
         }
 
         return new EdgeUsage(bottom, top);
+    }
+
+    /** Package-private synthetic-NBT entry point for changed-config regressions. */
+    static WorldEvidence inspectChunkAgainstCandidate(
+        CompoundTag chunk,
+        int candidateMin,
+        int candidateMax,
+        int expectedLegacyHeight
+    ) {
+        if ((candidateMin & 15) != 0 || (candidateMax & 15) != 0 || candidateMin >= candidateMax) {
+            throw new IllegalArgumentException("candidate range must be non-empty and section-aligned");
+        }
+
+        int minSection = Math.floorDiv(candidateMin, 16);
+        int maxSectionExclusive = Math.floorDiv(candidateMax, 16);
+        int expectedHeightmapLongs = heightmapStorageLongs(expectedLegacyHeight);
+
+        ListTag sections = chunk.getList("sections", Tag.TAG_COMPOUND);
+        for (int i = 0; i < sections.size(); i++) {
+            CompoundTag section = sections.getCompound(i);
+            int sectionY = section.getByte("Y");
+            if ((sectionY < minSection || sectionY >= maxSectionExclusive)
+                && hasMeaningfulBlockStates(section)) {
+                return new WorldEvidence(true, sectionY, false, -1, expectedHeightmapLongs);
+            }
+        }
+
+        ListTag blockEntities = chunk.getList("block_entities", Tag.TAG_COMPOUND);
+        for (int i = 0; i < blockEntities.size(); i++) {
+            CompoundTag blockEntity = blockEntities.getCompound(i);
+            int sectionY = Math.floorDiv(blockEntity.getInt("y"), 16);
+            if (sectionY < minSection || sectionY >= maxSectionExclusive) {
+                return new WorldEvidence(true, sectionY, false, -1, expectedHeightmapLongs);
+            }
+        }
+
+        if (chunk.contains("Heightmaps", Tag.TAG_COMPOUND)) {
+            CompoundTag heightmaps = chunk.getCompound("Heightmaps");
+            for (String key : heightmaps.getAllKeys()) {
+                if (!heightmaps.contains(key, Tag.TAG_LONG_ARRAY)) {
+                    // A malformed persisted heightmap is not trustworthy
+                    // migration evidence. Fail closed rather than guessing.
+                    return new WorldEvidence(false, -1, true, -1, expectedHeightmapLongs);
+                }
+                int savedLongs = heightmaps.getLongArray(key).length;
+                if (savedLongs != expectedHeightmapLongs) {
+                    return new WorldEvidence(false, -1, true, savedLongs, expectedHeightmapLongs);
+                }
+            }
+        }
+
+        return WorldEvidence.none(expectedHeightmapLongs);
+    }
+
+    /**
+     * Vanilla 1.20.1 Heightmap uses SimpleBitStorage with
+     * bits=ceil(log2(height+1)), 256 values, and floor(64/bits) values/long.
+     */
+    static int heightmapStorageLongs(int height) {
+        if (height <= 0) {
+            throw new IllegalArgumentException("height must be positive");
+        }
+        int bits = 32 - Integer.numberOfLeadingZeros(height);
+        int valuesPerLong = 64 / bits;
+        return (256 + valuesPerLong - 1) / valuesPerLong;
     }
 
     private static boolean hasMeaningfulBlockStates(CompoundTag section) {

@@ -11,9 +11,11 @@ B. baseline-endless-vanilla-server — an Endless server whose world range is
    deliberately sends no login query for a vanilla range, so the client must
    enter the world on the vanilla baseline instead of its extended config.
 C. baseline-no-endless — a genuine vanilla server (official Mojang jar, no
-   Endless) with a client whose local config is extended. Neither loader's
-   Endless login exchange runs, so the client must still enter the world on
-   the vanilla baseline.
+   Endless) with a client whose local config is extended. The client is also
+   deliberately pre-seeded with applied=true and an extended effective range
+   before connecting. Neither loader's Endless login exchange runs, so the
+   every-connection constructor reset must restore the vanilla baseline even
+   on this online-mode=false server.
 
 In every scenario a successful join prints ENDLESS_LIVE_JOIN_TEST_PASS; a
 failed one prints ENDLESS_LIVE_JOIN_TEST_FAIL.
@@ -96,7 +98,7 @@ SCENARIOS = [
     ),
     Scenario(
         id="baseline-no-endless",
-        description="vanilla server (no Endless) + extended client config -> vanilla baseline",
+        description="vanilla server (no Endless) + stale extended state -> vanilla baseline",
         server_kind="vanilla",
         server_config=None,
         client_config=EXTENDED_BUILD_HEIGHT,
@@ -300,6 +302,9 @@ def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeo
     env["ENDLESS_TEST_EXPECTED_MIN"] = str(scenario.expected["minBuildHeight"])
     env["ENDLESS_TEST_EXPECTED_MAX"] = str(scenario.expected["maxBuildHeight"])
     env["ENDLESS_TEST_PORT"] = str(scenario.server_port)
+    env["ENDLESS_TEST_PRESEED_STALE"] = (
+        "true" if scenario.id == "baseline-no-endless" else "false"
+    )
 
     if scenario.server_kind == "vanilla":
         server_dir = root / module / "run" / "live-join" / "server"

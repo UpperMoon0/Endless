@@ -4,7 +4,6 @@ import com.nstut.endless.config.EndlessConfig;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.IOException;
@@ -18,12 +17,11 @@ import java.nio.file.Path;
  * <ul>
  *   <li>Dedicated/integrated servers: {@link #loadPersistedRange} runs before
  *       any ServerLevel exists (Fabric SERVER_STARTING / Forge
- *       ServerAboutToStart) and reads the range persisted in the world save
- *       directly from disk, so chunk deserialization sees the world's range,
- *       not a possibly-shrunk config. {@link #syncWorldData} then mirrors the
- *       effective range into the regular SavedData store after worlds load.
- *       The range only ever widens, so saved sections above and below the
- *       current world stay addressable.</li>
+ *       ServerAboutToStart). v0.4 worlds read their persisted range directly
+ *       from disk. Pre-v0.4 played worlds are classified before any chunk can
+ *       deserialize: safe legacy ranges migrate, raw edge sections are scanned
+ *       for meaningful data, and ambiguous/unrepresentable histories fail
+ *       closed instead of silently dropping sections.</li>
  *   <li>Remote clients: begin every remote connection with the vanilla range
  *       and adopt the server's range during the login phase only if the
  *       server provides one (Fabric via {@code ServerLoginNetworking}, Forge
@@ -31,11 +29,7 @@ import java.nio.file.Path;
  *       of the login phase ({@code ClientHandshakePacketListenerImpl
  *       .handleHello}) via {@link #applyVanillaBaselineForNewConnection}, and
  *       re-established defensively at the login packet via
- *       {@link #applyVanillaBaselineIfUnapplied}, so neither an extended
- *       local file config nor a range left over from a previous connection
- *       can leak into a world (a login-stage rejection may skip the
- *       disconnect hooks entirely, so a stale applied range must be cleared
- *       when the next connection begins rather than only when one ends).</li>
+ *       {@link #applyVanillaBaselineIfUnapplied}.</li>
  * </ul>
  */
 public final class EndlessHeights {
@@ -93,86 +87,106 @@ public final class EndlessHeights {
     }
 
     /**
-     * Apply the world's persisted range. Called before any ServerLevel is
-     * created: the saved {@code data/endless_build_heights.dat} is read raw
-     * from the world root, because the overworld's SavedData storage only
-     * becomes available after the world exists — too late for chunk
-     * deserialization, which uses the effective range to size section arrays.
+     * Apply the world's persisted or safely migrated range before any
+     * ServerLevel is created. This ordering is mandatory: vanilla
+     * ChunkSerializer allocates the section array from the current
+     * LevelHeightAccessor and skips saved sections whose absolute signed-byte Y
+     * falls outside that array. Continuing with an untrusted narrower range can
+     * therefore permanently delete legacy sections on the next save.
      */
     public static void loadPersistedRange(MinecraftServer server) {
         int[] saved = readSavedRange(server);
         EndlessConfig.BuildHeightConfig cfg = clampedFileConfig();
         int[] merged;
+
         if (saved == null) {
-            merged = new int[]{cfg.getMinBuildHeight(), cfg.getMaxBuildHeight()};
-            warnIfPrePersistenceWorld(server, cfg);
+            merged = classifyUnpersistedWorld(server, cfg);
         } else {
             merged = mergeRange(saved[0], saved[1], cfg.getMinBuildHeight(), cfg.getMaxBuildHeight());
             if (cfg.getMinBuildHeight() > saved[0] || cfg.getMaxBuildHeight() < saved[1]) {
                 System.err.println("Endless: config range [" + cfg.getMinBuildHeight() + ", " + cfg.getMaxBuildHeight()
                     + ") is narrower than this world's persisted range [" + saved[0] + ", " + saved[1]
-                    + "); keeping the wider world range. Saved chunks would be unreachable otherwise.");
+                    + "); keeping the wider world range. Saved sections would be unreachable otherwise.");
             }
         }
+
         applyEffective(merged[0], merged[1]);
+
+        // Only now is it safe to rewrite a clamped/aligned config. Before this
+        // point the raw file may be the only evidence of a pre-v0.4 world's
+        // historical range.
+        EndlessConfig.getInstance().saveNormalizedIfNeeded();
     }
 
-    /**
-     * First-launch ambiguity for pre-v0.4 worlds: versions before the world
-     * persistence existed wrote no {@code endless_build_heights.dat}, so
-     * Endless cannot know which range an existing world was actually played
-     * with. If the config has since been shrunk, chunks saved outside the new
-     * range are unreachable and the older section data would be mapped onto
-     * the wrong Y positions. The situation is unfixable from the mod side
-     * (there is no record to recover), so warn loudly instead of failing
-     * silently.
-     *
-     * <p>Only fires for worlds with actual played history: {@code level.dat}
-     * already exists for a brand-new world by the time the server starts, so
-     * the warning keys on chunk region files instead — a genuinely new world
-     * has written none at this point (spawn chunks are generated only after
-     * this hook).</p>
-     */
-    private static void warnIfPrePersistenceWorld(MinecraftServer server, EndlessConfig.BuildHeightConfig cfg) {
+    private static int[] classifyUnpersistedWorld(
+        MinecraftServer server,
+        EndlessConfig.BuildHeightConfig clampedConfig
+    ) {
+        Path worldRoot = server.getWorldPath(LevelResource.ROOT);
+        final boolean playedWorld;
         try {
-            Path regionDir = server.getWorldPath(new LevelResource("region"));
-            if (!hasRegionData(regionDir)) {
-                return;
-            }
-            System.err.println("Endless: MIGRATION WARNING - this world was created before Endless persisted its "
-                + "build range (no data/" + EndlessWorldData.DATA_NAME + ".dat found), so it may have been played "
-                + "with a different range than the current config [" + cfg.getMinBuildHeight() + ", "
-                + cfg.getMaxBuildHeight() + "). If this world previously used a wider range, set the config back "
-                + "to that wider range BEFORE generating or loading chunks, or saved sections outside the range "
-                + "become unreachable.");
-        } catch (RuntimeException e) {
-            // Never let the warning path break startup.
+            playedWorld = LegacyRegionScanner.hasPlayedRegionData(worldRoot);
+        } catch (IOException e) {
+            throw migrationFailure("could not inspect the world for region files", e);
         }
+
+        if (!playedWorld) {
+            return new int[]{clampedConfig.getMinBuildHeight(), clampedConfig.getMaxBuildHeight()};
+        }
+
+        EndlessConfig.BuildHeightConfig raw = EndlessConfig.getInstance().getRawLoadedBuildHeight();
+        if (raw == null) {
+            throw migrationFailure(
+                "played pre-v0.4 world has no persisted range and no trustworthy raw buildHeight config. "
+                    + "Endless will not guess a narrower section layout because vanilla would silently skip "
+                    + "out-of-range saved sections on load. Restore the legacy config or convert the world explicitly.",
+                null
+            );
+        }
+
+        LegacyWorldMigration.Resolution resolution = LegacyWorldMigration.classify(
+            raw.getMinBuildHeight(), raw.getMaxBuildHeight());
+        if (resolution.status() == LegacyWorldMigration.Status.REFUSE) {
+            throw migrationFailure(resolution.reason(), null);
+        }
+
+        if (resolution.status() == LegacyWorldMigration.Status.INSPECT_EDGE_SECTIONS) {
+            final LegacyRegionScanner.EdgeUsage edgeUsage;
+            try {
+                edgeUsage = LegacyRegionScanner.scanEdgeSections(
+                    worldRoot, resolution.inspectBottomEdge(), resolution.inspectTopEdge());
+            } catch (IOException e) {
+                throw migrationFailure("could not safely inspect legacy edge sections", e);
+            }
+            resolution = LegacyWorldMigration.resolveEdgeInspection(
+                resolution,
+                edgeUsage.bottomHasMeaningfulData(),
+                edgeUsage.topHasMeaningfulData()
+            );
+            if (resolution.status() == LegacyWorldMigration.Status.REFUSE) {
+                throw migrationFailure(resolution.reason(), null);
+            }
+        }
+
+        System.err.println("Endless: safely classified pre-v0.4 world. Raw legacy config ["
+            + raw.getMinBuildHeight() + ", " + raw.getMaxBuildHeight() + ") -> initial persisted range ["
+            + resolution.migratedMin() + ", " + resolution.migratedMax() + ").");
+        return new int[]{resolution.migratedMin(), resolution.migratedMax()};
     }
 
-    /**
-     * Played-world evidence: at least one chunk region file. An unplayed
-     * world has no {@code region/*.mca} yet, which keeps brand-new worlds
-     * silent even though their {@code level.dat} already exists.
-     */
-    private static boolean hasRegionData(Path regionDir) {
-        if (!Files.isDirectory(regionDir)) {
-            return false;
-        }
-        try (var stream = Files.list(regionDir)) {
-            return stream.anyMatch(file -> {
-                String name = file.getFileName().toString();
-                return name.startsWith("r.") && name.endsWith(".mca");
-            });
-        } catch (IOException e) {
-            return false;
-        }
+    private static IllegalStateException migrationFailure(String reason, Throwable cause) {
+        String message = "Endless: REFUSING TO LOAD LEGACY WORLD - " + reason
+            + " No chunks have been loaded by Endless at this migration gate. Back up the world before changing "
+            + "anything; automatic startup is blocked to prevent irreversible section loss.";
+        System.err.println(message);
+        return cause == null ? new IllegalStateException(message) : new IllegalStateException(message, cause);
     }
 
     /**
      * Mirror the effective range into the regular SavedData store so it is
      * checkpointed with the world save. Call after worlds are loaded; reading
-     * at startup is handled by {@link #loadPersistedRange}.
+     * and legacy classification at startup are handled by
+     * {@link #loadPersistedRange}.
      */
     public static void syncWorldData(MinecraftServer server) {
         EndlessWorldData data = server.overworld().getDataStorage()
@@ -184,30 +198,39 @@ public final class EndlessHeights {
         data.setDirty();
     }
 
+    /**
+     * Read v0.4+ world metadata. An existing but unreadable/out-of-envelope
+     * range is a hard failure: treating it as "missing" would re-enter legacy
+     * migration and could replace authoritative world layout metadata with the
+     * current file config.
+     */
     private static int[] readSavedRange(MinecraftServer server) {
+        Path file = server.getWorldPath(new LevelResource("data"))
+            .resolve(EndlessWorldData.DATA_NAME + ".dat");
+        if (!Files.isRegularFile(file)) {
+            return null;
+        }
+
         try {
-            // getWorldPath: the overworld lives at the world root, and the
-            // range must be readable before any ServerLevel (and its
-            // DimensionDataStorage) exists.
-            Path file = server.getWorldPath(new LevelResource("data"))
-                .resolve(EndlessWorldData.DATA_NAME + ".dat");
-            if (!Files.isRegularFile(file)) {
-                return null;
-            }
             CompoundTag root = NbtIo.readCompressed(file.toFile());
             CompoundTag data = root.getCompound("data");
             if (!data.contains("MinBuildHeight") || !data.contains("MaxBuildHeight")) {
-                return null;
+                throw new IOException("persisted range file is missing MinBuildHeight/MaxBuildHeight");
             }
-            EndlessConfig.BuildHeightConfig tmp = new EndlessConfig.BuildHeightConfig();
-            tmp.setMinBuildHeight(data.getInt("MinBuildHeight"));
-            tmp.setMaxBuildHeight(data.getInt("MaxBuildHeight"));
-            tmp.clamp();
-            return new int[]{tmp.getMinBuildHeight(), tmp.getMaxBuildHeight()};
+
+            int savedMin = data.getInt("MinBuildHeight");
+            int savedMax = data.getInt("MaxBuildHeight");
+            EndlessConfig.BuildHeightConfig normalized = new EndlessConfig.BuildHeightConfig();
+            normalized.setMinBuildHeight(savedMin);
+            normalized.setMaxBuildHeight(savedMax);
+            normalized.clamp();
+            if (normalized.getMinBuildHeight() != savedMin || normalized.getMaxBuildHeight() != savedMax) {
+                throw new IOException("persisted range [" + savedMin + ", " + savedMax
+                    + ") is not an aligned v0.4-safe range");
+            }
+            return new int[]{savedMin, savedMax};
         } catch (IOException | RuntimeException e) {
-            System.err.println("Endless: could not read persisted build range ("
-                + e.getMessage() + "); falling back to file config");
-            return null;
+            throw migrationFailure("could not trust persisted build range at " + file + ": " + e.getMessage(), e);
         }
     }
 
@@ -216,16 +239,7 @@ public final class EndlessHeights {
      * the login-phase start ({@code ClientHandshakePacketListenerImpl
      * .handleHello}), which every connection passes through before either
      * loader's Endless login exchange, so the reset cannot be skipped by a
-     * mid-login rejection: a range applied during a previous connection's
-     * login handshake (where the player never existed and the logout hook
-     * never ran) must not survive into the next connection, where the
-     * {@code !applied} guard would wrongly treat it as authoritative.
-     *
-     * <p>Singleplayer is excluded: the integrated server owns the effective
-     * range and has already applied the world's persisted range before the
-     * client's login phase starts, so the shared static must not be
-     * clobbered. The server's range still overwrites this baseline during
-     * login whenever the Endless login exchange runs.</p>
+     * mid-login rejection.
      *
      * @param singleplayer true when this connection is to an integrated
      *                     server in the same JVM
@@ -239,20 +253,10 @@ public final class EndlessHeights {
 
     /**
      * Force the vanilla build range when no authoritative range has been
-     * applied. Remote logins must never enter the world on the local file
-     * config: a server without Endless (both loaders accept the connection)
-     * or an Endless server with a vanilla world range (Fabric sends no login
-     * query for it) delivers no authoritative range, and a client with an
-     * extended local config would otherwise size its section arrays for a
-     * layout the server never uses. Singleplayer is unaffected: the
-     * integrated/dedicated server calls {@link #loadPersistedRange} before
-     * the client login completes, so {@code applied} is already true and
-     * this method is a no-op there.
-     *
-     * <p>Kept as a final fallback behind
+     * applied. Kept as a final fallback behind
      * {@link #applyVanillaBaselineForNewConnection}: called from the client
-     * login-packet hook, immediately before the client world is constructed
-     * and strictly after any Endless login-phase sync has run.</p>
+     * login-packet hook immediately before the client world is constructed and
+     * strictly after any Endless login-phase sync has run.
      */
     public static void applyVanillaBaselineIfUnapplied() {
         if (!applied) {
@@ -260,10 +264,7 @@ public final class EndlessHeights {
         }
     }
 
-    /**
-     * Apply an authoritative range (from world data or a server sync packet).
-     * Values are snapped to section boundaries and clamped to the envelope.
-     */
+    /** Apply an authoritative, aligned, guarded range. */
     public static void applyEffective(int min, int max) {
         EndlessConfig.BuildHeightConfig tmp = new EndlessConfig.BuildHeightConfig();
         tmp.setMinBuildHeight(min);
@@ -274,10 +275,7 @@ public final class EndlessHeights {
         applied = true;
     }
 
-    /**
-     * Drop the applied range so the local file config is used again; called on
-     * client disconnect before joining another server.
-     */
+    /** Drop the applied client range so the next connection re-establishes it. */
     public static void resetToLocalConfig() {
         applied = false;
     }

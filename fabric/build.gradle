@@ -12,7 +12,12 @@ loom {
             // flakiness on hosted runners.
             vmArg "-Xmx2G"
             property "endless.liveJoinTest", "true"
-            programArgs "--quickPlayMultiplayer", "127.0.0.1:25575"
+            // Expected effective range and server port come from the harness
+            // (tools/live_join_test.py) so one run config serves every
+            // live-join scenario; defaults match the extended-server case.
+            property "endless.liveJoinTest.expectedMin", System.getenv('ENDLESS_TEST_EXPECTED_MIN') ?: '-1024'
+            property "endless.liveJoinTest.expectedMax", System.getenv('ENDLESS_TEST_EXPECTED_MAX') ?: '1024'
+            programArgs "--quickPlayMultiplayer", "127.0.0.1:${System.getenv('ENDLESS_TEST_PORT') ?: '25575'}"
         }
         liveJoinTestServer {
             server()

@@ -24,9 +24,16 @@ import java.nio.file.Path;
  *       effective range into the regular SavedData store after worlds load.
  *       The range only ever widens, so saved sections above and below the
  *       current world stay addressable.</li>
- *   <li>Remote clients: received from the server during the login phase on
- *       both loaders (Fabric via {@code ServerLoginNetworking}, Forge via a
- *       Forge login packet); reset to the local config on disconnect.</li>
+ *   <li>Remote clients: begin every remote login with the vanilla range and
+ *       adopt the server's range during the login phase only if the server
+ *       provides one (Fabric via {@code ServerLoginNetworking}, Forge via a
+ *       Forge login packet); reset to the local config on disconnect. The
+ *       vanilla baseline is established by
+ *       {@link #applyVanillaBaselineIfUnapplied} at the first login packet,
+ *       so an extended local file config can never leak onto a server that
+ *       provides no Endless range (vanilla server, or an Endless server whose
+ *       world is vanilla — the Fabric server deliberately sends no login
+ *       query for a vanilla range).</li>
  * </ul>
  */
 public final class EndlessHeights {
@@ -117,20 +124,46 @@ public final class EndlessHeights {
      * the wrong Y positions. The situation is unfixable from the mod side
      * (there is no record to recover), so warn loudly instead of failing
      * silently.
+     *
+     * <p>Only fires for worlds with actual played history: {@code level.dat}
+     * already exists for a brand-new world by the time the server starts, so
+     * the warning keys on chunk region files instead — a genuinely new world
+     * has written none at this point (spawn chunks are generated only after
+     * this hook).</p>
      */
     private static void warnIfPrePersistenceWorld(MinecraftServer server, EndlessConfig.BuildHeightConfig cfg) {
         try {
-            Path levelDat = server.getWorldPath(new LevelResource("level.dat"));
-            if (Files.isRegularFile(levelDat)) {
-                System.err.println("Endless: MIGRATION WARNING - this world was created before Endless persisted its "
-                    + "build range (no data/" + EndlessWorldData.DATA_NAME + ".dat found), so it may have been played "
-                    + "with a different range than the current config [" + cfg.getMinBuildHeight() + ", "
-                    + cfg.getMaxBuildHeight() + "). If this world previously used a wider range, set the config back "
-                    + "to that wider range BEFORE generating or loading chunks, or saved sections outside the range "
-                    + "become unreachable.");
+            Path regionDir = server.getWorldPath(new LevelResource("region"));
+            if (!hasRegionData(regionDir)) {
+                return;
             }
+            System.err.println("Endless: MIGRATION WARNING - this world was created before Endless persisted its "
+                + "build range (no data/" + EndlessWorldData.DATA_NAME + ".dat found), so it may have been played "
+                + "with a different range than the current config [" + cfg.getMinBuildHeight() + ", "
+                + cfg.getMaxBuildHeight() + "). If this world previously used a wider range, set the config back "
+                + "to that wider range BEFORE generating or loading chunks, or saved sections outside the range "
+                + "become unreachable.");
         } catch (RuntimeException e) {
             // Never let the warning path break startup.
+        }
+    }
+
+    /**
+     * Played-world evidence: at least one chunk region file. An unplayed
+     * world has no {@code region/*.mca} yet, which keeps brand-new worlds
+     * silent even though their {@code level.dat} already exists.
+     */
+    private static boolean hasRegionData(Path regionDir) {
+        if (!Files.isDirectory(regionDir)) {
+            return false;
+        }
+        try (var stream = Files.list(regionDir)) {
+            return stream.anyMatch(file -> {
+                String name = file.getFileName().toString();
+                return name.startsWith("r.") && name.endsWith(".mca");
+            });
+        } catch (IOException e) {
+            return false;
         }
     }
 
@@ -173,6 +206,28 @@ public final class EndlessHeights {
             System.err.println("Endless: could not read persisted build range ("
                 + e.getMessage() + "); falling back to file config");
             return null;
+        }
+    }
+
+    /**
+     * Force the vanilla build range when no authoritative range has been
+     * applied. Remote logins must never enter the world on the local file
+     * config: a server without Endless (both loaders accept the connection)
+     * or an Endless server with a vanilla world range (Fabric sends no login
+     * query for it) delivers no authoritative range, and a client with an
+     * extended local config would otherwise size its section arrays for a
+     * layout the server never uses. Singleplayer is unaffected: the
+     * integrated/dedicated server calls {@link #loadPersistedRange} before
+     * the client login completes, so {@code applied} is already true and
+     * this method is a no-op there.
+     *
+     * <p>Called from the client login-packet hook, immediately before the
+     * client world is constructed and strictly after any Endless login-phase
+     * sync has run.</p>
+     */
+    public static void applyVanillaBaselineIfUnapplied() {
+        if (!applied) {
+            applyEffective(VANILLA_MIN_BUILD_HEIGHT, VANILLA_MAX_BUILD_HEIGHT);
         }
     }
 

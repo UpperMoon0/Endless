@@ -32,12 +32,22 @@ import net.minecraft.world.level.Level;
 public final class LiveJoinTest {
 
     /**
-     * Server-side config baked into the live-join test runner. The test server
-     * writes an {@code endless.json} with this range; the test client uses
-     * vanilla config and must end up with these bounds after joining.
+     * Expected range baked into the live-join test scenarios. Scenario A
+     * (extended server, vanilla client config) asserts the server's extended
+     * range; the vanilla-baseline scenarios (B: Endless server with a vanilla
+     * world range, C: server without Endless) assert the vanilla range with
+     * an extended client config. The harness passes the expected range via
+     * system properties; the defaults match scenario A, and any other value
+     * means the sync was skipped, the wrong packet was sent, or the client's
+     * local config leaked through.
      */
-    public static final int EXPECTED_MIN_BUILD_HEIGHT = -1024;
-    public static final int EXPECTED_MAX_BUILD_HEIGHT = 1024;
+    public static final int DEFAULT_EXPECTED_MIN_BUILD_HEIGHT = -1024;
+    public static final int DEFAULT_EXPECTED_MAX_BUILD_HEIGHT = 1024;
+
+    private static final int EXPECTED_MIN_BUILD_HEIGHT =
+        intProperty("endless.liveJoinTest.expectedMin", DEFAULT_EXPECTED_MIN_BUILD_HEIGHT);
+    private static final int EXPECTED_MAX_BUILD_HEIGHT =
+        intProperty("endless.liveJoinTest.expectedMax", DEFAULT_EXPECTED_MAX_BUILD_HEIGHT);
 
     public static final String PASS_MARKER = "ENDLESS_LIVE_JOIN_TEST_PASS";
     public static final String FAIL_MARKER = "ENDLESS_LIVE_JOIN_TEST_FAIL";
@@ -51,6 +61,19 @@ public final class LiveJoinTest {
     private static int ticksWithLevel;
 
     private LiveJoinTest() {
+    }
+
+    private static int intProperty(String key, int fallback) {
+        String raw = System.getProperty(key);
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            System.err.println("Endless: invalid " + key + " value '" + raw + "'; using " + fallback);
+            return fallback;
+        }
     }
 
     public static boolean isArmed() {

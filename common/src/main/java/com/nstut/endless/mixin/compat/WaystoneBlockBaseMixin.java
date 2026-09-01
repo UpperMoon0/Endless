@@ -1,6 +1,6 @@
 package com.nstut.endless.mixin.compat;
 
-import com.nstut.endless.config.EndlessConfig;
+import com.nstut.endless.heights.EndlessHeights;
 import net.minecraft.world.level.Level;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
@@ -15,7 +15,9 @@ public abstract class WaystoneBlockBaseMixin {
      * @author Endless
      * @reason Waystones uses level.getHeight() which returns dimension height (384).
      * With expanded build limits, this prevents placement above the vanilla max.
-     * Replace with Endless config maxBuildHeight.
+     * Replace with the effective build range's max: the world-persisted,
+     * possibly server-authoritative range, not the live file config (which
+     * may have been shrunk after the world was created).
      */
     @Redirect(
         method = "getStateForPlacement",
@@ -23,6 +25,6 @@ public abstract class WaystoneBlockBaseMixin {
         require = 0
     )
     private int redirectGetHeight(Level level) {
-        return EndlessConfig.getInstance().getBuildHeight().getMaxBuildHeight();
+        return EndlessHeights.getMaxBuildHeight();
     }
 }

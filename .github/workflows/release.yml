@@ -58,10 +58,30 @@ jobs:
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
           echo "value=$current" >> "$GITHUB_OUTPUT"
 
-  verify:
-    name: Regression tests
+  preflight:
+    name: Release preflight
     needs: version-change
     if: needs.version-change.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify release changelog exists before building
+        shell: bash
+        env:
+          MOD_VERSION: ${{ needs.version-change.outputs.value }}
+        run: |
+          set -euo pipefail
+          # Fails in seconds instead of after the full test/build/live-join
+          # pipeline. Changelog files are v-prefixed (changelogs/v0.4.txt).
+          changelog_path="changelogs/v${MOD_VERSION}.txt"
+          [[ -f "$changelog_path" ]] || { echo "Missing release changelog: $changelog_path" >&2; exit 1; }
+          [[ -s "$changelog_path" ]] || { echo "Empty release changelog: $changelog_path" >&2; exit 1; }
+          echo "Release changelog found: $changelog_path"
+
+  verify:
+    name: Regression tests
+    needs: preflight
+    if: needs.preflight.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -171,7 +191,9 @@ jobs:
         run: |
           set -euo pipefail
           [[ -n "${CURSEFORGE_API_TOKEN:-}" ]] || { echo 'Missing required GitHub secret: CURSEFORGE_API_TOKEN' >&2; exit 1; }
-          changelog_path="changelogs/${MOD_VERSION}.txt"
+          # Changelog files are v-prefixed (changelogs/v0.4.txt) while
+          # mod_version is not (0.4); the prefix must be added here.
+          changelog_path="changelogs/v${MOD_VERSION}.txt"
           [[ -f "$changelog_path" ]] || { echo "Missing release changelog: $changelog_path" >&2; exit 1; }
           if [[ "$LOADER_NAME" == Fabric ]]; then
             relations='{"projects":[{"slug":"architectury-api","type":"requiredDependency"},{"slug":"fabric-api","type":"requiredDependency"}]}'
@@ -255,7 +277,7 @@ jobs:
           tag_name: v${{ steps.version.outputs.value }}
           target_commitish: ${{ github.sha }}
           name: Endless v${{ steps.version.outputs.value }}
-          body_path: changelogs/${{ steps.version.outputs.value }}.txt
+          body_path: changelogs/v${{ steps.version.outputs.value }}.txt
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: artifacts/**/*.jar

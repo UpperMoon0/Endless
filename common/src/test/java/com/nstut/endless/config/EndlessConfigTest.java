@@ -3,6 +3,11 @@ package com.nstut.endless.config;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -35,10 +40,6 @@ class EndlessConfigTest {
 
     @Test
     void maxIsExclusiveSoEnvelopeTopIsY2031() {
-        // isOutsideBuildHeight treats maxBuildHeight as exclusive; the highest
-        // placeable block must be vanilla's DimensionType.MAX_Y (2031). The
-        // equality with DimensionType itself is pinned in EndlessEnvelopeTest,
-        // which bootstraps vanilla registries.
         assertEquals(2031, EndlessConfig.MAX_BUILD_HEIGHT_MAX - 1);
     }
 
@@ -67,8 +68,6 @@ class EndlessConfigTest {
 
     @Test
     void clampSurvivesIntegerMaxValue() {
-        // (2147483647 + 15) overflows int and would turn negative, silently
-        // resetting the config; alignment must use long math.
         EndlessConfig.BuildHeightConfig config = new EndlessConfig.BuildHeightConfig();
         config.setMinBuildHeight(Integer.MIN_VALUE);
         config.setMaxBuildHeight(Integer.MAX_VALUE);
@@ -105,5 +104,31 @@ class EndlessConfigTest {
         EndlessConfig loaded = gson.fromJson(legacyJson, EndlessConfig.class);
         loaded.getBuildHeight().clamp();
         assertEquals(624, loaded.getBuildHeight().getMaxBuildHeight());
+    }
+
+    @Test
+    void rawLegacyConfigIsNotOverwrittenBeforeMigrationClassification(@TempDir Path tempDir) throws IOException {
+        Path configFile = tempDir.resolve("endless.json");
+        String legacyJson = "{\n"
+            + "  \"buildHeight\": {\n"
+            + "    \"minBuildHeight\": -2048,\n"
+            + "    \"maxBuildHeight\": 2048\n"
+            + "  }\n"
+            + "}\n";
+        Files.writeString(configFile, legacyJson);
+
+        EndlessConfig config = new EndlessConfig();
+        config.load(tempDir);
+
+        // Runtime access is safe immediately, but the disk evidence remains
+        // untouched until EndlessHeights has classified the world.
+        assertEquals(-2032, config.getBuildHeight().getMinBuildHeight());
+        assertEquals(2032, config.getBuildHeight().getMaxBuildHeight());
+        assertEquals(legacyJson, Files.readString(configFile));
+
+        EndlessConfig.BuildHeightConfig raw = config.getRawLoadedBuildHeight();
+        assertNotNull(raw);
+        assertEquals(-2048, raw.getMinBuildHeight());
+        assertEquals(2048, raw.getMaxBuildHeight());
     }
 }

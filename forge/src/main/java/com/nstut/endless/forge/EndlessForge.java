@@ -4,7 +4,6 @@ import com.nstut.endless.Endless;
 import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.testing.LiveJoinTest;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.server.ServerAboutToStartEvent;
@@ -58,6 +57,9 @@ public class EndlessForge {
         FMLJavaModLoadingContext.get().getModEventBus().addListener(this::clientSetup);
 
         MinecraftForge.EVENT_BUS.register(this);
+        // Client-only handlers (ClientPlayerNetworkEvent etc.) must not be
+        // loaded on a dedicated server.
+        EndlessForgeClient.register();
 
         channel = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(Endless.MOD_ID, "main"),
@@ -128,14 +130,10 @@ public class EndlessForge {
     }
 
     @SubscribeEvent
-    public void onClientLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
-        // Mirror the Fabric client: drop the applied range so the local file
-        // config is used again when joining the next server.
-        EndlessHeights.resetToLocalConfig();
-    }
-
-    @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent event) {
+        // TickEvent.ClientTickEvent carries no client classes and is safe to
+        // reference on a dedicated server; the live-join hook no-ops unless
+        // armed. Dist-unsafe handlers live in EndlessForgeClient.
         if (event.phase != TickEvent.Phase.END) {
             return;
         }

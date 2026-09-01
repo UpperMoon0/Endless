@@ -4,18 +4,13 @@
   "compatibilityLevel": "JAVA_17",
   "minVersion": "0.8",
   "client": [
-    "ViewAreaMixin"
+    "ViewAreaMixin",
+    "ClientHandshakePacketListenerMixin",
+    "ClientPacketListenerMixin"
   ],  "mixins": [
     "LevelHeightAccessorMixin",
-    "HeightmapMixin",
-    "SimpleBitStorageMixin",
-    "LevelChunkMixin",
-    "ChunkAccessMixin",
-    "SectionInitMixin",
-    "LayerLightSectionStorageMixin",
-    "BelowZeroRetrogenMixin",
     "LevelReaderMixin",
-    "ServerChunkCacheMixin",
+    "LevelChunkMixin",
     "compat.WaystoneBlockBaseMixin"
   ],
   "injectors": {

@@ -1,0 +1,40 @@
+import org.gradle.api.artifacts.repositories.MavenArtifactRepository
+
+// GitHub-hosted runners share outbound infrastructure. Maven Central may block
+// an egress IP with HTTP 403 when aggregate automated traffic crosses its abuse
+// threshold, even though this repository's build is ordinary dependency
+// resolution. CI uses Google's documented Maven Central mirror so our jobs do
+// not depend on the current reputation of a shared runner IP.
+//
+// This init script is installed only by GitHub Actions. Local developer builds
+// continue to use Loom/Gradle's normal repository configuration unchanged.
+
+def centralHosts = ['repo.maven.apache.org', 'repo1.maven.org'] as Set
+def mirrorUrl = uri('https://maven-central.storage-download.googleapis.com/maven2/')
+
+def redirectCentral = { repo ->
+    if (!(repo instanceof MavenArtifactRepository)) {
+        return
+    }
+
+    def current = repo.url
+    if (current != null && centralHosts.contains(current.host)) {
+        println "Endless CI: Maven Central ${current} -> ${mirrorUrl}"
+        repo.setUrl(mirrorUrl)
+    }
+}
+
+// Project/buildscript repositories, including repositories injected later by
+// Loom while each subproject is being configured.
+gradle.beforeProject { project ->
+    project.repositories.configureEach(redirectCentral)
+    project.buildscript.repositories.configureEach(redirectCentral)
+}
+
+// Cover settings/plugin/dependency-management repositories as well. The
+// current failure is from a Forge project configuration, but keeping all CI
+// resolution paths consistent prevents the same shared-IP failure elsewhere.
+gradle.settingsEvaluated { settings ->
+    settings.pluginManagement.repositories.configureEach(redirectCentral)
+    settings.dependencyResolutionManagement.repositories.configureEach(redirectCentral)
+}

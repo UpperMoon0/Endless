@@ -1,87 +1,287 @@
 name: Release
 
+# Releases are version-driven only. Merging to master must never implicitly
+# publish: the pipeline runs only when gradle.properties changes (which bumps
+# mod_version) and gates publishing behind tests, per-loader builds, the
+# real-client live join test, and CurseForge uploads.
 on:
   push:
     branches:
       - master
+    paths:
+      - gradle.properties
   workflow_dispatch:
 
 permissions:
   contents: write
 
-jobs:
-  release:
-    name: Build and release
-    runs-on: ubuntu-latest
+concurrency:
+  group: endless-release
+  cancel-in-progress: false
 
+jobs:
+  version-change:
+    name: Check mod version change
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.version.outputs.changed }}
+      value: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compare mod_version with the previous revision
+        id: version
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          read_version() {
+            sed -n 's/^mod_version[[:space:]]*=[[:space:]]*//p' \
+              | head -n1 | tr -d '\r' | xargs
+          }
+
+          current="$(read_version < gradle.properties)"
+          [[ "$current" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]] \
+            || { echo "Invalid mod_version: $current" >&2; exit 1; }
+
+          changed=false
+          if [[ -z "${BEFORE_SHA:-}" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+            changed=true
+          else
+            previous="$(git show "${BEFORE_SHA}:gradle.properties" | read_version)"
+            [[ "$current" != "$previous" ]] && changed=true
+            echo "mod_version: ${previous} -> ${current}"
+          fi
+
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "value=$current" >> "$GITHUB_OUTPUT"
+
+  preflight:
+    name: Release preflight
+    needs: version-change
+    if: needs.version-change.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the tag collision check must see existing tags.
+          fetch-depth: 0
+      - name: Verify release changelog exists before building
+        shell: bash
+        env:
+          MOD_VERSION: ${{ needs.version-change.outputs.value }}
+        run: |
+          set -euo pipefail
+          # Fails in seconds instead of after the full test/build/live-join
+          # pipeline. Changelog files are v-prefixed (changelogs/v0.4.txt).
+          changelog_path="changelogs/v${MOD_VERSION}.txt"
+          [[ -f "$changelog_path" ]] || { echo "Missing release changelog: $changelog_path" >&2; exit 1; }
+          [[ -s "$changelog_path" ]] || { echo "Empty release changelog: $changelog_path" >&2; exit 1; }
+          echo "Release changelog found: $changelog_path"
+      - name: Verify the version tag is free or points at this commit
+        shell: bash
+        env:
+          MOD_VERSION: ${{ needs.version-change.outputs.value }}
+        run: |
+          set -euo pipefail
+          # Fails before any build/upload. Without this, a manual dispatch on
+          # a commit whose version tag already exists elsewhere would upload
+          # the new JARs to CurseForge first and only fail afterwards in the
+          # release job. rev-list dereferences annotated tags to the commit.
+          tag="v${MOD_VERSION}"
+          if git show-ref --tags --verify --quiet "refs/tags/$tag"; then
+            tagged_commit="$(git rev-list -n 1 "refs/tags/$tag")"
+            if [[ "$tagged_commit" != "$GITHUB_SHA" ]]; then
+              echo "Tag $tag already points to $tagged_commit, not this commit ($GITHUB_SHA). Bump mod_version before releasing another commit." >&2
+              exit 1
+            fi
+            echo "Tag $tag already points at this commit; the release will reuse it."
+          else
+            echo "Tag $tag is free; the release will create it."
+          fi
+
+  verify:
+    name: Regression tests
+    needs: preflight
+    if: needs.preflight.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x gradlew
+      - name: Run regression tests
+        run: ./gradlew test --no-daemon --no-configuration-cache
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: fabric
+            project: fabric
+            pattern: 'endless-fabric-*.jar'
+          - platform: forge
+            project: forge
+            pattern: 'endless-forge-*.jar'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x gradlew
+      - name: Build loader jar
+        run: ./gradlew :${{ matrix.project }}:build --no-daemon --no-configuration-cache
+      - name: Select and inspect release jar
+        id: release_file
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t jars < <(find ${{ matrix.project }}/build/libs -maxdepth 1 -type f -name '${{ matrix.pattern }}' ! -name '*-sources.jar' ! -name '*-dev-shadow.jar' | sort)
+          [[ ${#jars[@]} -eq 1 ]] || { echo "Expected exactly one runnable ${{ matrix.platform }} JAR; found ${#jars[@]}" >&2; exit 1; }
+          jar_path="${jars[0]}"
+          echo "jar_path=$jar_path" >> "$GITHUB_OUTPUT"
+          echo "jar_name=$(basename "$jar_path")" >> "$GITHUB_OUTPUT"
+          # Packaging smoke check: loader metadata and the mixin config must
+          # be present in the published jar.
+          contents="$(jar tf "$jar_path")"
+          echo "$contents" | grep -q 'endless.mixins.json' || { echo "endless.mixins.json missing from $jar_path" >&2; exit 1; }
+          if [[ "${{ matrix.platform }}" == fabric ]]; then
+            echo "$contents" | grep -q '^fabric.mod.json$' || { echo "fabric.mod.json missing from $jar_path" >&2; exit 1; }
+          else
+            echo "$contents" | grep -q '^META-INF/mods.toml$' || { echo "META-INF/mods.toml missing from $jar_path" >&2; exit 1; }
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: endless-${{ matrix.platform }}
+          path: ${{ steps.release_file.outputs.jar_path }}
+          if-no-files-found: error
+
+  live-client:
+    name: Live client join gate
+    needs: verify
+    uses: ./.github/workflows/live-join-test.yml
+
+  publish-curseforge:
+    name: Publish ${{ matrix.platform }} to CurseForge
+    needs: [build, live-client]
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: fabric
+            loader_name: Fabric
+          - platform: forge
+            loader_name: Forge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: endless-${{ matrix.platform }}
+          path: curseforge-artifact
+      - name: Select release file
+        id: release_file
+        shell: bash
+        run: |
+          set -euo pipefail
+          mod_version="$(sed -n 's/^mod_version[[:space:]]*=[[:space:]]*//p' gradle.properties | head -n1 | tr -d '\r' | xargs)"
+          [[ "$mod_version" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]] || { echo "Invalid mod_version: $mod_version" >&2; exit 1; }
+          mapfile -t jars < <(find curseforge-artifact -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' ! -name '*-dev-shadow.jar' | sort)
+          [[ ${#jars[@]} -eq 1 ]] || { echo "Expected one runnable JAR; found ${#jars[@]}" >&2; exit 1; }
+          printf 'mod_version=%s\njar_path=%s\n' "$mod_version" "${jars[0]}" >> "$GITHUB_OUTPUT"
+      - name: Publish to CurseForge
+        shell: bash
+        env:
+          CURSEFORGE_API_TOKEN: ${{ secrets.CURSEFORGE_API_TOKEN }}
+          MOD_VERSION: ${{ steps.release_file.outputs.mod_version }}
+          JAR_PATH: ${{ steps.release_file.outputs.jar_path }}
+          LOADER_NAME: ${{ matrix.loader_name }}
+        run: |
+          set -euo pipefail
+          [[ -n "${CURSEFORGE_API_TOKEN:-}" ]] || { echo 'Missing required GitHub secret: CURSEFORGE_API_TOKEN' >&2; exit 1; }
+          # Changelog files are v-prefixed (changelogs/v0.4.txt) while
+          # mod_version is not (0.4); the prefix must be added here.
+          changelog_path="changelogs/v${MOD_VERSION}.txt"
+          [[ -f "$changelog_path" ]] || { echo "Missing release changelog: $changelog_path" >&2; exit 1; }
+          if [[ "$LOADER_NAME" == Fabric ]]; then
+            relations='{"projects":[{"slug":"architectury-api","type":"requiredDependency"},{"slug":"fabric-api","type":"requiredDependency"}]}'
+          else
+            relations='{"projects":[{"slug":"architectury-api","type":"requiredDependency"}]}'
+          fi
+          tags="$(jq -cn --arg mc "1.20.1" --arg loader "$LOADER_NAME" --arg java "Java 17" '[$mc,$loader,$java,"Client","Server"]')"
+          available="$(curl --fail-with-body --silent --show-error \
+            --retry 4 \
+            --retry-max-time 90 \
+            --connect-timeout 15 \
+            --max-time 45 \
+            --header "X-Api-Token: $CURSEFORGE_API_TOKEN" \
+            https://minecraft.curseforge.com/api/game/versions)"
+          while IFS= read -r tag; do jq -e --arg tag "$tag" 'any(.[]; .name == $tag)' <<< "$available" >/dev/null || { echo "Unknown CurseForge tag: $tag" >&2; exit 1; }; done < <(jq -r '.[]' <<< "$tags")
+          metadata="$(jq -cn --rawfile changelog "$changelog_path" --arg name "Endless ${MOD_VERSION} - ${LOADER_NAME} 1.20.1" --argjson tags "$tags" --argjson relations "$relations" '{changelog:$changelog,changelogType:"text",displayName:$name,gameVersionNames:$tags,releaseType:"release",relations:$relations}')"
+          response_file="$(mktemp)"
+          http_status="$(curl --silent --show-error \
+            --retry 4 \
+            --retry-max-time 90 \
+            --connect-timeout 15 \
+            --max-time 45 \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header "X-Api-Token: $CURSEFORGE_API_TOKEN" \
+            --form-string "metadata=$metadata" \
+            --form "file=@$JAR_PATH" \
+            https://minecraft.curseforge.com/api/projects/1252988/upload-file)"
+          response="$(<"$response_file")"
+          rm -f "$response_file"
+          if [[ "$http_status" =~ ^2 ]]; then
+            echo "Published $JAR_PATH as CurseForge file $(jq -er '.id' <<< "$response")."
+          elif grep -Eqi 'already|duplicate' <<< "$response"; then
+            echo "CurseForge already has $JAR_PATH; treating retry as successful."
+          else
+            echo "CurseForge upload failed for $JAR_PATH with HTTP $http_status: $response" >&2
+            exit 1
+          fi
+
+  release:
+    name: Tag and GitHub release
+    needs: [build, publish-curseforge, live-client]
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Make Gradle wrapper executable
-        run: chmod +x ./gradlew
-
       - name: Read mod version
         id: version
         shell: bash
         run: |
-          version="$(sed -n 's/^mod_version=//p' gradle.properties | tr -d '\r' | xargs)"
-          if [[ -z "$version" ]]; then
-            echo "mod_version is missing from gradle.properties" >&2
-            exit 1
-          fi
-          echo "value=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Run tests
-        run: ./gradlew test --no-daemon --no-configuration-cache
-
-      - name: Build release JARs
-        run: ./gradlew build --no-daemon --no-configuration-cache
-
-      - name: Verify release JARs
-        shell: bash
-        run: |
-          jars=(
-            "forge/build/libs/endless-forge-${{ steps.version.outputs.value }}.jar"
-            "fabric/build/libs/endless-fabric-${{ steps.version.outputs.value }}.jar"
-          )
-          for jar_path in "${jars[@]}"; do
-            if [[ ! -f "$jar_path" ]]; then
-              echo "Expected release JAR was not produced: $jar_path" >&2
-              exit 1
-            fi
-          done
-
-      - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: endless-${{ steps.version.outputs.value }}
-          path: |
-            forge/build/libs/endless-forge-${{ steps.version.outputs.value }}.jar
-            fabric/build/libs/endless-fabric-${{ steps.version.outputs.value }}.jar
-          if-no-files-found: error
-
+          value="$(sed -n 's/^mod_version[[:space:]]*=[[:space:]]*//p' gradle.properties | head -n1 | tr -d '\r' | xargs)"
+          echo "value=$value" >> "$GITHUB_OUTPUT"
       - name: Create version tag
         shell: bash
         run: |
           tag="v${{ steps.version.outputs.value }}"
           if git show-ref --tags --verify --quiet "refs/tags/$tag"; then
-            tagged_commit="$(git rev-list -n 1 "$tag")"
-            if [[ "$tagged_commit" != "$GITHUB_SHA" ]]; then
-              echo "Tag $tag already points to $tagged_commit. Bump mod_version before releasing another commit." >&2
-              exit 1
-            fi
+            # Preflight already verified the tag points at this commit;
+            # reuse it (retry of the same release).
             echo "Tag $tag already points to this commit; reusing it."
           else
             git config user.name "github-actions[bot]"
@@ -89,15 +289,18 @@ jobs:
             git tag -a "$tag" -m "Endless $tag" "$GITHUB_SHA"
             git push origin "$tag"
           fi
-
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.value }}
           target_commitish: ${{ github.sha }}
           name: Endless v${{ steps.version.outputs.value }}
+          body_path: changelogs/v${{ steps.version.outputs.value }}.txt
           generate_release_notes: true
           fail_on_unmatched_files: true
-          files: |
-            forge/build/libs/endless-forge-${{ steps.version.outputs.value }}.jar
-            fabric/build/libs/endless-fabric-${{ steps.version.outputs.value }}.jar
+          files: artifacts/**/*.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

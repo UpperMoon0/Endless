@@ -1,0 +1,77 @@
+name: Live join test
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "common/**"
+      - "fabric/**"
+      - "forge/**"
+      - "tools/live_join_test.py"
+      - ".github/gradle/**"
+      - ".github/workflows/live-join-test.yml"
+
+# Real-client jobs are expensive and each PR synchronize supersedes every
+# earlier live-join result for that PR. Keep only the newest head running.
+# Reusable release invocations group by ref (master), which is already
+# serialized by the parent release workflow.
+concurrency:
+  group: endless-live-join-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-join:
+    timeout-minutes: 25
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: fabric-1.20.1
+          - target: forge-1.20.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          # Let one matrix leg seed Gradle state for later runs; the other is
+          # read-only so parallel jobs never contend while saving the same cache.
+          cache-read-only: ${{ matrix.target == 'forge-1.20.1' }}
+
+      - name: Configure CI Maven Central mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GRADLE_USER_HOME/init.d"
+          cp .github/gradle/ci-maven-central-mirror.init.gradle \
+            "$GRADLE_USER_HOME/init.d/ci-maven-central-mirror.init.gradle"
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Install virtual display
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Build mod once
+        run: ./gradlew build --no-daemon --no-configuration-cache
+
+      - name: Run automatic real-client join test
+        run: python3 tools/live_join_test.py --target "${{ matrix.target }}"
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-join-${{ matrix.target }}
+          path: |
+            ${{ matrix.target == 'fabric-1.20.1' && 'fabric' || 'forge' }}/run/live-join/client/logs
+            ${{ matrix.target == 'fabric-1.20.1' && 'fabric' || 'forge' }}/run/live-join/server/logs
+          if-no-files-found: ignore

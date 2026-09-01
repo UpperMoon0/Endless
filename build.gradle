@@ -9,6 +9,42 @@ architectury {
 }
 
 /*
+ * GitHub-hosted runners share outbound IP space. Maven Central can return a
+ * hard HTTP 403 when the shared egress IP is blocked for aggregate automated
+ * traffic, even though this project is only resolving normal dependencies.
+ *
+ * Google publishes a documented Maven Central mirror specifically suitable for
+ * build environments. Redirect only the two canonical Central hosts, and only
+ * on GitHub Actions. Local developer builds retain Loom/Gradle's normal
+ * repository configuration.
+ *
+ * configureEach applies to repositories Loom adds later while configuring the
+ * subprojects, which is where the Forge failure occurred.
+ */
+if (System.getenv('GITHUB_ACTIONS') == 'true') {
+    def centralHosts = ['repo.maven.apache.org', 'repo1.maven.org'] as Set
+    def centralMirror = uri('https://maven-central.storage-download.googleapis.com/maven2/')
+    allprojects {
+        repositories.configureEach { repo ->
+            if (repo instanceof org.gradle.api.artifacts.repositories.MavenArtifactRepository
+                && repo.url != null
+                && centralHosts.contains(repo.url.host)) {
+                logger.lifecycle("Endless CI: Maven Central ${repo.url} -> ${centralMirror}")
+                repo.setUrl(centralMirror)
+            }
+        }
+        buildscript.repositories.configureEach { repo ->
+            if (repo instanceof org.gradle.api.artifacts.repositories.MavenArtifactRepository
+                && repo.url != null
+                && centralHosts.contains(repo.url.host)) {
+                logger.lifecycle("Endless CI: Maven Central ${repo.url} -> ${centralMirror}")
+                repo.setUrl(centralMirror)
+            }
+        }
+    }
+}
+
+/*
  * Development run-task UX
  *
  * This is a multi-project Architectury workspace:
@@ -103,7 +139,6 @@ subprojects {
     java {
         // Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
         // if it is present.
-        // If you remove this line, sources will not be generated.
         withSourcesJar()
 
         sourceCompatibility = JavaVersion.VERSION_17

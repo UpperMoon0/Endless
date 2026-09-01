@@ -8,7 +8,7 @@ the server's authoritative range. A successful join prints
 ENDLESS_LIVE_JOIN_TEST_PASS; a failed one prints ENDLESS_LIVE_JOIN_TEST_FAIL.
 
 Used by .github/workflows/live-join-test.yml to detect regressions in the
-Fabric login-phase sync and the Forge play-phase sync before the PR merges.
+login-phase height sync on both loaders before the PR merges.
 A compile-passing build that fails this test would still be rejected.
 """
 
@@ -160,7 +160,7 @@ def prepare_server(module_dir: Path) -> None:
     write_endless_config(server_dir / "config", SERVER_BUILD_HEIGHT)
 
 
-def prepare_client(module_dir: Path) -> None:
+def prepare_client(module_dir: Path, module: str) -> None:
     client_dir = module_dir / "run" / "live-join" / "client"
     client_dir.mkdir(parents=True, exist_ok=True)
     # A fresh Minecraft directory otherwise opens the accessibility/narrator
@@ -174,13 +174,24 @@ def prepare_client(module_dir: Path) -> None:
     )
     # Vanilla client-side range; the server's range must win after sync.
     write_endless_config(client_dir / "config", CLIENT_BUILD_HEIGHT)
+    if module == "forge":
+        # Forge's early-display window creates its own GL context before the
+        # game launches and only reaches GL 4.6/4.5 core profiles; on the CI
+        # runner's virtual display it times out ("Timed out trying to setup
+        # the Game Window" in fmlearlydisplay), opens an unanswerable console
+        # dialog, and kills the client. Disabling early window control defers
+        # window creation to Minecraft's own GLFW path, which works there
+        # (Fabric's client joins successfully on the same runner).
+        (client_dir / "config" / "fml.toml").write_text(
+            "earlyWindowControl = false\n", encoding="utf-8"
+        )
 
 
 def run_target(root: Path, target: str, timeout: int) -> None:
     module = TARGETS[target]
     print(f"Preparing {target} live join test", flush=True)
     prepare_server(root / module)
-    prepare_client(root / module)
+    prepare_client(root / module, module)
 
     compile_cmd = command(root, f":{module}:classes")
     subprocess.run(compile_cmd, cwd=root, check=True)

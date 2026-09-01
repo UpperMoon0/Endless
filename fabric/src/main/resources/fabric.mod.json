@@ -3,7 +3,7 @@
   "id": "endless",
   "version": "${version}",
   "name": "Endless",
-  "description": "A Minecraft mod that removes or customizes the build height limits. Allows building beyond vanilla height restrictions through simple configuration.",
+  "description": "A Minecraft mod that customizes the world build height range. Extends the vertical world height through simple configuration, within the packed block position envelope.",
   "authors": [
     "NsTut"
   ],
@@ -30,7 +30,7 @@
   ],  
   "depends": {
     "fabricloader": ">=0.16.14",
-    "minecraft": "~1.20.1",
+    "minecraft": "=1.20.1",
     "java": ">=17",
     "architectury": ">=9.2.14",
     "fabric-api": "*"

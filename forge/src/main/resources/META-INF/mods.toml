@@ -9,9 +9,11 @@ version = "${version}"
 displayName = "Endless"
 authors = "NsTut"
 description = '''
-A Minecraft mod that removes or customizes the build height limits.
-Allows building beyond vanilla height restrictions through simple configuration.
-Configure minimum/maximum build heights or remove limits entirely.
+A Minecraft mod that customizes the world build height range.
+Extends the vertical world height through simple configuration, within
+the packed block position envelope.
+Set minimum/maximum build heights in config/endless.json; worlds remember
+the range they were played with.
 '''
 logoFile = "assets/endless/icon.png"
 
@@ -25,7 +27,7 @@ side = "BOTH"
 [[dependencies.endless]]
 modId = "minecraft"
 mandatory = true
-versionRange = "[1.20.1,)"
+versionRange = "[1.20.1]"
 ordering = "NONE"
 side = "BOTH"
 

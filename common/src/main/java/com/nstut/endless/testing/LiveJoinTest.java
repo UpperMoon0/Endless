@@ -78,6 +78,13 @@ public final class LiveJoinTest {
             return;
         }
         preLoginChecked = true;
+
+        if (Boolean.parseBoolean(System.getProperty(PRESEED_STALE_PROPERTY, "false"))
+            && !staleRangePreseeded) {
+            System.out.println(FAIL_MARKER + " phase=stalePreseedMissing");
+            return;
+        }
+
         int endlessMin = EndlessHeights.getMinBuildHeight();
         int endlessMax = EndlessHeights.getMaxBuildHeight();
         if (endlessMin == EXPECTED_MIN_BUILD_HEIGHT && endlessMax == EXPECTED_MAX_BUILD_HEIGHT) {

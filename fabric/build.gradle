@@ -4,6 +4,14 @@ plugins {
 
 loom {
     runs {
+        client {
+            client()
+            runDir("run/client")
+        }
+        server {
+            server()
+            runDir("run/server")
+        }
         liveJoinTestClient {
             client()
             runDir("run/live-join/client")

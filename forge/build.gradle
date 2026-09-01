@@ -9,11 +9,13 @@ loom {
         runs {
             client {
                 client()
+                runDir("run/client")
                 vmArg "-Xmx6G"
                 vmArg "-Xms2G"
             }
             server {
                 server()
+                runDir("run/server")
                 vmArg "-Xmx6G"
                 vmArg "-Xms2G"
             }

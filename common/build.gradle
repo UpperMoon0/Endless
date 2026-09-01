@@ -20,3 +20,28 @@ test {
         events "passed", "skipped", "failed"
     }
 }
+
+/*
+ * The common module is shared source, not a runnable loader.
+ *
+ * Loom is intentionally applied to common because Architectury needs its
+ * mapped/transformed configurations. Do not remove Loom to get rid of these
+ * run tasks.
+ *
+ * If someone explicitly invokes :common:runClient/:common:runServer, fail
+ * clearly instead of starting a misleading Fabric-like development runtime.
+ */
+tasks.matching {
+    it.name == 'runClient' || it.name == 'runServer'
+}.configureEach {
+    group = null
+
+    doFirst {
+        throw new GradleException(
+            "The :common project is not runnable. " +
+            "Use :fabric:${name}, :forge:${name}, " +
+            "runFabric${name == 'runClient' ? 'Client' : 'Server'}, or " +
+            "runForge${name == 'runClient' ? 'Client' : 'Server'}."
+        )
+    }
+}

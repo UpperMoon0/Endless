@@ -86,11 +86,37 @@ Output JARs in `forge/build/libs/` and `fabric/build/libs/`.
 
 ### Testing
 
+Run unit/build tests:
+
 ```bash
-./gradlew test          # Unit tests
-./gradlew runClient     # Launch a client
-./gradlew runServer     # Launch dedicated server
+./gradlew test
+./gradlew build
 ```
+
+Launch a development client:
+
+```bash
+./gradlew runFabricClient
+./gradlew runForgeClient
+```
+
+Launch a development server:
+
+```bash
+./gradlew runFabricServer
+./gradlew runForgeServer
+```
+
+The fully qualified Loom tasks are also available:
+
+```bash
+./gradlew :fabric:runClient
+./gradlew :forge:runClient
+./gradlew :fabric:runServer
+./gradlew :forge:runServer
+```
+
+Do not use bare `runClient` or `runServer`. Endless is a multi-project Architectury workspace, so an unqualified Gradle task selector can match run tasks from multiple loader projects.
 
 ## License
 

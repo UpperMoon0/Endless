@@ -8,6 +8,70 @@ architectury {
     minecraft = project.minecraft_version
 }
 
+/*
+ * Development run-task UX
+ *
+ * This is a multi-project Architectury workspace:
+ *
+ *   :common
+ *   :fabric
+ *   :forge
+ *
+ * A bare Gradle task selector such as:
+ *
+ *   ./gradlew runClient
+ *
+ * matches runClient tasks in multiple subprojects. That can start more than
+ * one Minecraft instance, and :common may look like another Fabric launch.
+ *
+ * Never allow the ambiguous selectors. Developers must select a loader
+ * explicitly, either through the convenience tasks below or with a fully
+ * qualified task path such as :fabric:runClient.
+ */
+def ambiguousRunTasks = ['runClient', 'runServer']
+
+def ambiguousRequestedTasks = gradle.startParameter.taskNames.findAll { taskName ->
+    ambiguousRunTasks.contains(taskName)
+}
+
+if (!ambiguousRequestedTasks.isEmpty()) {
+    throw new GradleException(
+        "Ambiguous Minecraft run task '${ambiguousRequestedTasks.join(', ')}'.\n" +
+        "Endless is a multi-loader workspace. Use one of:\n" +
+        "  ./gradlew runFabricClient\n" +
+        "  ./gradlew runForgeClient\n" +
+        "  ./gradlew runFabricServer\n" +
+        "  ./gradlew runForgeServer\n" +
+        "or a fully qualified task such as:\n" +
+        "  ./gradlew :fabric:runClient\n" +
+        "  ./gradlew :forge:runClient"
+    )
+}
+
+tasks.register('runFabricClient') {
+    group = 'minecraft'
+    description = 'Launch the Endless Fabric development client.'
+    dependsOn(':fabric:runClient')
+}
+
+tasks.register('runForgeClient') {
+    group = 'minecraft'
+    description = 'Launch the Endless Forge development client.'
+    dependsOn(':forge:runClient')
+}
+
+tasks.register('runFabricServer') {
+    group = 'minecraft'
+    description = 'Launch the Endless Fabric development server.'
+    dependsOn(':fabric:runServer')
+}
+
+tasks.register('runForgeServer') {
+    group = 'minecraft'
+    description = 'Launch the Endless Forge development server.'
+    dependsOn(':forge:runServer')
+}
+
 allprojects {
     group = rootProject.maven_group
     version = rootProject.mod_version

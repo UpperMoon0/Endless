@@ -13,6 +13,8 @@
     "LevelHeightAccessorMixin",
     "LevelReaderMixin",
     "LevelChunkMixin",
+    "ChunkMapMixin",
+    "ClientboundLevelChunkPacketDataMixin",
     "compat.WaystoneBlockBaseMixin"
   ],
   "injectors": {

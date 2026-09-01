@@ -51,10 +51,10 @@ final class LegacyRegionScanner {
                 throw new IOException("Invalid region filename: " + regionPath, e);
             }
 
-            // Vanilla RegionFile is the safest reader here because it handles
-            // all supported Anvil compression modes and external .mcc chunks.
-            // The file already exists; this code never requests an output
-            // stream and therefore performs no chunk writes.
+            // Vanilla RegionFile handles all supported Anvil compression modes
+            // and external .mcc chunks. The file already exists; this scanner
+            // never requests an output stream and therefore performs no chunk
+            // writes before migration has been classified.
             try (RegionFile region = new RegionFile(regionPath, regionPath.getParent(), false)) {
                 for (int localX = 0; localX < 32; localX++) {
                     for (int localZ = 0; localZ < 32; localZ++) {
@@ -85,7 +85,8 @@ final class LegacyRegionScanner {
         return new EdgeUsage(bottom, top);
     }
 
-    private static EdgeUsage inspectChunk(CompoundTag chunk, boolean inspectBottom, boolean inspectTop) {
+    /** Package-private so synthetic-NBT regression tests exercise the real scanner logic. */
+    static EdgeUsage inspectChunk(CompoundTag chunk, boolean inspectBottom, boolean inspectTop) {
         boolean bottom = false;
         boolean top = false;
 
@@ -102,8 +103,8 @@ final class LegacyRegionScanner {
             top |= requestedTop;
         }
 
-        // A block entity is also meaningful user/world data even if the
-        // section palette is malformed or unexpectedly absent.
+        // A block entity is meaningful user/world data even if the section
+        // palette is malformed or unexpectedly absent.
         ListTag blockEntities = chunk.getList("block_entities", Tag.TAG_COMPOUND);
         for (int i = 0; i < blockEntities.size(); i++) {
             CompoundTag blockEntity = blockEntities.getCompound(i);
@@ -126,7 +127,6 @@ final class LegacyRegionScanner {
 
         CompoundTag blockStates = section.getCompound("block_states");
         if (!blockStates.contains("palette", Tag.TAG_LIST)) {
-            // Malformed edge data must never be treated as safely empty.
             return true;
         }
 

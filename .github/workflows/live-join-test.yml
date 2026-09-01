@@ -12,6 +12,14 @@ on:
       - ".github/gradle/**"
       - ".github/workflows/live-join-test.yml"
 
+# Real-client jobs are expensive and each PR synchronize supersedes every
+# earlier live-join result for that PR. Keep only the newest head running.
+# Reusable release invocations group by ref (master), which is already
+# serialized by the parent release workflow.
+concurrency:
+  group: endless-live-join-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   live-join:
     timeout-minutes: 25

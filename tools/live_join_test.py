@@ -332,16 +332,16 @@ def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeo
             (PASS_MARKER, FAIL_MARKER, PRE_LOGIN_FAIL_MARKER), timeout)
         if outcome is None:
             raise RuntimeError(f"{label}: client did not report a live-join outcome")
-        if PASS_MARKER in outcome:
-            print(f"{label}: PASS ({outcome.rstrip()})", flush=True)
-        else:
+        if PASS_MARKER not in outcome:
             raise RuntimeError(f"{label}: client reported failure: {outcome.rstrip()}")
-        try:
-            exit_code = client.wait(timeout=60)
-        except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(f"{label}: client passed but did not exit") from exc
-        if exit_code != 0:
-            raise RuntimeError(f"{label}: client exited with code {exit_code} after passing")
+        # PASS is authoritative: the client already proved the required
+        # runtime state, so the supervisor terminates the process tree itself.
+        # Requiring a natural exit previously made Forge fail after PASS
+        # (mc.stop() does not reliably end the Gradle userdev JVM promptly),
+        # which masked a passing scenario as red CI.
+        print(f"{label}: PASS ({outcome.rstrip()})", flush=True)
+        stop_tree(client)
+        client = None
     finally:
         if client is not None:
             stop_tree(client)

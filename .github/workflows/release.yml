@@ -65,6 +65,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: the tag collision check must see existing tags.
+          fetch-depth: 0
       - name: Verify release changelog exists before building
         shell: bash
         env:
@@ -77,6 +80,27 @@ jobs:
           [[ -f "$changelog_path" ]] || { echo "Missing release changelog: $changelog_path" >&2; exit 1; }
           [[ -s "$changelog_path" ]] || { echo "Empty release changelog: $changelog_path" >&2; exit 1; }
           echo "Release changelog found: $changelog_path"
+      - name: Verify the version tag is free or points at this commit
+        shell: bash
+        env:
+          MOD_VERSION: ${{ needs.version-change.outputs.value }}
+        run: |
+          set -euo pipefail
+          # Fails before any build/upload. Without this, a manual dispatch on
+          # a commit whose version tag already exists elsewhere would upload
+          # the new JARs to CurseForge first and only fail afterwards in the
+          # release job. rev-list dereferences annotated tags to the commit.
+          tag="v${MOD_VERSION}"
+          if git show-ref --tags --verify --quiet "refs/tags/$tag"; then
+            tagged_commit="$(git rev-list -n 1 "refs/tags/$tag")"
+            if [[ "$tagged_commit" != "$GITHUB_SHA" ]]; then
+              echo "Tag $tag already points to $tagged_commit, not this commit ($GITHUB_SHA). Bump mod_version before releasing another commit." >&2
+              exit 1
+            fi
+            echo "Tag $tag already points at this commit; the release will reuse it."
+          else
+            echo "Tag $tag is free; the release will create it."
+          fi
 
   verify:
     name: Regression tests
@@ -256,11 +280,8 @@ jobs:
         run: |
           tag="v${{ steps.version.outputs.value }}"
           if git show-ref --tags --verify --quiet "refs/tags/$tag"; then
-            tagged_commit="$(git rev-list -n 1 "$tag")"
-            if [[ "$tagged_commit" != "$GITHUB_SHA" ]]; then
-              echo "Tag $tag already points to $tagged_commit. Bump mod_version before releasing another commit." >&2
-              exit 1
-            fi
+            # Preflight already verified the tag points at this commit;
+            # reuse it (retry of the same release).
             echo "Tag $tag already points to this commit; reusing it."
           else
             git config user.name "github-actions[bot]"

@@ -24,16 +24,18 @@ import java.nio.file.Path;
  *       effective range into the regular SavedData store after worlds load.
  *       The range only ever widens, so saved sections above and below the
  *       current world stay addressable.</li>
- *   <li>Remote clients: begin every remote login with the vanilla range and
- *       adopt the server's range during the login phase only if the server
- *       provides one (Fabric via {@code ServerLoginNetworking}, Forge via a
- *       Forge login packet); reset to the local config on disconnect. The
- *       vanilla baseline is established by
- *       {@link #applyVanillaBaselineIfUnapplied} at the first login packet,
- *       so an extended local file config can never leak onto a server that
- *       provides no Endless range (vanilla server, or an Endless server whose
- *       world is vanilla — the Fabric server deliberately sends no login
- *       query for a vanilla range).</li>
+ *   <li>Remote clients: begin every remote connection with the vanilla range
+ *       and adopt the server's range during the login phase only if the
+ *       server provides one (Fabric via {@code ServerLoginNetworking}, Forge
+ *       via a Forge login packet). The baseline is established at the start
+ *       of the login phase ({@code ClientHandshakePacketListenerImpl
+ *       .handleHello}) via {@link #applyVanillaBaselineForNewConnection}, and
+ *       re-established defensively at the login packet via
+ *       {@link #applyVanillaBaselineIfUnapplied}, so neither an extended
+ *       local file config nor a range left over from a previous connection
+ *       can leak into a world (a login-stage rejection may skip the
+ *       disconnect hooks entirely, so a stale applied range must be cleared
+ *       when the next connection begins rather than only when one ends).</li>
  * </ul>
  */
 public final class EndlessHeights {
@@ -210,6 +212,32 @@ public final class EndlessHeights {
     }
 
     /**
+     * Start a new client connection on the vanilla build range. Called from
+     * the login-phase start ({@code ClientHandshakePacketListenerImpl
+     * .handleHello}), which every connection passes through before either
+     * loader's Endless login exchange, so the reset cannot be skipped by a
+     * mid-login rejection: a range applied during a previous connection's
+     * login handshake (where the player never existed and the logout hook
+     * never ran) must not survive into the next connection, where the
+     * {@code !applied} guard would wrongly treat it as authoritative.
+     *
+     * <p>Singleplayer is excluded: the integrated server owns the effective
+     * range and has already applied the world's persisted range before the
+     * client's login phase starts, so the shared static must not be
+     * clobbered. The server's range still overwrites this baseline during
+     * login whenever the Endless login exchange runs.</p>
+     *
+     * @param singleplayer true when this connection is to an integrated
+     *                     server in the same JVM
+     */
+    public static void applyVanillaBaselineForNewConnection(boolean singleplayer) {
+        if (singleplayer) {
+            return;
+        }
+        applyEffective(VANILLA_MIN_BUILD_HEIGHT, VANILLA_MAX_BUILD_HEIGHT);
+    }
+
+    /**
      * Force the vanilla build range when no authoritative range has been
      * applied. Remote logins must never enter the world on the local file
      * config: a server without Endless (both loaders accept the connection)
@@ -221,9 +249,10 @@ public final class EndlessHeights {
      * the client login completes, so {@code applied} is already true and
      * this method is a no-op there.
      *
-     * <p>Called from the client login-packet hook, immediately before the
-     * client world is constructed and strictly after any Endless login-phase
-     * sync has run.</p>
+     * <p>Kept as a final fallback behind
+     * {@link #applyVanillaBaselineForNewConnection}: called from the client
+     * login-packet hook, immediately before the client world is constructed
+     * and strictly after any Endless login-phase sync has run.</p>
      */
     public static void applyVanillaBaselineIfUnapplied() {
         if (!applied) {

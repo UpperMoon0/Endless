@@ -20,12 +20,15 @@ loom {
             property "endless.liveJoinTest.expectedMin", System.getenv('ENDLESS_TEST_EXPECTED_MIN') ?: '-1024'
             property "endless.liveJoinTest.expectedMax", System.getenv('ENDLESS_TEST_EXPECTED_MAX') ?: '1024'
             property "endless.liveJoinTest.preseedStaleRange", System.getenv('ENDLESS_TEST_PRESEED_STALE') ?: 'false'
+            property "endless.liveJoinTest.expectLogical", (System.getenv('ENDLESS_TEST_PRESEED_STALE') == 'true') ? 'false' : 'true'
+            property "endless.liveJoinTest.highY", (System.getenv('ENDLESS_TEST_EXPECTED_MIN') ?: '-1024') == '-1024' ? 'true' : 'false'
             programArgs "--quickPlayMultiplayer", "127.0.0.1:${System.getenv('ENDLESS_TEST_PORT') ?: '25575'}"
         }
         liveJoinTestServer {
             server()
             runDir("run/live-join/server")
             vmArg "-Xmx1536m"
+            property "endless.liveJoinHighYTest", "true"
             programArg "nogui"
         }
     }

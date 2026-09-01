@@ -1,6 +1,7 @@
 package com.nstut.endless.vertical;
 
 import com.nstut.endless.heights.EndlessLogicalHeights;
+import com.nstut.endless.testing.LiveHighYServerTest;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.server.MinecraftServer;
@@ -43,6 +44,8 @@ public final class VerticalNetworkBridge {
         if (!EndlessLogicalHeights.isActive()) {
             return;
         }
+
+        LiveHighYServerTest.tick(server);
 
         if (++ticks >= FLUSH_INTERVAL_TICKS) {
             ticks = 0;

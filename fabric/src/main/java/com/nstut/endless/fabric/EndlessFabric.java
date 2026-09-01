@@ -23,26 +23,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Fabric-specific implementation of the Endless mod.
- *
- * <p>Initial build-range synchronization happens during the login phase, not
- * the play phase. The play phase is too late: section payloads on the wire
- * carry no Y coordinates, so the client must already know the effective build
- * range before any chunk packet arrives. {@code ServerPlayNetworking} cannot
- * deliver a range to a client that has not yet declared the channel, which
- * is exactly the case for a brand-new connection. We therefore use
- * {@link ServerLoginNetworking} via {@link ServerLoginConnectionEvents}, which
- * fires after the client's login start and can hold the login pipeline open
- * via {@code LoginSynchronizer#waitFor} until the client has acknowledged the
- * authoritative range. A client whose response carries
- * {@code understood=false} (vanilla clients, or a modded client that does
- * not implement the Endless login channel) is rejected with a disconnect
- * during login when the server's range is extended beyond vanilla.</p>
- *
- * <p>The Fabric client applies the range inside the login query handler and
- * resets to the local file config on disconnect.</p>
- */
+/** Fabric-specific implementation of the Endless mod. */
 public class EndlessFabric implements ModInitializer, ClientModInitializer, DedicatedServerModInitializer {
 
     public static final ResourceLocation HEIGHT_SYNC_CHANNEL =
@@ -112,11 +93,8 @@ public class EndlessFabric implements ModInitializer, ClientModInitializer, Dedi
     @Override
     public void onInitializeClient() {
         Endless.clientInit();
+        LiveJoinTest.preseedStaleRangeIfRequested();
 
-        // The response future gates the login pipeline, so it must complete
-        // only AFTER the main thread has actually applied the range. Returning
-        // an already-completed future would let the server resume login while
-        // applyEffective is still queued on the client thread.
         ClientLoginNetworking.registerGlobalReceiver(HEIGHT_SYNC_CHANNEL,
             (client, handler, buf, responseSink) -> {
                 int min = buf.readVarInt();

@@ -26,7 +26,9 @@ loom {
                 property "endless.liveJoinTest", "true"
                 property "endless.liveJoinTest.expectedMin", System.getenv('ENDLESS_TEST_EXPECTED_MIN') ?: '-1024'
                 property "endless.liveJoinTest.expectedMax", System.getenv('ENDLESS_TEST_EXPECTED_MAX') ?: '1024'
-                property "endless.liveJoinTest.preseedStaleRange", System.getenv('ENDLESS_TEST_PRESEED_STALE') ?: 'false'
+                property "endless.liveJoinTest.preseedStaleRange",
+                    System.getenv('ENDLESS_TEST_PRESEED_STALE')
+                        ?: ((System.getenv('ENDLESS_TEST_PORT') ?: '25575') == '25576' ? 'true' : 'false')
                 programArgs "--quickPlayMultiplayer", "127.0.0.1:${System.getenv('ENDLESS_TEST_PORT') ?: '25575'}"
             }
             liveJoinTestServer {

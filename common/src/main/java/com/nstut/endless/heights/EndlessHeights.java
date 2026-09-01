@@ -1,12 +1,9 @@
 package com.nstut.endless.heights;
 
 import com.nstut.endless.config.EndlessConfig;
-import com.nstut.endless.network.EndlessNetworking;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtIo;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.LevelResource;
 
@@ -28,9 +25,8 @@ import java.nio.file.Path;
  *       The range only ever widens, so saved sections above and below the
  *       current world stay addressable.</li>
  *   <li>Remote clients: received from the server during the login phase on
- *       Fabric (via {@code ServerLoginNetworking}) and during the play phase
- *       on Forge (via {@code PlayerListMixin}); reset to the local config on
- *       disconnect.</li>
+ *       both loaders (Fabric via {@code ServerLoginNetworking}, Forge via a
+ *       Forge login packet); reset to the local config on disconnect.</li>
  * </ul>
  */
 public final class EndlessHeights {
@@ -100,6 +96,7 @@ public final class EndlessHeights {
         int[] merged;
         if (saved == null) {
             merged = new int[]{cfg.getMinBuildHeight(), cfg.getMaxBuildHeight()};
+            warnIfPrePersistenceWorld(server, cfg);
         } else {
             merged = mergeRange(saved[0], saved[1], cfg.getMinBuildHeight(), cfg.getMaxBuildHeight());
             if (cfg.getMinBuildHeight() > saved[0] || cfg.getMaxBuildHeight() < saved[1]) {
@@ -109,6 +106,32 @@ public final class EndlessHeights {
             }
         }
         applyEffective(merged[0], merged[1]);
+    }
+
+    /**
+     * First-launch ambiguity for pre-v0.4 worlds: versions before the world
+     * persistence existed wrote no {@code endless_build_heights.dat}, so
+     * Endless cannot know which range an existing world was actually played
+     * with. If the config has since been shrunk, chunks saved outside the new
+     * range are unreachable and the older section data would be mapped onto
+     * the wrong Y positions. The situation is unfixable from the mod side
+     * (there is no record to recover), so warn loudly instead of failing
+     * silently.
+     */
+    private static void warnIfPrePersistenceWorld(MinecraftServer server, EndlessConfig.BuildHeightConfig cfg) {
+        try {
+            Path levelDat = server.getWorldPath(new LevelResource("level.dat"));
+            if (Files.isRegularFile(levelDat)) {
+                System.err.println("Endless: MIGRATION WARNING - this world was created before Endless persisted its "
+                    + "build range (no data/" + EndlessWorldData.DATA_NAME + ".dat found), so it may have been played "
+                    + "with a different range than the current config [" + cfg.getMinBuildHeight() + ", "
+                    + cfg.getMaxBuildHeight() + "). If this world previously used a wider range, set the config back "
+                    + "to that wider range BEFORE generating or loading chunks, or saved sections outside the range "
+                    + "become unreachable.");
+            }
+        } catch (RuntimeException e) {
+            // Never let the warning path break startup.
+        }
     }
 
     /**
@@ -173,37 +196,5 @@ public final class EndlessHeights {
      */
     public static void resetToLocalConfig() {
         applied = false;
-    }
-
-    /**
-     * Deliver the authoritative range to a joining player. Loader dispatch:
-     *
-     * <ul>
-     *   <li>Fabric has a login-phase handshake installed; the play-phase
-     *       call here is a no-op because {@link EndlessNetworking#shouldEnforceRange}
-     *       returns false. The range has already been applied on the client
-     *       during login, and vanilla clients have already been disconnected
-     *       by the login pipeline.</li>
-     *   <li>Forge delivers the range in the play phase right before
-     *       {@code sendLevelInfo}. If the joining client has the play channel
-     *       registered we send the sync; if it does not and the range is
-     *       extended we disconnect it, because section payloads on the wire
-     *       carry no Y coordinates and would be mapped to the wrong Y
-     *       positions on a vanilla client.</li>
-     * </ul>
-     */
-    public static void syncOnJoin(ServerPlayer player) {
-        if (!EndlessNetworking.shouldEnforceRange(player)) {
-            return;
-        }
-        int min = getMinBuildHeight();
-        int max = getMaxBuildHeight();
-        if (EndlessNetworking.canSend(player)) {
-            EndlessNetworking.sendHeights(player, min, max);
-        } else if (min != VANILLA_MIN_BUILD_HEIGHT || max != VANILLA_MAX_BUILD_HEIGHT) {
-            player.connection.disconnect(Component.literal(
-                "This server requires the Endless mod: its build range ["
-                    + min + ", " + max + ") is extended beyond vanilla."));
-        }
     }
 }

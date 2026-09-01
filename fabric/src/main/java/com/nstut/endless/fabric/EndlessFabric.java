@@ -2,7 +2,6 @@ package com.nstut.endless.fabric;
 
 import com.nstut.endless.Endless;
 import com.nstut.endless.heights.EndlessHeights;
-import com.nstut.endless.network.EndlessNetworking;
 import com.nstut.endless.testing.LiveJoinTest;
 import io.netty.buffer.Unpooled;
 import net.fabricmc.api.ClientModInitializer;
@@ -54,8 +53,6 @@ public class EndlessFabric implements ModInitializer, ClientModInitializer, Dedi
     @Override
     public void onInitialize() {
         Endless.init();
-
-        EndlessNetworking.registerLoginSync(new EndlessNetworking.LoginSync() {});
 
         ServerLoginNetworking.registerGlobalReceiver(HEIGHT_SYNC_CHANNEL,
             (srv, listener, understood, buf, sync, sender) -> {
@@ -116,13 +113,24 @@ public class EndlessFabric implements ModInitializer, ClientModInitializer, Dedi
     public void onInitializeClient() {
         Endless.clientInit();
 
+        // The response future gates the login pipeline, so it must complete
+        // only AFTER the main thread has actually applied the range. Returning
+        // an already-completed future would let the server resume login while
+        // applyEffective is still queued on the client thread.
         ClientLoginNetworking.registerGlobalReceiver(HEIGHT_SYNC_CHANNEL,
             (client, handler, buf, responseSink) -> {
                 int min = buf.readVarInt();
                 int max = buf.readVarInt();
-                client.execute(() -> EndlessHeights.applyEffective(min, max));
-                FriendlyByteBuf ack = new FriendlyByteBuf(Unpooled.buffer());
-                return CompletableFuture.completedFuture(ack);
+                CompletableFuture<FriendlyByteBuf> result = new CompletableFuture<>();
+                client.execute(() -> {
+                    try {
+                        EndlessHeights.applyEffective(min, max);
+                        result.complete(new FriendlyByteBuf(Unpooled.buffer()));
+                    } catch (Throwable t) {
+                        result.completeExceptionally(t);
+                    }
+                });
+                return result;
             });
 
         ClientLoginConnectionEvents.DISCONNECT.register((handler, client) ->

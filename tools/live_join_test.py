@@ -29,6 +29,10 @@ from pathlib import Path
 
 PASS_MARKER = "ENDLESS_LIVE_JOIN_TEST_PASS"
 FAIL_MARKER = "ENDLESS_LIVE_JOIN_TEST_FAIL"
+# Printed at ClientboundLoginPacket handling, before the client world exists.
+# A pre-login failure also prints FAIL_MARKER, but matching it here fails the
+# test immediately instead of waiting for the post-join timeout.
+PRE_LOGIN_FAIL_MARKER = "ENDLESS_PRE_LOGIN_RANGE_FAIL"
 SERVER_READY_MARKERS = ("Done (", "For help, type \"help\"")
 DEFAULT_TIMEOUT = 360
 
@@ -197,7 +201,8 @@ def run_target(root: Path, target: str, timeout: int) -> None:
 
         client = popen(client_cmd, root)
         client_output = OutputPump(client, f"{target}/client")
-        outcome = client_output.wait_for((PASS_MARKER, FAIL_MARKER), timeout)
+        outcome = client_output.wait_for(
+            (PASS_MARKER, FAIL_MARKER, PRE_LOGIN_FAIL_MARKER), timeout)
         if outcome is None:
             raise RuntimeError(f"{target}: client did not report a live-join outcome")
         if PASS_MARKER in outcome:

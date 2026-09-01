@@ -20,16 +20,17 @@ loom {
             liveJoinTestClient {
                 client()
                 runDir("run/live-join/client")
-                vmArg "-Xmx6G"
-                vmArg "-Xms2G"
+                // Smoke-test sized heaps: the CI runner also runs a Gradle
+                // supervisor process, so large -Xms/-Xmx pairs cause
+                // memory-pressure flakiness on hosted runners.
+                vmArg "-Xmx2G"
                 property "endless.liveJoinTest", "true"
                 programArgs "--quickPlayMultiplayer", "127.0.0.1:25575"
             }
             liveJoinTestServer {
                 server()
                 runDir("run/live-join/server")
-                vmArg "-Xmx6G"
-                vmArg "-Xms2G"
+                vmArg "-Xmx1536m"
                 programArg "nogui"
             }
         }

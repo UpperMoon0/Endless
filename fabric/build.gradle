@@ -7,12 +7,17 @@ loom {
         liveJoinTestClient {
             client()
             runDir("run/live-join/client")
+            // Smoke-test sized heap: the CI runner also runs a Gradle
+            // supervisor process, so a large heap causes memory-pressure
+            // flakiness on hosted runners.
+            vmArg "-Xmx2G"
             property "endless.liveJoinTest", "true"
             programArgs "--quickPlayMultiplayer", "127.0.0.1:25575"
         }
         liveJoinTestServer {
             server()
             runDir("run/live-join/server")
+            vmArg "-Xmx1536m"
             programArg "nogui"
         }
     }

@@ -2,10 +2,9 @@ package com.nstut.endless.forge;
 
 import com.nstut.endless.Endless;
 import com.nstut.endless.heights.EndlessHeights;
-import com.nstut.endless.network.EndlessNetworking;
 import com.nstut.endless.testing.LiveJoinTest;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.level.ServerPlayer;
+import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.server.ServerAboutToStartEvent;
@@ -15,61 +14,101 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.network.NetworkDirection;
 import net.minecraftforge.network.NetworkRegistry;
-import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
 
 /**
  * Forge-specific implementation of the Endless mod.
+ *
+ * <p>The authoritative build range reaches the client during the FML login
+ * handshake, never in the play phase. The initial play packet
+ * ({@code ClientboundLoginPacket}) constructs the client world, so anything
+ * delivered after it is too late: chunk section payloads on the wire carry no
+ * Y coordinates and would be mapped to the wrong Y positions on a client
+ * whose effective range has not been applied yet. Two Forge-native login
+ * mechanisms are used:</p>
+ *
+ * <ul>
+ *   <li><b>Vanilla-client gating.</b> The channel's server-side version
+ *       predicate only accepts vanilla clients (Forge sends the
+ *       {@code ACCEPTVANILLA} marker to test this) while the world's
+ *       effective range is vanilla. On an extended-range server the predicate
+ *       rejects the marker, so {@code ServerLifecycleHooks} disconnects
+ *       vanilla clients before the FML handshake even starts.</li>
+ *   <li><b>Range delivery.</b> {@link SyncHeightPacket} is registered with
+ *       {@code markAsLoginPacket()}: Forge gathers it once per connection
+ *       during the NEGOTIATING state and sends it before the login advances,
+ *       so the client applies the range before the world is constructed.</li>
+ * </ul>
  */
 @Mod(Endless.MOD_ID)
 public class EndlessForge {
 
-    private static final String PROTOCOL = "1";
+    /**
+     * Bumped to 2 when the play-phase sync packet was replaced by the
+     * login-phase packet; old clients (protocol 1) cannot receive the login
+     * packet and would desync silently, so they are rejected at negotiation.
+     */
+    private static final String PROTOCOL = "2";
     private static SimpleChannel channel;
 
     public EndlessForge() {
-        // Register the setup method for mod loading
         FMLJavaModLoadingContext.get().getModEventBus().addListener(this::setup);
         FMLJavaModLoadingContext.get().getModEventBus().addListener(this::clientSetup);
 
-        // Register ourselves for server and other game events
         MinecraftForge.EVENT_BUS.register(this);
 
         channel = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(Endless.MOD_ID, "main"),
             () -> PROTOCOL,
-            // acceptMissingOr: vanilla clients are not rejected here; the
-            // join-time sync check in EndlessHeights.syncOnJoin rejects them
-            // only when the world's range is extended.
-            NetworkRegistry.acceptMissingOr(PROTOCOL::equals),
-            NetworkRegistry.acceptMissingOr(PROTOCOL::equals));
-        // Strictly server-to-client: the height sync is authoritative and must
-        // never be accepted from a client (direction assertion + handler check).
-        channel.registerMessage(0, SyncHeightPacket.class,
-            SyncHeightPacket::encode, SyncHeightPacket::decode, SyncHeightPacket::handle,
-            java.util.Optional.of(net.minecraftforge.network.NetworkDirection.PLAY_TO_CLIENT));
+            EndlessForge::clientAcceptsVersions,
+            EndlessForge::serverAcceptsVersions);
+
+        channel.messageBuilder(SyncHeightPacket.class, 1, NetworkDirection.LOGIN_TO_CLIENT)
+            .loginIndex(SyncHeightPacket::getLoginIndex, SyncHeightPacket::setLoginIndex)
+            .decoder(SyncHeightPacket::decode)
+            .encoder(SyncHeightPacket::encode)
+            .markAsLoginPacket()
+            .noResponse()
+            .consumerNetworkThread(SyncHeightPacket::handle)
+            .add();
+    }
+
+    /**
+     * Client side: accept the server's protocol when it matches; a server
+     * without the Endless channel (vanilla server) is accepted and the client
+     * keeps its local config. Any other value means an incompatible Endless
+     * protocol and rejects the connection during login.
+     */
+    private static boolean clientAcceptsVersions(String version) {
+        return NetworkRegistry.ABSENT.version().equals(version) || PROTOCOL.equals(version);
+    }
+
+    /**
+     * Server side: modded Endless clients must speak the current protocol.
+     * Vanilla clients (Forge sends the ACCEPTVANILLA marker) and modded
+     * clients without the channel are only admitted while the world's
+     * effective range is vanilla; an extended range on the wire has no Y
+     * coordinates per section, so such a client would map section payloads to
+     * the wrong Y positions.
+     */
+    private static boolean serverAcceptsVersions(String version) {
+        if (PROTOCOL.equals(version)) {
+            return true;
+        }
+        boolean vanillaRange = EndlessHeights.getMinBuildHeight() == EndlessHeights.VANILLA_MIN_BUILD_HEIGHT
+            && EndlessHeights.getMaxBuildHeight() == EndlessHeights.VANILLA_MAX_BUILD_HEIGHT;
+        return vanillaRange
+            && (NetworkRegistry.ACCEPTVANILLA.equals(version)
+                || NetworkRegistry.ABSENT.version().equals(version));
     }
 
     private void setup(final FMLCommonSetupEvent event) {
-        // Common setup code
         Endless.init();
-
-        event.enqueueWork(() -> EndlessNetworking.registerSender(new EndlessNetworking.Sender() {
-            @Override
-            public boolean canSend(ServerPlayer player) {
-                return channel.isRemotePresent(player.connection.connection);
-            }
-
-            @Override
-            public void send(ServerPlayer player, int min, int max) {
-                channel.send(PacketDistributor.PLAYER.with(() -> player), new SyncHeightPacket(min, max));
-            }
-        }));
     }
 
     private void clientSetup(final FMLClientSetupEvent event) {
-        // Client-specific setup code
         Endless.clientInit();
     }
 
@@ -78,7 +117,7 @@ public class EndlessForge {
         // Server-specific setup code
         Endless.serverInit();
         // Fires before levels are created: read the world's persisted range so
-        // chunk deserialization uses it from the very first chunk.
+        // chunk deserialization and login-packet gathering both use it.
         EndlessHeights.loadPersistedRange(event.getServer());
     }
 
@@ -86,6 +125,13 @@ public class EndlessForge {
     public void onServerStarted(ServerStartedEvent event) {
         // Worlds are loaded: mirror the effective range into SavedData.
         EndlessHeights.syncWorldData(event.getServer());
+    }
+
+    @SubscribeEvent
+    public void onClientLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+        // Mirror the Fabric client: drop the applied range so the local file
+        // config is used again when joining the next server.
+        EndlessHeights.resetToLocalConfig();
     }
 
     @SubscribeEvent

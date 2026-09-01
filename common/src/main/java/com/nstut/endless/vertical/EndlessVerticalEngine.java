@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.WeakHashMap;
 
+/** Global owner for per-Level sparse vertical state. */
 public final class EndlessVerticalEngine {
     private static final Map<Level, MinecraftVerticalWorld> WORLDS = new WeakHashMap<>();
 
@@ -25,6 +26,13 @@ public final class EndlessVerticalEngine {
     public static synchronized void flushAll() {
         for (MinecraftVerticalWorld world : new ArrayList<>(WORLDS.values())) {
             world.flushDirty();
+        }
+    }
+
+    public static synchronized void unloadColumn(Level level, int chunkX, int chunkZ) {
+        MinecraftVerticalWorld world = WORLDS.get(level);
+        if (world != null) {
+            world.unloadColumn(chunkX, chunkZ);
         }
     }
 

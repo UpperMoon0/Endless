@@ -12,7 +12,10 @@
     "FriendlyByteBufMixin",
     "LevelHeightAccessorMixin",
     "LevelReaderMixin",
+    "LevelMixin",
+    "ChunkAccessMixin",
     "LevelChunkMixin",
+    "LevelLightEngineMixin",
     "ChunkMapMixin",
     "ClientboundLevelChunkPacketDataMixin",
     "compat.WaystoneBlockBaseMixin"

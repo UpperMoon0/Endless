@@ -3,9 +3,10 @@ package com.nstut.endless.testing;
 import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import net.minecraft.client.Minecraft;
-import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.levelgen.Heightmap;
 
 /** Client-side assertions used by tools/live_join_test.py. */
 public final class LiveJoinTest {
@@ -66,16 +67,13 @@ public final class LiveJoinTest {
             return;
         }
         staleRangePreseeded = true;
-        EndlessHeights.applyEffective(
-            DEFAULT_EXPECTED_MIN_BUILD_HEIGHT,
-            DEFAULT_EXPECTED_MAX_BUILD_HEIGHT);
+        EndlessHeights.applyEffective(DEFAULT_EXPECTED_MIN_BUILD_HEIGHT, DEFAULT_EXPECTED_MAX_BUILD_HEIGHT);
         EndlessLogicalHeights.activate();
         System.out.println(PRESEED_MARKER
             + " min=" + EndlessHeights.getMinBuildHeight()
             + " max=" + EndlessHeights.getMaxBuildHeight());
     }
 
-    /** Assert server-authoritative state before vanilla constructs ClientLevel. */
     public static void assertPreLoginRange() {
         if (!isArmed() || preLoginChecked) {
             return;
@@ -145,26 +143,38 @@ public final class LiveJoinTest {
         }
 
         if (HIGH_Y_TEST) {
-            BlockPos high = LiveHighYServerTest.TEST_POS;
             boolean arrived = mc.player != null
                 && Math.abs(mc.player.getY() - (LiveHighYServerTest.TEST_Y + 2.0D)) < 8.0D;
-            boolean buildable = !level.isOutsideBuildHeight(high);
-            boolean blockVisible = level.getBlockState(high).is(Blocks.DIAMOND_BLOCK);
-            if (arrived && buildable && blockVisible) {
+            boolean buildable = !level.isOutsideBuildHeight(LiveHighYServerTest.TEST_POS);
+            boolean glowstone = level.getBlockState(LiveHighYServerTest.TEST_POS).is(Blocks.GLOWSTONE);
+            boolean water = level.getFluidState(LiveHighYServerTest.WATER_POS).isSource();
+            boolean chest = level.getBlockState(LiveHighYServerTest.CHEST_POS).is(Blocks.CHEST)
+                && level.getBlockEntity(LiveHighYServerTest.CHEST_POS) != null;
+            boolean height = level.getHeight(Heightmap.Types.WORLD_SURFACE, 0, 0)
+                == LiveHighYServerTest.TEST_Y + 1;
+            boolean light = level.getBrightness(LightLayer.BLOCK, LiveHighYServerTest.TEST_POS) >= 15;
+
+            if (arrived && buildable && glowstone && water && chest && height && light) {
                 System.out.println(HIGH_Y_PASS_MARKER
                     + " playerY=" + mc.player.getY()
-                    + " blockY=" + high.getY());
+                    + " blockY=" + LiveHighYServerTest.TEST_Y
+                    + " height=" + level.getHeight(Heightmap.Types.WORLD_SURFACE, 0, 0)
+                    + " blockLight=" + level.getBrightness(LightLayer.BLOCK, LiveHighYServerTest.TEST_POS));
                 pass(levelMin, levelHeight, endlessMin, endlessMax, logical);
                 mc.stop();
                 return true;
             }
-            if (ticksWithLevel < 240) {
+            if (ticksWithLevel < 300) {
                 return false;
             }
             fail("highY",
                 " arrived=" + arrived
                     + " buildable=" + buildable
-                    + " blockVisible=" + blockVisible
+                    + " glowstone=" + glowstone
+                    + " water=" + water
+                    + " chest=" + chest
+                    + " height=" + height
+                    + " light=" + light
                     + " playerY=" + (mc.player == null ? "null" : mc.player.getY()));
             mc.stop();
             return true;

@@ -35,6 +35,15 @@ public abstract class LevelChunkMixin {
         }
     }
 
+    @Inject(method = "getFluidState(III)Lnet/minecraft/world/level/material/FluidState;",
+        at = @At("HEAD"), cancellable = true)
+    private void endless$getFluidState(int x, int y, int z, CallbackInfoReturnable<FluidState> cir) {
+        LevelChunk self = (LevelChunk) (Object) this;
+        if (EndlessVerticalEngine.isExtendedY(self.getLevel(), y)) {
+            cir.setReturnValue(EndlessVerticalEngine.world(self.getLevel()).getFluidState(new BlockPos(x, y, z)));
+        }
+    }
+
     @Inject(method = "setBlockState", at = @At("HEAD"), cancellable = true)
     private void endless$setBlockState(
         BlockPos pos,

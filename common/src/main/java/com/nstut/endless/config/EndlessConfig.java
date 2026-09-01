@@ -42,6 +42,13 @@ public class EndlessConfig {
 
     private BuildHeightConfig buildHeight = new BuildHeightConfig();
 
+    // Never serialize migration bookkeeping. rawLoadedBuildHeight is the exact
+    // pre-clamp evidence from disk and must survive in memory until the server
+    // has classified a pre-v0.4 world. Rewriting the file before that point can
+    // destroy the only record of a legacy range such as [-2048, 2048).
+    private transient BuildHeightConfig rawLoadedBuildHeight;
+    private transient boolean normalizationPending;
+
     public static EndlessConfig getInstance() {
         if (instance == null) {
             instance = new EndlessConfig();
@@ -50,8 +57,15 @@ public class EndlessConfig {
     }
 
     public void load() {
-        Path configDir = Paths.get(CONFIG_DIR);
+        load(Paths.get(CONFIG_DIR));
+    }
+
+    /** Package-private path overload for regression tests. */
+    void load(Path configDir) {
         Path configFile = configDir.resolve(CONFIG_FILENAME);
+        buildHeight = new BuildHeightConfig();
+        rawLoadedBuildHeight = null;
+        normalizationPending = false;
 
         try {
             if (!Files.exists(configDir)) {
@@ -59,9 +73,9 @@ public class EndlessConfig {
             }
 
             File file = configFile.toFile();
-
             if (!file.exists()) {
-                save();
+                rawLoadedBuildHeight = buildHeight.copy();
+                save(configDir);
                 return;
             }
 
@@ -70,43 +84,43 @@ public class EndlessConfig {
                 EndlessConfig loadedConfig = GSON.fromJson(reader, EndlessConfig.class);
                 loadedHeight = loadedConfig != null ? loadedConfig.buildHeight : null;
             } catch (RuntimeException e) {
-                // Gson parse errors are runtime exceptions (malformed JSON, wrong
-                // types) and must never kill startup. Keep defaults and preserve
-                // the broken file so the user can recover it.
+                // Preserve malformed input and use defaults in memory, but do
+                // not rewrite endless.json yet. A played pre-v0.4 world may
+                // depend on information in that file, so startup migration must
+                // classify the world before any normalization/default write.
                 Path broken = configFile.resolveSibling(CONFIG_FILENAME + ".broken");
-                boolean preserved = false;
                 try {
                     Files.copy(configFile, broken, StandardCopyOption.REPLACE_EXISTING);
-                    preserved = true;
+                    System.err.println("Endless: malformed config (" + e.getMessage()
+                        + "), using defaults in memory. Original copied to " + broken.getFileName()
+                        + "; endless.json is left untouched until world migration is classified.");
                 } catch (IOException copyError) {
-                    System.err.println("Endless: failed to back up broken config: " + copyError.getMessage());
-                }
-                if (preserved) {
                     System.err.println("Endless: malformed config (" + e.getMessage()
-                        + "), using defaults. Original saved as " + broken.getFileName());
-                    save();
-                } else {
-                    // Only defaults in memory; never overwrite the original when
-                    // it could not be backed up.
-                    System.err.println("Endless: malformed config (" + e.getMessage()
-                        + "), using defaults in memory; original left untouched at "
-                        + configFile);
+                        + "), using defaults in memory; failed to create backup ("
+                        + copyError.getMessage() + "), original left untouched at " + configFile);
                 }
+                normalizationPending = true;
                 return;
             }
 
             if (loadedHeight == null) {
-                System.err.println("Endless: config is missing the buildHeight section, using defaults");
-                save();
+                System.err.println("Endless: config is missing the buildHeight section, using defaults in memory; "
+                    + "the file is left untouched until world migration is classified");
+                normalizationPending = true;
                 return;
             }
 
-            this.buildHeight = loadedHeight;
+            rawLoadedBuildHeight = loadedHeight.copy();
+            buildHeight = loadedHeight;
             int beforeMin = buildHeight.getMinBuildHeight();
             int beforeMax = buildHeight.getMaxBuildHeight();
             buildHeight.clamp();
-            if (buildHeight.getMinBuildHeight() != beforeMin || buildHeight.getMaxBuildHeight() != beforeMax) {
-                save();
+            normalizationPending = buildHeight.getMinBuildHeight() != beforeMin
+                || buildHeight.getMaxBuildHeight() != beforeMax;
+            if (normalizationPending) {
+                System.err.println("Endless: config range [" + beforeMin + ", " + beforeMax
+                    + ") normalizes to [" + buildHeight.getMinBuildHeight() + ", "
+                    + buildHeight.getMaxBuildHeight() + "); preserving the raw file until world migration is classified");
             }
         } catch (IOException e) {
             System.err.println("Failed to load Endless config: " + e.getMessage());
@@ -115,7 +129,11 @@ public class EndlessConfig {
     }
 
     public void save() {
-        Path configDir = Paths.get(CONFIG_DIR);
+        save(Paths.get(CONFIG_DIR));
+    }
+
+    /** Package-private path overload for regression tests. */
+    void save(Path configDir) {
         Path configFile = configDir.resolve(CONFIG_FILENAME);
 
         try {
@@ -126,14 +144,35 @@ public class EndlessConfig {
             try (FileWriter writer = new FileWriter(configFile.toFile())) {
                 GSON.toJson(this, writer);
             }
+            normalizationPending = false;
+            rawLoadedBuildHeight = buildHeight.copy();
         } catch (IOException e) {
             System.err.println("Failed to save Endless config: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
+    /**
+     * Persist a normalized config only after world migration has safely
+     * completed. Calling this before classification would erase legacy range
+     * evidence and is intentionally avoided by the startup path.
+     */
+    public void saveNormalizedIfNeeded() {
+        if (normalizationPending) {
+            save();
+        }
+    }
+
     public BuildHeightConfig getBuildHeight() {
         return buildHeight;
+    }
+
+    /**
+     * Exact build-height values parsed from disk before v0.4 clamping/alignment,
+     * or null when no trustworthy buildHeight section could be read.
+     */
+    public BuildHeightConfig getRawLoadedBuildHeight() {
+        return rawLoadedBuildHeight == null ? null : rawLoadedBuildHeight.copy();
     }
 
     public static class BuildHeightConfig {
@@ -146,6 +185,13 @@ public class EndlessConfig {
 
         public int getMaxBuildHeight() {
             return maxBuildHeight;
+        }
+
+        public BuildHeightConfig copy() {
+            BuildHeightConfig copy = new BuildHeightConfig();
+            copy.minBuildHeight = minBuildHeight;
+            copy.maxBuildHeight = maxBuildHeight;
+            return copy;
         }
 
         public void clamp() {

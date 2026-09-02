@@ -19,8 +19,7 @@ public final class EndlessVerticalEngine {
 
     public static boolean isExtendedY(Level level, int y) {
         return EndlessLogicalHeights.isActive()
-            && EndlessLogicalHeights.contains(y)
-            && (y < level.getMinBuildHeight() || y >= level.getMinBuildHeight() + level.getHeight());
+            && EndlessLogicalHeights.isSparseBuildHeight(y);
     }
 
     public static synchronized void flushAll() {

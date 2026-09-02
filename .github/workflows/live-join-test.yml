@@ -52,6 +52,15 @@ jobs:
           # One matrix cell may write the shared dependency cache; the other
           # five read it without contending during post-job cache saves.
           cache-read-only: ${{ !(matrix.target == 'fabric-1.20.1' && matrix.scenario == 'extended-server') }}
+          # Never restore Loom's mutable process-owned workspace. A cancelled
+          # predecessor can leave a disowned lock and generated mapping paths
+          # that disappear while :common Mixin AP is compiling.
+          gradle-home-cache-excludes: |
+            caches/fabric-loom
+
+      - name: Reset mutable Loom cache
+        shell: bash
+        run: rm -rf "$GRADLE_USER_HOME/caches/fabric-loom"
 
       - name: Configure CI Maven Central mirror
         shell: bash

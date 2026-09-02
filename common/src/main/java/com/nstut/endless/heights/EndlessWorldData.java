@@ -17,13 +17,10 @@ public class EndlessWorldData extends SavedData {
     private int minBuildHeight;
     private int maxBuildHeight;
 
-    /** Fresh data: seed the dense core from the current logical config. */
+    /** Fresh v0.5 data starts with the vanilla-sized dense compatibility core. */
     public EndlessWorldData() {
-        EndlessConfig.BuildHeightConfig cfg = EndlessConfig.getInstance().getBuildHeight();
-        int[] dense = EndlessHeights.denseRangeForLogical(
-            cfg.getMinBuildHeight(), cfg.getMaxBuildHeight());
-        minBuildHeight = dense[0];
-        maxBuildHeight = dense[1];
+        minBuildHeight = EndlessHeights.VANILLA_MIN_BUILD_HEIGHT;
+        maxBuildHeight = EndlessHeights.VANILLA_MAX_BUILD_HEIGHT;
     }
 
     public static EndlessWorldData load(CompoundTag tag) {

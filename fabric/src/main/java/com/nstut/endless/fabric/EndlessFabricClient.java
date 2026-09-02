@@ -27,18 +27,20 @@ public final class EndlessFabricClient implements ClientModInitializer {
 
         ClientLoginNetworking.registerGlobalReceiver(EndlessFabric.HEIGHT_SYNC_CHANNEL,
             (client, handler, buf, responseSink) -> {
-                int min = buf.readVarInt();
-                int max = buf.readVarInt();
                 int logicalMin = buf.readVarInt();
                 int logicalMax = buf.readVarInt();
+                int denseMin = buf.readVarInt();
+                int denseMax = buf.readVarInt();
+                int envelopeMin = buf.readVarInt();
+                int envelopeMax = buf.readVarInt();
                 CompletableFuture<FriendlyByteBuf> result = new CompletableFuture<>();
                 client.execute(() -> {
                     try {
-                        if (logicalMin != EndlessLogicalHeights.MIN_BUILD_HEIGHT
-                            || logicalMax != EndlessLogicalHeights.MAX_BUILD_HEIGHT) {
+                        if (envelopeMin != EndlessLogicalHeights.MIN_BUILD_HEIGHT
+                            || envelopeMax != EndlessLogicalHeights.MAX_BUILD_HEIGHT) {
                             throw new IllegalStateException("Incompatible Endless logical-height protocol");
                         }
-                        EndlessHeights.applyEffective(min, max);
+                        EndlessHeights.applyEffective(logicalMin, logicalMax, denseMin, denseMax);
                         EndlessLogicalHeights.activate();
                         result.complete(new FriendlyByteBuf(Unpooled.buffer()));
                     } catch (Throwable t) {

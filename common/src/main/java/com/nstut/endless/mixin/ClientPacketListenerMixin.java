@@ -75,10 +75,11 @@ public class ClientPacketListenerMixin {
         if (tag != null) {
             blockEntity.load(tag);
         }
-        // Page snapshots can invalidate/render before this later BE packet is
-        // handled. Mark the block dirty so a render snapshot cannot retain a
-        // pre-BE copy of the chunk.
-        level.setBlocksDirty(pos, state, state);
+        // A page rebuild may be queued before this later BE packet is handled.
+        // Bypass ClientLevel#setBlocksDirty's state-difference filter so the
+        // render snapshot is guaranteed to include the newly registered BE.
+        minecraft.levelRenderer.setBlocksDirty(
+            pos.getX(), pos.getY(), pos.getZ(), pos.getX(), pos.getY(), pos.getZ());
         ci.cancel();
     }
 }

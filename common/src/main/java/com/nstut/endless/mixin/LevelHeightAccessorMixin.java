@@ -11,13 +11,13 @@ import org.spongepowered.asm.mixin.Overwrite;
 @Mixin(LevelHeightAccessor.class)
 public interface LevelHeightAccessorMixin {
 
-    /** @author Endless @reason Keep the dense vanilla engine core bounded and persisted. */
+    /** @author Endless @reason Keep vanilla section-array origin on the persisted dense core. */
     @Overwrite
     default int getMinBuildHeight() {
-        return EndlessHeights.getMinBuildHeight();
+        return EndlessHeights.getDenseMinBuildHeight();
     }
 
-    /** @author Endless @reason Keep vanilla section arrays bounded to the v0.4 core. */
+    /** @author Endless @reason Keep vanilla section arrays bounded to the persisted dense core. */
     @Overwrite
     default int getHeight() {
         return EndlessHeights.getHeight();
@@ -25,16 +25,16 @@ public interface LevelHeightAccessorMixin {
 
     /**
      * @author Endless
-     * @reason Expose the sparse logical envelope only on real worlds. Dense
-     * generation/chunk accessors rely on this guard before indexing their
-     * bounded section arrays and must retain the persisted dense-core range.
+     * @reason Real worlds expose the user-configured logical build limit, while
+     * dense generation/chunk accessors must retain the persisted dense guard
+     * before indexing their bounded section arrays.
      */
     @Overwrite
     default boolean isOutsideBuildHeight(int y) {
         if (EndlessLogicalHeights.isActive() && (Object) this instanceof Level) {
-            return EndlessLogicalHeights.isOutsideBuildHeight(y);
+            return EndlessHeights.isOutsideBuildHeight(y);
         }
-        return EndlessHeights.isOutsideBuildHeight(y);
+        return EndlessHeights.isOutsideDenseBuildHeight(y);
     }
 
     /** @author Endless @reason Apply the accessor-appropriate buildability test to positions. */

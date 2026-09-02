@@ -7,6 +7,7 @@ import com.nstut.endless.vertical.MinecraftVerticalWorld;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -25,6 +26,8 @@ import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.ItemLike;
 import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -171,6 +174,7 @@ public final class LiveHighYServerTest {
         verifySetBlockCommandBounds(level, player);
         prepareBoundary(level, player, false);
         prepareBoundary(level, player, true);
+        verifySparseBiomeSemantics(level);
         prepareWaystonesIfRequested(level, player);
 
         lowerStand = spawnStand(level, 10.5D, min + 1.0D);
@@ -268,6 +272,43 @@ public final class LiveHighYServerTest {
 
         // Removing power schedules the vanilla lamp's four-tick turn-off.
         require(level.removeBlock(power, false), edge + " redstone source removal failed");
+    }
+
+    /**
+     * Vanilla Biome#shouldFreeze/#shouldSnow reject positions outside the dense
+     * LevelHeightAccessor range. These checks prove the sparse biome mixin
+     * overrides that guard at both logical edges rather than silently falling
+     * back to the dense core.
+     */
+    private static void verifySparseBiomeSemantics(ServerLevel level) {
+        Biome coldBiome = level.registryAccess().registryOrThrow(Registries.BIOME).get(Biomes.FROZEN_OCEAN);
+        require(coldBiome != null, "minecraft:frozen_ocean biome is missing from the server registry");
+        verifySparseBiomeEdge(level, coldBiome, false);
+        verifySparseBiomeEdge(level, coldBiome, true);
+    }
+
+    private static void verifySparseBiomeEdge(ServerLevel level, Biome coldBiome, boolean upper) {
+        String edge = upper ? "upper" : "lower";
+        int freezeY = upper ? upperY() : lowerY();
+        BlockPos freezePos = pos(40, freezeY);
+        require(level.setBlock(freezePos, Blocks.WATER.defaultBlockState(), 3),
+            edge + " sparse biome water setup failed");
+        require(level.getBrightness(LightLayer.BLOCK, freezePos) < 10,
+            edge + " sparse biome freeze probe unexpectedly has high block light");
+        require(coldBiome.shouldFreeze(level, freezePos, false),
+            edge + " sparse Biome#shouldFreeze fell back to dense build bounds");
+
+        int snowY = upper ? upperY() : lowerY() + 1;
+        BlockPos snowPos = pos(41, snowY);
+        BlockPos snowSupport = snowPos.below();
+        require(level.setBlock(snowSupport, Blocks.STONE.defaultBlockState(), 3),
+            edge + " sparse biome snow support setup failed");
+        require(level.getBlockState(snowPos).isAir(),
+            edge + " sparse biome snow probe must start as air");
+        require(level.getBrightness(LightLayer.BLOCK, snowPos) < 10,
+            edge + " sparse biome snow probe unexpectedly has high block light");
+        require(coldBiome.shouldSnow(level, snowPos),
+            edge + " sparse Biome#shouldSnow fell back to dense build bounds");
     }
 
     /**

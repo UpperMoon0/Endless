@@ -6,7 +6,8 @@
   "client": [
     "ViewAreaMixin",
     "ClientHandshakePacketListenerMixin",
-    "ClientPacketListenerMixin"
+    "ClientPacketListenerMixin",
+    "BlockStatePredictionHandlerMixin"
   ],
   "mixins": [
     "FriendlyByteBufMixin",

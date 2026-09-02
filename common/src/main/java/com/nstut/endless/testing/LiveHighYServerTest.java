@@ -19,7 +19,9 @@ import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.ItemLike;
 import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.properties.BedPart;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.BlockHitResult;
@@ -148,7 +150,11 @@ public final class LiveHighYServerTest {
         require(level.setBlock(glowstone, Blocks.GLOWSTONE.defaultBlockState(), 3), edge + " glowstone write failed");
         require(level.setBlock(water, Blocks.WATER.defaultBlockState(), 3), edge + " water write failed");
         require(level.setBlock(chest, Blocks.CHEST.defaultBlockState(), 3), edge + " chest write failed");
-        require(level.setBlock(poi, Blocks.RED_BED.defaultBlockState(), 3), edge + " bed/POI write failed");
+        // Vanilla HOME POIs include only the HEAD half of beds; the default
+        // BedBlock state is FOOT and therefore is intentionally not a POI.
+        require(level.setBlock(poi,
+            Blocks.RED_BED.defaultBlockState().setValue(BedBlock.PART, BedPart.HEAD), 3),
+            edge + " bed/POI write failed");
         require(level.setBlock(power, Blocks.REDSTONE_BLOCK.defaultBlockState(), 3), edge + " redstone source write failed");
 
         // Exercise the ordinary BlockItem placement path, not only direct world writes.

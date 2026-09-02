@@ -1,13 +1,16 @@
 package com.nstut.endless.testing;
 
 import com.nstut.endless.vertical.EndlessVerticalEngine;
+import com.nstut.endless.vertical.ExtendedPoiStorage;
 import com.nstut.endless.vertical.MinecraftVerticalWorld;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.ai.village.poi.PoiManager;
 import net.minecraft.world.entity.ai.village.poi.PoiTypes;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -31,35 +34,27 @@ public final class LiveHighYServerTest {
     private LiveHighYServerTest() {}
 
     public static void tick(MinecraftServer server) {
-        if (done || !Boolean.parseBoolean(System.getProperty(SYSTEM_PROPERTY, "false"))) {
-            return;
-        }
-        if (server.getPlayerList().getPlayers().isEmpty()) {
-            return;
-        }
+        if (done || !Boolean.parseBoolean(System.getProperty(SYSTEM_PROPERTY, "false"))) return;
+        if (server.getPlayerList().getPlayers().isEmpty()) return;
         ticksWithPlayer++;
         ServerPlayer player = server.getPlayerList().getPlayers().get(0);
         ServerLevel level = player.serverLevel();
 
         try {
             if (!prepared) {
-                if (ticksWithPlayer < 10) {
-                    return;
-                }
+                if (ticksWithPlayer < 10) return;
                 prepare(level, player);
                 prepared = true;
                 preparedTick = ticksWithPlayer;
                 return;
             }
+            if (ticksWithPlayer < preparedTick + 5) return;
 
-            // ServerLevel posts POI updates through its executor. Give that
-            // queue a few ticks, then prove the high section key is durable.
-            if (ticksWithPlayer < preparedTick + 5) {
-                return;
-            }
-            if (!level.getPoiManager().existsAtPosition(PoiTypes.HOME, POI_POS)) {
-                throw new IllegalStateException("high-Y POI was not registered");
-            }
+            requirePoi(level, "high-Y POI was not registered/searchable");
+            ChunkPos poiChunk = new ChunkPos(POI_POS);
+            ExtendedPoiStorage.flush(level, poiChunk);
+            ExtendedPoiStorage.unload(level, poiChunk);
+            requirePoi(level, "high-Y POI did not survive sparse POI flush + eviction + reload");
 
             done = true;
             System.out.println(PASS_MARKER
@@ -91,7 +86,6 @@ public final class LiveHighYServerTest {
         MinecraftVerticalWorld vertical = EndlessVerticalEngine.world(level);
         vertical.flushDirty();
         EndlessVerticalEngine.close(level);
-
         require(level.getBlockState(TEST_POS).is(Blocks.GLOWSTONE),
             "high-Y block did not survive sparse page flush + cache reload");
         require(level.getFluidState(WATER_POS).isSource(),
@@ -108,9 +102,14 @@ public final class LiveHighYServerTest {
         player.teleportTo(0.5D, TEST_Y + 2.0D, 0.5D);
     }
 
+    private static void requirePoi(ServerLevel level, String message) {
+        require(level.getPoiManager().existsAtPosition(PoiTypes.HOME, POI_POS), message + " (direct)");
+        require(level.getPoiManager().findClosest(
+                holder -> holder.is(PoiTypes.HOME), POI_POS, 16, PoiManager.Occupancy.ANY)
+            .filter(POI_POS::equals).isPresent(), message + " (search)");
+    }
+
     private static void require(boolean condition, String message) {
-        if (!condition) {
-            throw new IllegalStateException(message);
-        }
+        if (!condition) throw new IllegalStateException(message);
     }
 }

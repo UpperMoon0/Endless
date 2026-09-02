@@ -35,22 +35,14 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
-/**
- * Sparse persistence extension for high-Y POI sections.
- *
- * <p>Vanilla SectionStorage persists a horizontal POI column by iterating every
- * section between LevelHeightAccessor#getMinSection and getMaxSection. Endless
- * intentionally keeps that interval dense and bounded, so extended POI keys
- * must not enter vanilla's dirty queue: they would neither be serialized nor
- * cleared. This mixin stores only those sparse POI sections in a sidecar file
- * per horizontal chunk and leaves all dense POI IO unchanged.</p>
- */
+/** Sparse persistence extension for high-Y POI sections. */
 @Mixin(SectionStorage.class)
 public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAccess {
     @Unique private static final int ENDLESS_POI_FORMAT = 1;
@@ -59,7 +51,6 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
     @Shadow @Final private Function<Runnable, Codec<R>> codec;
     @Shadow @Final private RegistryAccess registryAccess;
     @Shadow @Final protected LevelHeightAccessor levelHeightAccessor;
-
     @Shadow protected abstract void onSectionLoad(long sectionKey);
 
     @Unique private Path endless$poiRoot;
@@ -88,7 +79,6 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
         if (!endless$isExtendedPoiSection(sectionKey)) {
             return;
         }
-
         long columnKey = ChunkPos.asLong(SectionPos.x(sectionKey), SectionPos.z(sectionKey));
         endless$loadColumn(columnKey);
         Optional<R> value = storage.get(sectionKey);
@@ -117,20 +107,13 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
             return;
         }
         while (!endless$dirtyColumns.isEmpty() && hasTime.getAsBoolean()) {
-            long columnKey = endless$dirtyColumns.iterator().next();
-            endless$saveColumn(columnKey);
+            endless$saveColumn(endless$dirtyColumns.iterator().next());
         }
     }
 
     @Inject(method = "flush", at = @At("HEAD"))
     private void endless$flush(ChunkPos chunkPos, CallbackInfo ci) {
-        if (!endless$isPoiStorage()) {
-            return;
-        }
-        long columnKey = chunkPos.toLong();
-        if (endless$dirtyColumns.contains(columnKey)) {
-            endless$saveColumn(columnKey);
-        }
+        endless$flushExtendedColumn(chunkPos);
     }
 
     @Inject(method = "close", at = @At("HEAD"))
@@ -153,13 +136,43 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
         ArrayList<R> result = new ArrayList<>();
         for (Long2ObjectMap.Entry<Optional<R>> entry : storage.long2ObjectEntrySet()) {
             long sectionKey = entry.getLongKey();
-            if (SectionPos.x(sectionKey) != chunkPos.x || SectionPos.z(sectionKey) != chunkPos.z
-                || !endless$isExtendedPoiSection(sectionKey)) {
-                continue;
+            if (SectionPos.x(sectionKey) == chunkPos.x && SectionPos.z(sectionKey) == chunkPos.z
+                && endless$isExtendedPoiSection(sectionKey)) {
+                entry.getValue().ifPresent(result::add);
             }
-            entry.getValue().ifPresent(result::add);
         }
         return result;
+    }
+
+    @Override
+    public void endless$flushExtendedColumn(ChunkPos chunkPos) {
+        if (!endless$isPoiStorage()) {
+            return;
+        }
+        long columnKey = chunkPos.toLong();
+        if (endless$dirtyColumns.contains(columnKey)) {
+            endless$saveColumn(columnKey);
+        }
+    }
+
+    @Override
+    public void endless$unloadExtendedColumn(ChunkPos chunkPos) {
+        if (!endless$isPoiStorage()) {
+            return;
+        }
+        long columnKey = chunkPos.toLong();
+        if (endless$dirtyColumns.contains(columnKey)) {
+            endless$saveColumn(columnKey);
+        }
+        Iterator<Long2ObjectMap.Entry<Optional<R>>> iterator = storage.long2ObjectEntrySet().iterator();
+        while (iterator.hasNext()) {
+            long sectionKey = iterator.next().getLongKey();
+            if (SectionPos.x(sectionKey) == chunkPos.x && SectionPos.z(sectionKey) == chunkPos.z
+                && endless$isExtendedPoiSection(sectionKey)) {
+                iterator.remove();
+            }
+        }
+        endless$loadedColumns.remove(columnKey);
     }
 
     @Unique
@@ -188,11 +201,9 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
             try {
                 CompoundTag root = NbtIo.readCompressed(file.toFile());
                 if (root.getInt("FormatVersion") != ENDLESS_POI_FORMAT
-                    || root.getInt("ChunkX") != chunkX
-                    || root.getInt("ChunkZ") != chunkZ) {
+                    || root.getInt("ChunkX") != chunkX || root.getInt("ChunkZ") != chunkZ) {
                     throw new IOException("Invalid Endless POI sidecar header at " + file);
                 }
-
                 RegistryOps<Tag> ops = RegistryOps.create(NbtOps.INSTANCE, registryAccess);
                 CompoundTag sections = root.getCompound("Sections");
                 for (String name : sections.getAllKeys()) {
@@ -206,8 +217,8 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
                     if (!endless$isExtendedPoiSection(sectionKey)) {
                         throw new IOException("Out-of-range Endless POI section " + sectionY + " at " + file);
                     }
-                    Tag encoded = sections.get(name);
-                    DataResult<R> decoded = codec.apply(() -> endless$dirtyColumns.add(columnKey)).parse(ops, encoded);
+                    DataResult<R> decoded = codec.apply(() -> endless$dirtyColumns.add(columnKey))
+                        .parse(ops, sections.get(name));
                     Optional<R> value = decoded.result();
                     if (value.isEmpty()) {
                         throw new IOException("Could not decode Endless POI section " + sectionY + " at " + file);
@@ -259,7 +270,6 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
             root.putInt("ChunkX", chunkX);
             root.putInt("ChunkZ", chunkZ);
             root.put("Sections", sections);
-
             Files.createDirectories(file.getParent());
             Path temp = file.resolveSibling(file.getFileName() + ".tmp");
             NbtIo.writeCompressed(root, temp.toFile());

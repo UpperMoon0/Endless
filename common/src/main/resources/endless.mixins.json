@@ -22,6 +22,10 @@
     "ClientboundLevelChunkPacketDataMixin",
     "SectionStorageMixin",
     "PoiManagerMixin",
+    "EntityMixin",
+    "GoalUtilsMixin",
+    "ServerLevelMixin",
+    "accessor.MinecraftVerticalWorldAccessor",
     "compat.WaystoneBlockBaseMixin"
   ],
   "injectors": {

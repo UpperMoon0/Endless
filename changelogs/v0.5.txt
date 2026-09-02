@@ -1,0 +1,24 @@
+Endless 0.5
+
+- Added a configurable sparse logical build envelope from Y=-8,000,000 through Y=7,999,999.
+- Made `config/endless.json` authoritative for placement, vanilla commands, teleport validity, AI limits and sparse runtime bounds; the ±8M representation ceiling is no longer treated as automatically buildable.
+- Preserved valid million-scale configuration values across launch instead of clamping them to the old ±2032 dense envelope.
+- Kept fresh v0.5 worlds on a vanilla `[-64,320)` dense chunk core regardless of logical range, so widening the config does not widen `LevelChunkSection[]`.
+- Preserved wider historical dense cores for upgraded worlds only when required for legacy Anvil safety; that internal range never widens the current configured build limit.
+- Added dedicated compressed-NBT sparse page persistence outside vanilla Anvil section serialization.
+- Added an extended BlockPos network encoding for high-Y positions while preserving vanilla encoding in the normal range.
+- Added high-Y block, fluid and block-entity access through normal Level/LevelChunk APIs.
+- Added sparse heightmap overlays for world-surface, ocean-floor and motion-blocking queries.
+- Added sparse block/sky lighting that avoids vanilla packed-Y wrapping.
+- Added sparse high-Y POI persistence and search without widening vanilla SectionStorage loops.
+- Routed high-Y block updates around ChunkHolder's dense per-section batching.
+- Preserved client block prediction above vanilla's packed BlockPos Y envelope.
+- Kept SectionPos-keyed POI/tick addressing inside the signed 20-bit SectionPos Y representation envelope.
+- Added a 512-block camera-following render/sync window with sparse page resync and unload eviction.
+- Added server-authoritative logical + dense-height negotiation for Fabric and Forge clients.
+- Added explicit Waystones 1.20.1 placement compatibility so its `Level#getHeight()` ceiling follows the configured logical maximum.
+- Added real Waystones+Balm compatibility coverage for sparse high-Y placement, block entities, manager position/UUID state and client observation.
+- Added real `/setblock` live coverage proving `min` and `max-1` succeed while `min-1` and `max` are rejected on both loaders.
+- Split client-only loader bootstraps so dedicated servers never resolve client classes.
+- Expanded the real-client sparse-edge scenario to cover block/fluid/block-entity/POI/light/height persistence, rendering and player travel on both Fabric and Forge.
+- Retained v0.4 fail-closed legacy-world migration guarantees.

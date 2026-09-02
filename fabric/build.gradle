@@ -20,12 +20,17 @@ loom {
             property "endless.liveJoinTest.expectedMin", System.getenv('ENDLESS_TEST_EXPECTED_MIN') ?: '-1024'
             property "endless.liveJoinTest.expectedMax", System.getenv('ENDLESS_TEST_EXPECTED_MAX') ?: '1024'
             property "endless.liveJoinTest.preseedStaleRange", System.getenv('ENDLESS_TEST_PRESEED_STALE') ?: 'false'
+            property "endless.liveJoinTest.expectLogical", (System.getenv('ENDLESS_TEST_PRESEED_STALE') == 'true') ? 'false' : 'true'
+            property "endless.liveJoinTest.highY", (System.getenv('ENDLESS_TEST_EXPECTED_MIN') ?: '-1024') == '-1024' ? 'true' : 'false'
+            property "endless.liveJoinWaystonesTest", System.getenv('ENDLESS_TEST_WAYSTONES') ?: 'false'
             programArgs "--quickPlayMultiplayer", "127.0.0.1:${System.getenv('ENDLESS_TEST_PORT') ?: '25575'}"
         }
         liveJoinTestServer {
             server()
             runDir("run/live-join/server")
             vmArg "-Xmx1536m"
+            property "endless.liveJoinHighYTest", System.getenv('ENDLESS_TEST_EXTREME') ?: 'false'
+            property "endless.liveJoinWaystonesTest", System.getenv('ENDLESS_TEST_WAYSTONES') ?: 'false'
             programArg "nogui"
         }
     }
@@ -58,6 +63,25 @@ dependencies {
 
     common(project(path: ':common', configuration: 'namedElements')) { transitive false }
     shadowBundle project(path: ':common', configuration: 'transformProductionFabric')
+
+    // Real compatibility coverage only: normal development/runtime artifacts do
+    // not acquire a hard Waystones dependency. Use the exact published
+    // CurseForge files corresponding to canonical Waystones 14.1.20 and Balm
+    // 7.3.38 because TwelveIterations' release repository is not anonymously
+    // readable and its public group does not expose these historical artifacts.
+    if (System.getenv('ENDLESS_TEST_WAYSTONES') == 'true') {
+        modRuntimeOnly "curse.maven:balm-fabric-500525:7420614"
+        modRuntimeOnly "curse.maven:waystones-245755:7682268"
+    }
+}
+
+repositories {
+    maven {
+        url = uri('https://www.cursemaven.com')
+        content {
+            includeGroup 'curse.maven'
+        }
+    }
 }
 
 processResources {

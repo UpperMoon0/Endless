@@ -14,22 +14,29 @@ on:
 
 # Real-client jobs are expensive and each PR synchronize supersedes every
 # earlier live-join result for that PR. Keep only the newest head running.
-# Reusable release invocations group by ref (master), which is already
-# serialized by the parent release workflow.
 concurrency:
   group: endless-live-join-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   live-join:
-    timeout-minutes: 25
+    name: live-join (${{ matrix.target }}, ${{ matrix.scenario }})
+    timeout-minutes: 20
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
+      # The scenarios are independent. Running them as separate matrix cells
+      # preserves the complete Fabric/Forge matrix while replacing three
+      # serial Minecraft client boots per loader with one boot per runner.
       matrix:
-        include:
-          - target: fabric-1.20.1
-          - target: forge-1.20.1
+        target:
+          - fabric-1.20.1
+          - forge-1.20.1
+        scenario:
+          - extended-server
+          - baseline-endless-vanilla-server
+          - baseline-no-endless
+
     steps:
       - uses: actions/checkout@v4
 
@@ -42,9 +49,18 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          # Let one matrix leg seed Gradle state for later runs; the other is
-          # read-only so parallel jobs never contend while saving the same cache.
-          cache-read-only: ${{ matrix.target == 'forge-1.20.1' }}
+          # One matrix cell may write the shared dependency cache; the other
+          # five read it without contending during post-job cache saves.
+          cache-read-only: ${{ !(matrix.target == 'fabric-1.20.1' && matrix.scenario == 'extended-server') }}
+          # Never restore Loom's mutable process-owned workspace. A cancelled
+          # predecessor can leave a disowned lock and generated mapping paths
+          # that disappear while :common Mixin AP is compiling.
+          gradle-home-cache-excludes: |
+            caches/fabric-loom
+
+      - name: Reset mutable Loom cache
+        shell: bash
+        run: rm -rf "$GRADLE_USER_HOME/caches/fabric-loom"
 
       - name: Configure CI Maven Central mirror
         shell: bash
@@ -60,17 +76,26 @@ jobs:
       - name: Install virtual display
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
-      - name: Build mod once
-        run: ./gradlew build --no-daemon --no-configuration-cache
-
+      # tools/live_join_test.py compiles the selected loader exactly once.
+      # Do not run a redundant full ./gradlew build here; Validate already owns
+      # JUnit/build coverage and the live job only needs the selected runtime.
+      # The two extended cells additionally resolve canonical Waystones+Balm
+      # artifacts and exercise real high-Y placement/BE/network integration.
       - name: Run automatic real-client join test
-        run: python3 tools/live_join_test.py --target "${{ matrix.target }}"
+        env:
+          ENDLESS_TEST_EXTREME: ${{ matrix.scenario == 'extended-server' && 'true' || 'false' }}
+          ENDLESS_TEST_WAYSTONES: ${{ matrix.scenario == 'extended-server' && 'true' || 'false' }}
+        run: >-
+          python3 tools/live_join_test.py
+          --target "${{ matrix.target }}"
+          --scenario "${{ matrix.scenario }}"
+          --timeout 300
 
       - name: Upload test logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: live-join-${{ matrix.target }}
+          name: live-join-${{ matrix.target }}-${{ matrix.scenario }}
           path: |
             ${{ matrix.target == 'fabric-1.20.1' && 'fabric' || 'forge' }}/run/live-join/client/logs
             ${{ matrix.target == 'fabric-1.20.1' && 'fabric' || 'forge' }}/run/live-join/server/logs

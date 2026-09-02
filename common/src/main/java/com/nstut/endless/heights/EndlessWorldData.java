@@ -5,10 +5,11 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.saveddata.SavedData;
 
 /**
- * World-persisted build range. The range defines the chunk section array
- * layout, so it must survive config edits: on load it is merged with the file
- * config (never shrinking), making the effective range world-stable while
- * still allowing deliberate expansion.
+ * World-persisted vanilla dense-core range.
+ *
+ * <p>This is intentionally not the user-configured logical build limit. The
+ * dense range survives config shrink so vanilla Anvil sections are never
+ * dropped merely because the current sparse build envelope is narrower.</p>
  */
 public class EndlessWorldData extends SavedData {
     public static final String DATA_NAME = "endless_build_heights";
@@ -16,24 +17,25 @@ public class EndlessWorldData extends SavedData {
     private int minBuildHeight;
     private int maxBuildHeight;
 
-    /** Fresh data: seed from the current file config. */
+    /** Fresh v0.5 data starts with the vanilla-sized dense compatibility core. */
     public EndlessWorldData() {
-        EndlessConfig.BuildHeightConfig cfg = EndlessConfig.getInstance().getBuildHeight();
-        minBuildHeight = cfg.getMinBuildHeight();
-        maxBuildHeight = cfg.getMaxBuildHeight();
+        minBuildHeight = EndlessHeights.VANILLA_MIN_BUILD_HEIGHT;
+        maxBuildHeight = EndlessHeights.VANILLA_MAX_BUILD_HEIGHT;
     }
 
     public static EndlessWorldData load(CompoundTag tag) {
         EndlessWorldData data = new EndlessWorldData();
-        data.minBuildHeight = tag.getInt("MinBuildHeight");
-        data.maxBuildHeight = tag.getInt("MaxBuildHeight");
-        // Old or hand-edited data may be outside the envelope; normalize.
-        EndlessConfig.BuildHeightConfig tmp = new EndlessConfig.BuildHeightConfig();
-        tmp.setMinBuildHeight(data.minBuildHeight);
-        tmp.setMaxBuildHeight(data.maxBuildHeight);
-        tmp.clamp();
-        data.minBuildHeight = tmp.getMinBuildHeight();
-        data.maxBuildHeight = tmp.getMaxBuildHeight();
+        int min = tag.getInt("MinBuildHeight");
+        int max = tag.getInt("MaxBuildHeight");
+        if (min < EndlessConfig.DENSE_MIN_BUILD_HEIGHT
+            || max > EndlessConfig.DENSE_MAX_BUILD_HEIGHT
+            || min >= max
+            || Math.floorMod(min, 16) != 0
+            || Math.floorMod(max, 16) != 0) {
+            throw new IllegalArgumentException("Invalid persisted Endless dense range [" + min + ", " + max + ")");
+        }
+        data.minBuildHeight = min;
+        data.maxBuildHeight = max;
         return data;
     }
 

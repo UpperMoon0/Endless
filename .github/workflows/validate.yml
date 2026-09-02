@@ -30,6 +30,17 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          # Loom's mutable remap workspace contains process-owned lock and
+          # generated mapping files. Restoring it after a cancelled build can
+          # invalidate the Mixin AP input mid-configuration. Keep dependency
+          # caches warm, but always regenerate Loom state for this checkout.
+          gradle-home-cache-excludes: |
+            caches/fabric-loom
+
+      - name: Reset mutable Loom cache
+        shell: bash
+        run: rm -rf "$GRADLE_USER_HOME/caches/fabric-loom"
 
       - name: Configure CI Maven Central mirror
         shell: bash

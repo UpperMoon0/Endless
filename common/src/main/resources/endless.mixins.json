@@ -6,11 +6,31 @@
   "client": [
     "ViewAreaMixin",
     "ClientHandshakePacketListenerMixin",
-    "ClientPacketListenerMixin"
-  ],  "mixins": [
+    "ClientPacketListenerMixin",
+    "BlockStatePredictionHandlerMixin",
+    "RenderChunkMixin"
+  ],
+  "mixins": [
+    "FriendlyByteBufMixin",
     "LevelHeightAccessorMixin",
     "LevelReaderMixin",
+    "LevelMixin",
+    "ChunkAccessMixin",
+    "ChunkHolderMixin",
     "LevelChunkMixin",
+    "LevelLightEngineMixin",
+    "ChunkMapMixin",
+    "ClientboundLevelChunkPacketDataMixin",
+    "SectionStorageMixin",
+    "PoiManagerMixin",
+    "EntityMixin",
+    "GoalUtilsMixin",
+    "ServerLevelMixin",
+    "BiomeMixin",
+    "PathNavigationMixin",
+    "WalkNodeEvaluatorMixin",
+    "FlyNodeEvaluatorMixin",
+    "accessor.MinecraftVerticalWorldAccessor",
     "compat.WaystoneBlockBaseMixin"
   ],
   "injectors": {

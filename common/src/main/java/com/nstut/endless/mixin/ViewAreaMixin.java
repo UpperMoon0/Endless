@@ -1,5 +1,6 @@
 package com.nstut.endless.mixin;
 
+import com.nstut.endless.heights.EndlessLogicalHeights;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ViewArea;
@@ -17,104 +18,59 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/**
- * Vanilla anchors the render section grid to {@code minBuildHeight} and covers the
- * full configured height, allocating GPU render chunks for every section. At
- * extended heights that is millions of buffers, so the vertical grid is capped to
- * a window that follows the camera:
- *
- * <ul>
- *   <li>{@code setViewDistance} caps the vertical grid size.</li>
- *   <li>{@code repositionCamera} shifts the grid origin when the camera drifts too
- *       far from the window center; moved render chunks get a new origin, which
- *       marks them dirty and recompiles them (vanilla behavior via
- *       {@code RenderChunk#setOrigin}).</li>
- *   <li>{@code getRenderChunkAt} and {@code setDirty} map section Y into the
- *       window and return null / ignore outside it.</li>
- * </ul>
- *
- * When the configured height fits the window, the window base equals
- * {@code minSection}, the shift is zero, and behavior is identical to vanilla.
- */
+/** Camera-following 512-block render window for the sparse vertical engine. */
 @Mixin(ViewArea.class)
 public abstract class ViewAreaMixin {
+    @Unique private static final int RENDER_WINDOW_SECTIONS = 32;
+    @Unique private static final int REBASE_HYSTERESIS_SECTIONS = 8;
+    @Unique private static final int UNINITIALIZED = Integer.MIN_VALUE;
 
-    @Unique
-    private static final int RENDER_WINDOW_SECTIONS = 32;
+    @Shadow @Final protected Level level;
+    @Shadow protected int chunkGridSizeX;
+    @Shadow protected int chunkGridSizeY;
+    @Shadow protected int chunkGridSizeZ;
+    @Shadow @Final public ChunkRenderDispatcher.RenderChunk[] chunks;
+    @Shadow protected abstract int getChunkIndex(int x, int y, int z);
 
-    /**
-     * The window re-centers only after the camera leaves this band around the
-     * center, limiting the recompile burst to roughly one hysteresis step.
-     */
-    @Unique
-    private static final int REBASE_HYSTERESIS_SECTIONS = 8;
-
-    @Unique
-    private static final int UNINITIALIZED = Integer.MIN_VALUE;
-
-    @Shadow
-    @Final
-    protected Level level;
-
-    @Shadow
-    protected int chunkGridSizeX;
-
-    @Shadow
-    protected int chunkGridSizeY;
-
-    @Shadow
-    protected int chunkGridSizeZ;
-
-    @Shadow
-    @Final
-    public ChunkRenderDispatcher.RenderChunk[] chunks;
-
-    @Shadow
-    protected abstract int getChunkIndex(int x, int y, int z);
-
-    /** Absolute section Y of the first section covered by the render window. */
-    @Unique
-    private int endless$windowBaseSection = UNINITIALIZED;
+    @Unique private int endless$windowBaseSection = UNINITIALIZED;
 
     @Redirect(
         method = "setViewDistance",
         at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getSectionsCount()I")
     )
     private int endless$capRenderSections(Level level) {
-        return Math.min(level.getSectionsCount(), RENDER_WINDOW_SECTIONS);
+        return EndlessLogicalHeights.isActive()
+            ? RENDER_WINDOW_SECTIONS
+            : Math.min(level.getSectionsCount(), RENDER_WINDOW_SECTIONS);
     }
 
     @Inject(method = "repositionCamera", at = @At("HEAD"))
     private void endless$trackCameraSection(double x, double z, CallbackInfo ci) {
         Camera camera = Minecraft.getInstance().gameRenderer.getMainCamera();
-        int cameraSection = camera.getBlockPosition().getY() >> 4;
-        int minSection = this.level.getMinSection();
-        int maxSection = this.level.getMaxSection();
+        int cameraSection = Math.floorDiv(camera.getBlockPosition().getY(), 16);
+        int minSection = EndlessLogicalHeights.isActive()
+            ? EndlessLogicalHeights.minSection()
+            : this.level.getMinSection();
+        int maxSectionExclusive = EndlessLogicalHeights.isActive()
+            ? EndlessLogicalHeights.maxSectionExclusive()
+            : this.level.getMaxSection();
+        int available = maxSectionExclusive - minSection;
 
-        if (chunkGridSizeY >= this.level.getSectionsCount()) {
-            // Grid covers the whole height: keep vanilla alignment.
+        if (available <= chunkGridSizeY) {
             endless$windowBaseSection = minSection;
             return;
         }
 
         if (endless$windowBaseSection != UNINITIALIZED) {
-            int center = endless$windowBaseSection + (RENDER_WINDOW_SECTIONS / 2);
+            int center = endless$windowBaseSection + (chunkGridSizeY / 2);
             if (Math.abs(cameraSection - center) <= REBASE_HYSTERESIS_SECTIONS) {
                 return;
             }
         }
 
         endless$windowBaseSection = Math.max(minSection, Math.min(
-            cameraSection - (RENDER_WINDOW_SECTIONS / 2),
-            maxSection - RENDER_WINDOW_SECTIONS
-        ));
-    }
-
-    @Unique
-    private int endless$windowBaseRelative() {
-        return endless$windowBaseSection == UNINITIALIZED
-            ? 0
-            : endless$windowBaseSection - this.level.getMinSection();
+            cameraSection - (chunkGridSizeY / 2),
+            maxSectionExclusive - chunkGridSizeY));
     }
 
     @Redirect(
@@ -122,26 +78,34 @@ public abstract class ViewAreaMixin {
         at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getMinBuildHeight()I")
     )
     private int endless$shiftGridBase(Level level) {
-        return level.getMinBuildHeight() + (endless$windowBaseRelative() << 4);
+        if (endless$windowBaseSection == UNINITIALIZED) {
+            endless$windowBaseSection = level.getMinSection();
+        }
+        return endless$windowBaseSection << 4;
     }
 
     @Inject(method = "getRenderChunkAt", at = @At("HEAD"), cancellable = true)
     private void endless$getRenderChunkAt(BlockPos pos, CallbackInfoReturnable<ChunkRenderDispatcher.RenderChunk> cir) {
-        int ySection = Mth.floorDiv(pos.getY() - this.level.getMinBuildHeight(), 16)
-            - endless$windowBaseRelative();
+        if (endless$windowBaseSection == UNINITIALIZED) {
+            return;
+        }
+        int ySection = Math.floorDiv(pos.getY(), 16) - endless$windowBaseSection;
         if (ySection < 0 || ySection >= chunkGridSizeY) {
             cir.setReturnValue(null);
             return;
         }
-        int xSection = Mth.positiveModulo(Mth.floorDiv(pos.getX(), 16), chunkGridSizeX);
-        int zSection = Mth.positiveModulo(Mth.floorDiv(pos.getZ(), 16), chunkGridSizeZ);
+        int xSection = Mth.positiveModulo(Math.floorDiv(pos.getX(), 16), chunkGridSizeX);
+        int zSection = Mth.positiveModulo(Math.floorDiv(pos.getZ(), 16), chunkGridSizeZ);
         cir.setReturnValue(this.chunks[this.getChunkIndex(xSection, ySection, zSection)]);
     }
 
     @Inject(method = "setDirty", at = @At("HEAD"), cancellable = true)
     private void endless$setDirty(int x, int y, int z, boolean dirty, CallbackInfo ci) {
+        if (endless$windowBaseSection == UNINITIALIZED) {
+            return;
+        }
         ci.cancel();
-        int ySection = y - this.level.getMinSection() - endless$windowBaseRelative();
+        int ySection = y - endless$windowBaseSection;
         if (ySection < 0 || ySection >= chunkGridSizeY) {
             return;
         }

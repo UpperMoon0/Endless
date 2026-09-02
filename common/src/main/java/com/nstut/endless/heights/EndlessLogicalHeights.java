@@ -36,6 +36,11 @@ public final class EndlessLogicalHeights {
         return !EndlessHeights.isOutsideBuildHeight(y);
     }
 
+    /** True when a buildable Y must be routed outside the bounded dense core. */
+    public static boolean isSparseBuildHeight(int y) {
+        return contains(y) && EndlessHeights.isOutsideDenseBuildHeight(y);
+    }
+
     /** True anywhere the v0.5 sparse representation can safely address. */
     public static boolean isRepresentable(int y) {
         return y >= MIN_BUILD_HEIGHT && y < MAX_BUILD_HEIGHT;

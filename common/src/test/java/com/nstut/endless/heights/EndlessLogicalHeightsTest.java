@@ -11,18 +11,33 @@ class EndlessLogicalHeightsTest {
     private static final int SECTION_Y_MAX = (1 << 19) - 1;
 
     @Test
-    void logicalRangeFitsSignedSectionPosYEnvelope() {
-        assertTrue(EndlessLogicalHeights.minSection() >= SECTION_Y_MIN);
-        assertTrue(EndlessLogicalHeights.maxSectionExclusive() - 1 <= SECTION_Y_MAX);
+    void representationEnvelopeFitsSignedSectionPosY() {
+        assertTrue(EndlessLogicalHeights.representableMinSection() >= SECTION_Y_MIN);
+        assertTrue(EndlessLogicalHeights.representableMaxSectionExclusive() - 1 <= SECTION_Y_MAX);
     }
 
     @Test
-    void rangeIsSectionAlignedAndExclusive() {
+    void representationEnvelopeIsSectionAlignedAndExclusive() {
         assertEquals(0, Math.floorMod(EndlessLogicalHeights.MIN_BUILD_HEIGHT, 16));
         assertEquals(0, Math.floorMod(EndlessLogicalHeights.MAX_BUILD_HEIGHT, 16));
-        assertTrue(EndlessLogicalHeights.contains(EndlessLogicalHeights.MIN_BUILD_HEIGHT));
-        assertTrue(EndlessLogicalHeights.contains(EndlessLogicalHeights.MAX_BUILD_HEIGHT - 1));
-        assertFalse(EndlessLogicalHeights.contains(EndlessLogicalHeights.MAX_BUILD_HEIGHT));
+        assertTrue(EndlessLogicalHeights.isRepresentable(EndlessLogicalHeights.MIN_BUILD_HEIGHT));
+        assertTrue(EndlessLogicalHeights.isRepresentable(EndlessLogicalHeights.MAX_BUILD_HEIGHT - 1));
+        assertFalse(EndlessLogicalHeights.isRepresentable(EndlessLogicalHeights.MAX_BUILD_HEIGHT));
+    }
+
+    @Test
+    void containsUsesConfiguredEffectiveRangeNotRepresentationCeiling() {
+        EndlessHeights.applyEffective(-1024, 1024, -1024, 1024);
+        try {
+            assertTrue(EndlessLogicalHeights.contains(-1024));
+            assertTrue(EndlessLogicalHeights.contains(1023));
+            assertFalse(EndlessLogicalHeights.contains(-1025));
+            assertFalse(EndlessLogicalHeights.contains(1024));
+            assertEquals(-64, EndlessLogicalHeights.minSection());
+            assertEquals(64, EndlessLogicalHeights.maxSectionExclusive());
+        } finally {
+            EndlessHeights.resetToLocalConfig();
+        }
     }
 
     @Test

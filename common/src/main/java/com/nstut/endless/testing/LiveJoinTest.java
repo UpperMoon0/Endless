@@ -6,16 +6,19 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.chunk.RenderChunkRegion;
 import net.minecraft.client.renderer.chunk.RenderRegionCache;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.levelgen.Heightmap;
 
 /** Client-side assertions used by tools/live_join_test.py. */
 public final class LiveJoinTest {
-    public static final int DEFAULT_EXPECTED_MIN_BUILD_HEIGHT = -1024;
-    public static final int DEFAULT_EXPECTED_MAX_BUILD_HEIGHT = 1024;
+    public static final int DEFAULT_EXPECTED_MIN_BUILD_HEIGHT = -4096;
+    public static final int DEFAULT_EXPECTED_MAX_BUILD_HEIGHT = 4096;
 
     private static final int EXPECTED_MIN_BUILD_HEIGHT =
         intProperty("endless.liveJoinTest.expectedMin", DEFAULT_EXPECTED_MIN_BUILD_HEIGHT);
@@ -25,6 +28,8 @@ public final class LiveJoinTest {
         Boolean.parseBoolean(System.getProperty("endless.liveJoinTest.expectLogical", "true"));
     private static final boolean HIGH_Y_TEST =
         Boolean.parseBoolean(System.getProperty("endless.liveJoinTest.highY", "false"));
+    private static final boolean WAYSTONES_TEST =
+        Boolean.parseBoolean(System.getProperty("endless.liveJoinWaystonesTest", "false"));
 
     public static final String PASS_MARKER = "ENDLESS_LIVE_JOIN_TEST_PASS";
     public static final String FAIL_MARKER = "ENDLESS_LIVE_JOIN_TEST_FAIL";
@@ -89,6 +94,8 @@ public final class LiveJoinTest {
             System.out.println(PRE_LOGIN_PASS_MARKER
                 + " endlessMin=" + endlessMin
                 + " endlessMax=" + endlessMax
+                + " denseMin=" + EndlessHeights.getDenseMinBuildHeight()
+                + " denseMax=" + EndlessHeights.getDenseMaxBuildHeight()
                 + " logical=" + logical);
         } else {
             fail("preLogin", " endlessMin=" + endlessMin
@@ -109,11 +116,16 @@ public final class LiveJoinTest {
         int levelHeight = level.getHeight();
         int endlessMin = EndlessHeights.getMinBuildHeight();
         int endlessMax = EndlessHeights.getMaxBuildHeight();
-        int expectedHeight = EXPECTED_MAX_BUILD_HEIGHT - EXPECTED_MIN_BUILD_HEIGHT;
+        int denseMin = EndlessHeights.getDenseMinBuildHeight();
+        int denseMax = EndlessHeights.getDenseMaxBuildHeight();
+        int[] expectedDense = EndlessHeights.denseRangeForLogical(
+            EXPECTED_MIN_BUILD_HEIGHT, EXPECTED_MAX_BUILD_HEIGHT);
         boolean logical = EndlessLogicalHeights.isActive();
 
-        if (levelMin != EXPECTED_MIN_BUILD_HEIGHT
-            || levelHeight != expectedHeight
+        if (levelMin != expectedDense[0]
+            || levelHeight != expectedDense[1] - expectedDense[0]
+            || denseMin != expectedDense[0]
+            || denseMax != expectedDense[1]
             || endlessMin != EXPECTED_MIN_BUILD_HEIGHT
             || endlessMax != EXPECTED_MAX_BUILD_HEIGHT
             || logical != EXPECT_LOGICAL) {
@@ -122,6 +134,10 @@ public final class LiveJoinTest {
                     + " levelHeight=" + levelHeight
                     + " endlessMin=" + endlessMin
                     + " endlessMax=" + endlessMax
+                    + " denseMin=" + denseMin
+                    + " denseMax=" + denseMax
+                    + " expectedDenseMin=" + expectedDense[0]
+                    + " expectedDenseMax=" + expectedDense[1]
                     + " logical=" + logical
                     + " expectedLogical=" + EXPECT_LOGICAL);
                 mc.stop();
@@ -131,11 +147,11 @@ public final class LiveJoinTest {
         }
 
         if (HIGH_Y_TEST) {
-            return tickExtremeTest(mc, level, levelMin, levelHeight, endlessMin, endlessMax, logical);
+            return tickExtremeTest(mc, level, levelMin, levelHeight, endlessMin, endlessMax, denseMin, denseMax, logical);
         }
 
         if (ticksWithLevel < 40) return false;
-        pass(levelMin, levelHeight, endlessMin, endlessMax, logical);
+        pass(levelMin, levelHeight, endlessMin, endlessMax, denseMin, denseMax, logical);
         mc.stop();
         return true;
     }
@@ -147,13 +163,15 @@ public final class LiveJoinTest {
         int levelHeight,
         int endlessMin,
         int endlessMax,
+        int denseMin,
+        int denseMax,
         boolean logical
     ) {
         double playerY = mc.player == null ? Double.NaN : mc.player.getY();
         boolean atLower = mc.player != null
-            && Math.abs(playerY - LiveHighYServerTest.LOWER_PLAYER_Y) < 8.0D;
+            && Math.abs(playerY - LiveHighYServerTest.lowerPlayerY()) < 8.0D;
         boolean atUpper = mc.player != null
-            && Math.abs(playerY - LiveHighYServerTest.UPPER_PLAYER_Y) < 8.0D;
+            && Math.abs(playerY - LiveHighYServerTest.upperPlayerY()) < 8.0D;
 
         if (atLower && !lowerExtremeSeen) {
             BoundaryStatus lower = boundaryStatus(level, false);
@@ -161,7 +179,7 @@ public final class LiveJoinTest {
                 lowerExtremeSeen = true;
                 System.out.println(LOWER_EXTREME_PASS_MARKER
                     + " playerY=" + playerY
-                    + " blockY=" + LiveHighYServerTest.LOWER_Y
+                    + " blockY=" + LiveHighYServerTest.lowerY()
                     + " light=" + lower.sourceLight
                     + " render=true");
             }
@@ -169,14 +187,16 @@ public final class LiveJoinTest {
 
         if (atUpper) {
             BoundaryStatus upper = boundaryStatus(level, true);
-            if (lowerExtremeSeen && upper.ok()) {
+            boolean waystones = !WAYSTONES_TEST || waystoneStatus(level);
+            if (lowerExtremeSeen && upper.ok() && waystones) {
                 System.out.println(UPPER_EXTREME_PASS_MARKER
                     + " playerY=" + playerY
-                    + " blockY=" + LiveHighYServerTest.UPPER_Y
+                    + " blockY=" + LiveHighYServerTest.upperY()
                     + " height=" + level.getHeight(Heightmap.Types.WORLD_SURFACE, 0, 0)
                     + " light=" + upper.sourceLight
+                    + " waystones=" + waystones
                     + " render=true");
-                pass(levelMin, levelHeight, endlessMin, endlessMax, logical);
+                pass(levelMin, levelHeight, endlessMin, endlessMax, denseMin, denseMax, logical);
                 mc.stop();
                 return true;
             }
@@ -190,18 +210,19 @@ public final class LiveJoinTest {
             + " atUpper=" + atUpper
             + " playerY=" + (mc.player == null ? "null" : mc.player.getY())
             + " lower=" + lower
-            + " upper=" + upper);
+            + " upper=" + upper
+            + " waystones=" + (!WAYSTONES_TEST || waystoneStatus(level)));
         mc.stop();
         return true;
     }
 
     private static BoundaryStatus boundaryStatus(Level level, boolean upper) {
-        BlockPos glowstone = upper ? LiveHighYServerTest.UPPER_TEST_POS : LiveHighYServerTest.LOWER_TEST_POS;
-        BlockPos water = upper ? LiveHighYServerTest.UPPER_WATER_POS : LiveHighYServerTest.LOWER_WATER_POS;
-        BlockPos chest = upper ? LiveHighYServerTest.UPPER_CHEST_POS : LiveHighYServerTest.LOWER_CHEST_POS;
-        BlockPos lamp = upper ? LiveHighYServerTest.UPPER_LAMP_POS : LiveHighYServerTest.LOWER_LAMP_POS;
+        BlockPos glowstone = upper ? LiveHighYServerTest.upperTestPos() : LiveHighYServerTest.lowerTestPos();
+        BlockPos water = upper ? LiveHighYServerTest.upperWaterPos() : LiveHighYServerTest.lowerWaterPos();
+        BlockPos chest = upper ? LiveHighYServerTest.upperChestPos() : LiveHighYServerTest.lowerChestPos();
+        BlockPos lamp = upper ? LiveHighYServerTest.upperLampPos() : LiveHighYServerTest.lowerLampPos();
         BlockPos inward = upper ? glowstone.below() : glowstone.above();
-        int outsideY = upper ? EndlessLogicalHeights.MAX_BUILD_HEIGHT : EndlessLogicalHeights.MIN_BUILD_HEIGHT - 1;
+        int outsideY = upper ? EndlessHeights.getMaxBuildHeight() : EndlessHeights.getMinBuildHeight() - 1;
 
         boolean buildable = !level.isOutsideBuildHeight(glowstone);
         boolean outsideRejected = level.isOutsideBuildHeight(outsideY);
@@ -214,13 +235,28 @@ public final class LiveJoinTest {
         int sourceLight = level.getBrightness(LightLayer.BLOCK, glowstone);
         int inwardLight = level.getBrightness(LightLayer.BLOCK, inward);
         boolean height = !upper || level.getHeight(Heightmap.Types.WORLD_SURFACE, 0, 0)
-            == LiveHighYServerTest.UPPER_Y + 1;
+            == LiveHighYServerTest.upperY() + 1;
         boolean render = canRender(level, glowstone);
 
         return new BoundaryStatus(
             buildable, outsideRejected, block, fluid, blockEntity, placedLamp,
             sourceLight, inwardLight, height, render
         );
+    }
+
+    private static boolean waystoneStatus(Level level) {
+        try {
+            Block waystone = BuiltInRegistries.BLOCK.get(new ResourceLocation("waystones", "waystone"));
+            BlockPos base = LiveHighYServerTest.upperWaystoneBasePos();
+            BlockPos top = LiveHighYServerTest.upperWaystoneTopPos();
+            return waystone != Blocks.AIR
+                && level.getBlockState(base).is(waystone)
+                && level.getBlockState(top).is(waystone)
+                && level.getBlockEntity(base) != null;
+        } catch (Throwable t) {
+            System.out.println("ENDLESS_WAYSTONES_CLIENT_FAIL error=" + t);
+            return false;
+        }
     }
 
     private static boolean canRender(Level level, BlockPos pos) {
@@ -233,13 +269,23 @@ public final class LiveJoinTest {
         }
     }
 
-    private static void pass(int levelMin, int levelHeight, int endlessMin, int endlessMax, boolean logical) {
+    private static void pass(
+        int levelMin,
+        int levelHeight,
+        int endlessMin,
+        int endlessMax,
+        int denseMin,
+        int denseMax,
+        boolean logical
+    ) {
         System.out.println(PASS_MARKER
-            + " min=" + levelMin
-            + " max=" + (levelMin + levelHeight)
-            + " height=" + levelHeight
+            + " levelMin=" + levelMin
+            + " levelMax=" + (levelMin + levelHeight)
+            + " levelHeight=" + levelHeight
             + " endlessMin=" + endlessMin
             + " endlessMax=" + endlessMax
+            + " denseMin=" + denseMin
+            + " denseMax=" + denseMax
             + " logical=" + logical);
     }
 

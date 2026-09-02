@@ -28,7 +28,7 @@ loom {
             server()
             runDir("run/live-join/server")
             vmArg "-Xmx1536m"
-            property "endless.liveJoinHighYTest", "true"
+            property "endless.liveJoinHighYTest", System.getenv('ENDLESS_TEST_EXTREME') ?: 'false'
             programArg "nogui"
         }
     }

@@ -20,6 +20,8 @@
     "LevelLightEngineMixin",
     "ChunkMapMixin",
     "ClientboundLevelChunkPacketDataMixin",
+    "SectionStorageMixin",
+    "PoiManagerMixin",
     "compat.WaystoneBlockBaseMixin"
   ],
   "injectors": {

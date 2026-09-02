@@ -2,13 +2,17 @@ Endless 0.5
 
 - Added sparse practical infinite build height from Y=-8,000,000 through Y=7,999,999.
 - Preserved the bounded v0.4 dense chunk core for vanilla/legacy safety.
-- Added dedicated compressed-NBT persistence for 512-block vertical pages.
-- Added extended BlockPos network encoding and Fabric/Forge page synchronization.
-- Added high-Y block, fluid and block-entity routing through normal Level APIs.
-- Added sparse heightmap overlays and page-aware high-Y lighting.
-- Kept POI and scheduled-tick section addressing inside vanilla's safe SectionPos envelope.
-- Added camera-following 512-block vertical rendering and page-window synchronization.
-- Added sparse column flush/eviction on chunk unload.
+- Added dedicated compressed-NBT sparse page persistence outside vanilla Anvil section serialization.
+- Added an extended BlockPos network encoding for high-Y positions while preserving vanilla encoding in the normal range.
+- Added high-Y block, fluid and block-entity access through normal Level/LevelChunk APIs.
+- Added sparse heightmap overlays for world-surface, ocean-floor and motion-blocking queries.
+- Added sparse block/sky lighting that avoids vanilla packed-Y wrapping.
+- Added sparse high-Y POI persistence and search without widening vanilla SectionStorage loops.
+- Routed high-Y block updates around ChunkHolder's dense per-section batching.
+- Preserved client block prediction above vanilla's packed BlockPos Y envelope.
+- Kept SectionPos-keyed POI/tick addressing inside the signed 20-bit SectionPos Y envelope.
+- Added a 512-block camera-following render/sync window with sparse page resync and unload eviction.
+- Added server-authoritative logical-height negotiation for Fabric and Forge clients.
 - Split client-only loader bootstraps so dedicated servers never resolve client classes.
 - Expanded real-client CI to write, flush, reload and observe block/fluid/block-entity/POI/light/height state at Y=1,000,000 on both Fabric and Forge.
 - Retained v0.4 fail-closed legacy-world migration guarantees.

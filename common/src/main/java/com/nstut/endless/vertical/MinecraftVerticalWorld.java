@@ -16,6 +16,8 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.material.Fluids;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
@@ -307,8 +309,9 @@ public final class MinecraftVerticalWorld {
      * Solve block light only in the finite neighborhood that can influence the
      * requested position. Vanilla block light has a maximum value of 15 and
      * loses at least one level per step, so sources farther than 14 Manhattan
-     * blocks cannot contribute. Results discovered by the local solve are put
-     * into a bounded LRU cache and reused by nearby queries.
+     * blocks cannot contribute. Only the requested target is globally cached:
+     * other positions in this target-centered solve can miss sources outside
+     * the solve boundary and therefore are not complete answers for themselves.
      */
     private int computeBlockLight(BlockPos target) {
         BlockKey targetKey = BlockKey.of(target);
@@ -346,6 +349,8 @@ public final class MinecraftVerticalWorld {
             if (node.light < currentStored || node.light <= 1) {
                 continue;
             }
+            BlockPos currentPos = node.pos.toBlockPos();
+            BlockState currentState = level.getBlockState(currentPos);
             for (Direction direction : Direction.values()) {
                 BlockKey next = node.pos.relative(direction);
                 if (manhattanDistance(next, targetKey) > BLOCK_LIGHT_SOURCE_RADIUS
@@ -356,7 +361,7 @@ public final class MinecraftVerticalWorld {
                 BlockState nextState = level.getBlockState(nextPos);
                 int attenuation = Math.max(1, nextState.getLightBlock(level, nextPos));
                 int propagated = node.light - attenuation;
-                if (propagated <= 0) {
+                if (propagated <= 0 || lightFacesOcclude(currentState, currentPos, nextState, nextPos, direction)) {
                     continue;
                 }
                 int old = Byte.toUnsignedInt(local.getOrDefault(next, (byte) 0));
@@ -367,8 +372,27 @@ public final class MinecraftVerticalWorld {
             }
         }
 
-        local.forEach(blockLight::put);
         return Byte.toUnsignedInt(local.getOrDefault(targetKey, (byte) 0));
+    }
+
+    /** Match vanilla LightEngine's two-face light-occlusion test. */
+    private boolean lightFacesOcclude(
+        BlockState fromState,
+        BlockPos fromPos,
+        BlockState toState,
+        BlockPos toPos,
+        Direction direction
+    ) {
+        VoxelShape from = lightOcclusionShape(fromState, fromPos, direction);
+        VoxelShape to = lightOcclusionShape(toState, toPos, direction.getOpposite());
+        return Shapes.faceShapeOccludes(from, to);
+    }
+
+    private VoxelShape lightOcclusionShape(BlockState state, BlockPos pos, Direction direction) {
+        if (!state.canOcclude() || !state.useShapeForLightOcclusion()) {
+            return Shapes.empty();
+        }
+        return state.getFaceOcclusionShape(level, pos, direction);
     }
 
     private int computeSkyLight(BlockPos pos) {

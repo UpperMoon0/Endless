@@ -4,7 +4,6 @@ import com.mojang.datafixers.DataFixer;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
-import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import com.nstut.endless.vertical.ExtendedSectionStorageAccess;
 import net.minecraft.core.RegistryAccess;
@@ -198,7 +197,7 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
             return false;
         }
         int blockY = SectionPos.sectionToBlockCoord(SectionPos.y(sectionKey));
-        return EndlessLogicalHeights.contains(blockY) && EndlessHeights.isOutsideBuildHeight(blockY);
+        return EndlessLogicalHeights.isSparseBuildHeight(blockY);
     }
 
     @Unique

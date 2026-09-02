@@ -28,7 +28,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
 /** Forge common/server bootstrap; client code is dist-isolated. */
 @Mod(Endless.MOD_ID)
 public final class EndlessForge {
-    private static final String PROTOCOL = "3";
+    private static final String PROTOCOL = "4";
     private static SimpleChannel channel;
 
     public EndlessForge() {

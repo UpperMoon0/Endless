@@ -3,6 +3,8 @@ package com.nstut.endless.testing;
 import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.chunk.RenderChunkRegion;
+import net.minecraft.client.renderer.chunk.RenderRegionCache;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Blocks;
@@ -40,9 +42,7 @@ public final class LiveJoinTest {
 
     private static int intProperty(String key, int fallback) {
         String raw = System.getProperty(key);
-        if (raw == null || raw.isBlank()) {
-            return fallback;
-        }
+        if (raw == null || raw.isBlank()) return fallback;
         try {
             return Integer.parseInt(raw.trim());
         } catch (NumberFormatException e) {
@@ -52,20 +52,14 @@ public final class LiveJoinTest {
     }
 
     public static boolean isArmed() {
-        if (armed) {
-            return true;
-        }
-        if ("true".equalsIgnoreCase(System.getProperty(SYSTEM_PROPERTY))) {
-            armed = true;
-        }
+        if (armed) return true;
+        if ("true".equalsIgnoreCase(System.getProperty(SYSTEM_PROPERTY))) armed = true;
         return armed;
     }
 
     public static void preseedStaleRangeIfRequested() {
         if (!isArmed() || staleRangePreseeded
-            || !Boolean.parseBoolean(System.getProperty(PRESEED_STALE_PROPERTY, "false"))) {
-            return;
-        }
+            || !Boolean.parseBoolean(System.getProperty(PRESEED_STALE_PROPERTY, "false"))) return;
         staleRangePreseeded = true;
         EndlessHeights.applyEffective(DEFAULT_EXPECTED_MIN_BUILD_HEIGHT, DEFAULT_EXPECTED_MAX_BUILD_HEIGHT);
         EndlessLogicalHeights.activate();
@@ -75,17 +69,13 @@ public final class LiveJoinTest {
     }
 
     public static void assertPreLoginRange() {
-        if (!isArmed() || preLoginChecked) {
-            return;
-        }
+        if (!isArmed() || preLoginChecked) return;
         preLoginChecked = true;
-
         if (Boolean.parseBoolean(System.getProperty(PRESEED_STALE_PROPERTY, "false"))
             && !staleRangePreseeded) {
             fail("stalePreseedMissing", "");
             return;
         }
-
         int endlessMin = EndlessHeights.getMinBuildHeight();
         int endlessMax = EndlessHeights.getMaxBuildHeight();
         boolean logical = EndlessLogicalHeights.isActive();
@@ -97,22 +87,17 @@ public final class LiveJoinTest {
                 + " endlessMax=" + endlessMax
                 + " logical=" + logical);
         } else {
-            fail("preLogin",
-                " endlessMin=" + endlessMin
-                    + " endlessMax=" + endlessMax
-                    + " logical=" + logical
-                    + " expectedLogical=" + EXPECT_LOGICAL);
+            fail("preLogin", " endlessMin=" + endlessMin
+                + " endlessMax=" + endlessMax
+                + " logical=" + logical
+                + " expectedLogical=" + EXPECT_LOGICAL);
         }
     }
 
     public static boolean tick() {
-        if (!isArmed() || !preLoginChecked) {
-            return false;
-        }
+        if (!isArmed() || !preLoginChecked) return false;
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null) {
-            return false;
-        }
+        if (mc.level == null) return false;
         ticksWithLevel++;
 
         Level level = mc.level;
@@ -129,13 +114,12 @@ public final class LiveJoinTest {
             || endlessMax != EXPECTED_MAX_BUILD_HEIGHT
             || logical != EXPECT_LOGICAL) {
             if (ticksWithLevel >= 40) {
-                fail("postJoin",
-                    " levelMin=" + levelMin
-                        + " levelHeight=" + levelHeight
-                        + " endlessMin=" + endlessMin
-                        + " endlessMax=" + endlessMax
-                        + " logical=" + logical
-                        + " expectedLogical=" + EXPECT_LOGICAL);
+                fail("postJoin", " levelMin=" + levelMin
+                    + " levelHeight=" + levelHeight
+                    + " endlessMin=" + endlessMin
+                    + " endlessMax=" + endlessMax
+                    + " logical=" + logical
+                    + " expectedLogical=" + EXPECT_LOGICAL);
                 mc.stop();
                 return true;
             }
@@ -153,39 +137,48 @@ public final class LiveJoinTest {
             boolean height = level.getHeight(Heightmap.Types.WORLD_SURFACE, 0, 0)
                 == LiveHighYServerTest.TEST_Y + 1;
             boolean light = level.getBrightness(LightLayer.BLOCK, LiveHighYServerTest.TEST_POS) >= 15;
+            boolean render = canRenderHighY(level);
 
-            if (arrived && buildable && glowstone && water && chest && height && light) {
+            if (arrived && buildable && glowstone && water && chest && height && light && render) {
                 System.out.println(HIGH_Y_PASS_MARKER
                     + " playerY=" + mc.player.getY()
                     + " blockY=" + LiveHighYServerTest.TEST_Y
                     + " height=" + level.getHeight(Heightmap.Types.WORLD_SURFACE, 0, 0)
-                    + " blockLight=" + level.getBrightness(LightLayer.BLOCK, LiveHighYServerTest.TEST_POS));
+                    + " blockLight=" + level.getBrightness(LightLayer.BLOCK, LiveHighYServerTest.TEST_POS)
+                    + " render=true");
                 pass(levelMin, levelHeight, endlessMin, endlessMax, logical);
                 mc.stop();
                 return true;
             }
-            if (ticksWithLevel < 300) {
-                return false;
-            }
-            fail("highY",
-                " arrived=" + arrived
-                    + " buildable=" + buildable
-                    + " glowstone=" + glowstone
-                    + " water=" + water
-                    + " chest=" + chest
-                    + " height=" + height
-                    + " light=" + light
-                    + " playerY=" + (mc.player == null ? "null" : mc.player.getY()));
+            if (ticksWithLevel < 300) return false;
+            fail("highY", " arrived=" + arrived
+                + " buildable=" + buildable
+                + " glowstone=" + glowstone
+                + " water=" + water
+                + " chest=" + chest
+                + " height=" + height
+                + " light=" + light
+                + " render=" + render
+                + " playerY=" + (mc.player == null ? "null" : mc.player.getY()));
             mc.stop();
             return true;
         }
 
-        if (ticksWithLevel < 40) {
-            return false;
-        }
+        if (ticksWithLevel < 40) return false;
         pass(levelMin, levelHeight, endlessMin, endlessMax, logical);
         mc.stop();
         return true;
+    }
+
+    private static boolean canRenderHighY(Level level) {
+        try {
+            RenderChunkRegion region = new RenderRegionCache().createRegion(
+                level, LiveHighYServerTest.TEST_POS, LiveHighYServerTest.TEST_POS, 1);
+            return region != null && region.getBlockState(LiveHighYServerTest.TEST_POS).is(Blocks.GLOWSTONE);
+        } catch (Throwable t) {
+            System.out.println("ENDLESS_HIGH_Y_RENDER_FAIL error=" + t);
+            return false;
+        }
     }
 
     private static void pass(int levelMin, int levelHeight, int endlessMin, int endlessMax, boolean logical) {

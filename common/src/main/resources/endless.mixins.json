@@ -7,7 +7,8 @@
     "ViewAreaMixin",
     "ClientHandshakePacketListenerMixin",
     "ClientPacketListenerMixin",
-    "BlockStatePredictionHandlerMixin"
+    "BlockStatePredictionHandlerMixin",
+    "RenderChunkMixin"
   ],
   "mixins": [
     "FriendlyByteBufMixin",
@@ -25,6 +26,10 @@
     "EntityMixin",
     "GoalUtilsMixin",
     "ServerLevelMixin",
+    "BiomeMixin",
+    "PathNavigationMixin",
+    "WalkNodeEvaluatorMixin",
+    "FlyNodeEvaluatorMixin",
     "accessor.MinecraftVerticalWorldAccessor",
     "compat.WaystoneBlockBaseMixin"
   ],

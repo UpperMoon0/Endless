@@ -41,6 +41,25 @@ class EndlessLogicalHeightsTest {
     }
 
     @Test
+    void sparseBuildHeightMeansLogicalButOutsideDenseCore() {
+        EndlessHeights.applyEffective(-1024, 1024, -64, 320);
+        try {
+            assertTrue(EndlessLogicalHeights.isSparseBuildHeight(-1024));
+            assertTrue(EndlessLogicalHeights.isSparseBuildHeight(-65));
+            assertTrue(EndlessLogicalHeights.isSparseBuildHeight(320));
+            assertTrue(EndlessLogicalHeights.isSparseBuildHeight(1023));
+
+            assertFalse(EndlessLogicalHeights.isSparseBuildHeight(-64));
+            assertFalse(EndlessLogicalHeights.isSparseBuildHeight(0));
+            assertFalse(EndlessLogicalHeights.isSparseBuildHeight(319));
+            assertFalse(EndlessLogicalHeights.isSparseBuildHeight(-1025));
+            assertFalse(EndlessLogicalHeights.isSparseBuildHeight(1024));
+        } finally {
+            EndlessHeights.resetToLocalConfig();
+        }
+    }
+
+    @Test
     void extendedBlockPosCodecOnlyNeededOutsidePackedYEnvelope() {
         EndlessLogicalHeights.activate();
         try {

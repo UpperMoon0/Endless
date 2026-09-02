@@ -48,13 +48,15 @@ public final class EndlessFabric implements ModInitializer {
             });
         ServerLoginConnectionEvents.QUERY_START.register((listener, server, sender, sync) -> {
             if (!EndlessLogicalHeights.isActive()) return;
-            int min = EndlessHeights.getMinBuildHeight();
-            int max = EndlessHeights.getMaxBuildHeight();
-            AckState state = new AckState(min, max, new CompletableFuture<>());
+            AckState state = new AckState(new CompletableFuture<>());
             pending.put(listener, state);
             FriendlyByteBuf query = new FriendlyByteBuf(Unpooled.buffer());
-            query.writeVarInt(min);
-            query.writeVarInt(max);
+            // Logical build range is user-facing; dense core is separately
+            // synced because it defines vanilla chunk packet/section layout.
+            query.writeVarInt(EndlessHeights.getMinBuildHeight());
+            query.writeVarInt(EndlessHeights.getMaxBuildHeight());
+            query.writeVarInt(EndlessHeights.getDenseMinBuildHeight());
+            query.writeVarInt(EndlessHeights.getDenseMaxBuildHeight());
             query.writeVarInt(EndlessLogicalHeights.MIN_BUILD_HEIGHT);
             query.writeVarInt(EndlessLogicalHeights.MAX_BUILD_HEIGHT);
             try {
@@ -88,12 +90,9 @@ public final class EndlessFabric implements ModInitializer {
     }
 
     private static final class AckState {
-        final int min;
-        final int max;
         final CompletableFuture<Boolean> ack;
-        AckState(int min, int max, CompletableFuture<Boolean> ack) {
-            this.min = min;
-            this.max = max;
+
+        AckState(CompletableFuture<Boolean> ack) {
             this.ack = ack;
         }
     }

@@ -70,9 +70,12 @@ jobs:
       # tools/live_join_test.py compiles the selected loader exactly once.
       # Do not run a redundant full ./gradlew build here; Validate already owns
       # JUnit/build coverage and the live job only needs the selected runtime.
+      # The two extended cells additionally resolve canonical Waystones+Balm
+      # artifacts and exercise real high-Y placement/BE/network integration.
       - name: Run automatic real-client join test
         env:
           ENDLESS_TEST_EXTREME: ${{ matrix.scenario == 'extended-server' && 'true' || 'false' }}
+          ENDLESS_TEST_WAYSTONES: ${{ matrix.scenario == 'extended-server' && 'true' || 'false' }}
         run: >-
           python3 tools/live_join_test.py
           --target "${{ matrix.target }}"

@@ -8,43 +8,55 @@ import net.minecraftforge.network.NetworkEvent;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
-/** Login-phase sync of the bounded core plus the v0.5 logical sparse range. */
+/** Login-phase sync of the user logical range plus the separately bounded dense core. */
 public class SyncHeightPacket implements IntSupplier {
-    private int minBuildHeight;
-    private int maxBuildHeight;
     private int logicalMinBuildHeight;
     private int logicalMaxBuildHeight;
+    private int denseMinBuildHeight;
+    private int denseMaxBuildHeight;
+    private int envelopeMinBuildHeight;
+    private int envelopeMaxBuildHeight;
     private int loginIndex;
 
     public SyncHeightPacket() {
         this(
             EndlessHeights.getMinBuildHeight(),
             EndlessHeights.getMaxBuildHeight(),
+            EndlessHeights.getDenseMinBuildHeight(),
+            EndlessHeights.getDenseMaxBuildHeight(),
             EndlessLogicalHeights.MIN_BUILD_HEIGHT,
             EndlessLogicalHeights.MAX_BUILD_HEIGHT);
     }
 
     public SyncHeightPacket(
-        int minBuildHeight,
-        int maxBuildHeight,
         int logicalMinBuildHeight,
-        int logicalMaxBuildHeight
+        int logicalMaxBuildHeight,
+        int denseMinBuildHeight,
+        int denseMaxBuildHeight,
+        int envelopeMinBuildHeight,
+        int envelopeMaxBuildHeight
     ) {
-        this.minBuildHeight = minBuildHeight;
-        this.maxBuildHeight = maxBuildHeight;
         this.logicalMinBuildHeight = logicalMinBuildHeight;
         this.logicalMaxBuildHeight = logicalMaxBuildHeight;
+        this.denseMinBuildHeight = denseMinBuildHeight;
+        this.denseMaxBuildHeight = denseMaxBuildHeight;
+        this.envelopeMinBuildHeight = envelopeMinBuildHeight;
+        this.envelopeMaxBuildHeight = envelopeMaxBuildHeight;
     }
 
     public static void encode(SyncHeightPacket msg, FriendlyByteBuf buf) {
-        buf.writeVarInt(msg.minBuildHeight);
-        buf.writeVarInt(msg.maxBuildHeight);
         buf.writeVarInt(msg.logicalMinBuildHeight);
         buf.writeVarInt(msg.logicalMaxBuildHeight);
+        buf.writeVarInt(msg.denseMinBuildHeight);
+        buf.writeVarInt(msg.denseMaxBuildHeight);
+        buf.writeVarInt(msg.envelopeMinBuildHeight);
+        buf.writeVarInt(msg.envelopeMaxBuildHeight);
     }
 
     public static SyncHeightPacket decode(FriendlyByteBuf buf) {
         return new SyncHeightPacket(
+            buf.readVarInt(),
+            buf.readVarInt(),
             buf.readVarInt(),
             buf.readVarInt(),
             buf.readVarInt(),
@@ -54,11 +66,15 @@ public class SyncHeightPacket implements IntSupplier {
     public static void handle(SyncHeightPacket msg, Supplier<NetworkEvent.Context> ctx) {
         NetworkEvent.Context context = ctx.get();
         context.setPacketHandled(true);
-        if (msg.logicalMinBuildHeight != EndlessLogicalHeights.MIN_BUILD_HEIGHT
-            || msg.logicalMaxBuildHeight != EndlessLogicalHeights.MAX_BUILD_HEIGHT) {
+        if (msg.envelopeMinBuildHeight != EndlessLogicalHeights.MIN_BUILD_HEIGHT
+            || msg.envelopeMaxBuildHeight != EndlessLogicalHeights.MAX_BUILD_HEIGHT) {
             throw new IllegalStateException("Server uses an incompatible Endless logical-height protocol");
         }
-        EndlessHeights.applyEffective(msg.minBuildHeight, msg.maxBuildHeight);
+        EndlessHeights.applyEffective(
+            msg.logicalMinBuildHeight,
+            msg.logicalMaxBuildHeight,
+            msg.denseMinBuildHeight,
+            msg.denseMaxBuildHeight);
         EndlessLogicalHeights.activate();
     }
 

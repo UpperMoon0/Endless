@@ -30,17 +30,19 @@ class EndlessHeightsTest {
     }
 
     @Test
-    void fullLogicalEnvelopeProjectsToBoundedDenseCore() {
+    void freshExtendedLogicalRangeKeepsVanillaDenseCore() {
         int[] dense = EndlessHeights.denseRangeForLogical(-8_000_000, 8_000_000);
-        assertEquals(-2032, dense[0]);
-        assertEquals(2032, dense[1]);
+        assertEquals(-64, dense[0]);
+        assertEquals(320, dense[1]);
     }
 
     @Test
-    void narrowerLogicalRangeCanUseNarrowerDenseCore() {
+    void freshModerateLogicalRangeStillUsesSparseOutsideVanillaCore() {
         int[] dense = EndlessHeights.denseRangeForLogical(-1024, 1024);
-        assertEquals(-1024, dense[0]);
-        assertEquals(1024, dense[1]);
+        assertEquals(-64, dense[0]);
+        assertEquals(320, dense[1]);
+        assertTrue(-1024 < dense[0]);
+        assertTrue(1023 >= dense[1]);
     }
 
     @Test

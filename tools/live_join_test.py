@@ -48,7 +48,14 @@ FAIL_MARKER = "ENDLESS_LIVE_JOIN_TEST_FAIL"
 # A pre-login failure also prints FAIL_MARKER, but matching it here fails the
 # test immediately instead of waiting for the post-join timeout.
 PRE_LOGIN_FAIL_MARKER = "ENDLESS_PRE_LOGIN_RANGE_FAIL"
+CLIENT_OUTCOME_MARKERS = (PASS_MARKER, FAIL_MARKER, PRE_LOGIN_FAIL_MARKER)
 SERVER_READY_MARKERS = ("Done (", "For help, type \"help\"")
+SERVER_FATAL_MARKERS = (
+    "ENDLESS_HIGH_Y_SERVER_FAIL",
+    "Encountered an unexpected exception",
+    "This crash report has been saved to:",
+    "Failed to start the minecraft server",
+)
 DEFAULT_TIMEOUT = 360
 
 # Shared config presets. The client's on-disk config deliberately disagrees
@@ -122,18 +129,73 @@ class OutputPump:
             print(f"[{self.prefix}] {line}", end="", flush=True)
             self.lines.put(line)
 
-    def wait_for(self, markers: tuple[str, ...], timeout: int) -> str | None:
+    def wait_for(
+        self,
+        markers: tuple[str, ...],
+        timeout: int,
+        fail_markers: tuple[str, ...] = (),
+    ) -> str | None:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            if self.process.poll() is not None and self.lines.empty():
+            if self.exhausted():
                 return None
             try:
                 line = self.lines.get(timeout=min(1.0, deadline - time.monotonic()))
             except queue.Empty:
                 continue
+            if any(marker in line for marker in fail_markers):
+                raise RuntimeError(
+                    f"{self.prefix}: process reported failure: {line.rstrip()}"
+                )
             if any(marker in line for marker in markers):
                 return line
         return None
+
+    def poll_for(self, markers: tuple[str, ...]) -> str | None:
+        while True:
+            try:
+                line = self.lines.get_nowait()
+            except queue.Empty:
+                return None
+            if any(marker in line for marker in markers):
+                return line
+
+    def exhausted(self) -> bool:
+        return (
+            self.process.poll() is not None
+            and not self.thread.is_alive()
+            and self.lines.empty()
+        )
+
+
+def wait_for_live_join_outcome(
+    client_output: OutputPump,
+    server_output: OutputPump,
+    timeout: int,
+    label: str,
+) -> str | None:
+    """Wait for the client result while failing immediately on server crashes."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        server_failure = server_output.poll_for(SERVER_FATAL_MARKERS)
+        if server_failure is not None:
+            raise RuntimeError(
+                f"{label}: server reported failure: {server_failure.rstrip()}"
+            )
+
+        outcome = client_output.poll_for(CLIENT_OUTCOME_MARKERS)
+        if outcome is not None:
+            return outcome
+
+        if server_output.exhausted():
+            raise RuntimeError(
+                f"{label}: server exited before the client reported an outcome"
+            )
+        if client_output.exhausted():
+            return None
+
+        time.sleep(0.1)
+    return None
 
 
 def command(root: Path, task: str) -> list[str]:
@@ -321,7 +383,11 @@ def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeo
     server_output = OutputPump(server, f"{label}/server")
     client: subprocess.Popen[str] | None = None
     try:
-        if server_output.wait_for(SERVER_READY_MARKERS, timeout) is None:
+        if server_output.wait_for(
+            SERVER_READY_MARKERS,
+            timeout,
+            fail_markers=SERVER_FATAL_MARKERS,
+        ) is None:
             raise RuntimeError(f"{label}: server did not become ready")
 
         client_cmd = command(root, f":{module}:runLiveJoinTestClient")
@@ -333,8 +399,12 @@ def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeo
 
         client = popen(client_cmd, root, env=env)
         client_output = OutputPump(client, f"{label}/client")
-        outcome = client_output.wait_for(
-            (PASS_MARKER, FAIL_MARKER, PRE_LOGIN_FAIL_MARKER), timeout)
+        outcome = wait_for_live_join_outcome(
+            client_output,
+            server_output,
+            timeout,
+            label,
+        )
         if outcome is None:
             raise RuntimeError(f"{label}: client did not report a live-join outcome")
         if PASS_MARKER not in outcome:

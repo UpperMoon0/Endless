@@ -80,6 +80,11 @@ public final class LiveHighYServerTest {
 
             if (!mechanicsVerified) {
                 if (ticksWithPlayer < preparedTick + 6) return;
+                // Vanilla ServerLevel queues POI registration onto the server executor
+                // after a block-state change. Check it on a later tick instead of
+                // racing the queued add from the same setBlock call stack.
+                requirePoi(level, LOWER_POI_POS, "lower-bound POI was not registered/searchable");
+                requirePoi(level, UPPER_POI_POS, "upper-bound POI was not registered/searchable");
                 verifyDelayedMechanics(level);
                 flushReloadAndVerify(level);
                 requireEntityAlive(lowerStand, "lower-bound entity did not survive normal ticking");
@@ -125,9 +130,6 @@ public final class LiveHighYServerTest {
 
         prepareBoundary(level, player, false);
         prepareBoundary(level, player, true);
-
-        requirePoi(level, LOWER_POI_POS, "lower-bound POI was not registered/searchable");
-        requirePoi(level, UPPER_POI_POS, "upper-bound POI was not registered/searchable");
 
         lowerStand = spawnStand(level, 10.5D, LOWER_Y + 1.0D);
         upperStand = spawnStand(level, 10.5D, UPPER_Y - 1.0D);

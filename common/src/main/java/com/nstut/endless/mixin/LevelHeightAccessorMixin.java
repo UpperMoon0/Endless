@@ -3,6 +3,7 @@ package com.nstut.endless.mixin;
 import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelHeightAccessor;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
@@ -24,16 +25,19 @@ public interface LevelHeightAccessorMixin {
 
     /**
      * @author Endless
-     * @reason Buildability is wider than the dense engine core when the sparse protocol is active.
+     * @reason Expose the sparse logical envelope only on real worlds. Dense
+     * generation/chunk accessors rely on this guard before indexing their
+     * bounded section arrays and must retain the persisted dense-core range.
      */
     @Overwrite
     default boolean isOutsideBuildHeight(int y) {
-        return EndlessLogicalHeights.isActive()
-            ? EndlessLogicalHeights.isOutsideBuildHeight(y)
-            : EndlessHeights.isOutsideBuildHeight(y);
+        if (EndlessLogicalHeights.isActive() && (Object) this instanceof Level) {
+            return EndlessLogicalHeights.isOutsideBuildHeight(y);
+        }
+        return EndlessHeights.isOutsideBuildHeight(y);
     }
 
-    /** @author Endless @reason Apply the logical buildability test to positions. */
+    /** @author Endless @reason Apply the accessor-appropriate buildability test to positions. */
     @Overwrite
     default boolean isOutsideBuildHeight(BlockPos blockPos) {
         return isOutsideBuildHeight(blockPos.getY());

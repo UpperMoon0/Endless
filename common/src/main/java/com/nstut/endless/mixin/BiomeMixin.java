@@ -1,6 +1,5 @@
 package com.nstut.endless.mixin;
 
-import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.LevelReader;
@@ -88,7 +87,6 @@ public abstract class BiomeMixin {
 
     private static boolean endless$isSparseLogical(int y) {
         return EndlessLogicalHeights.isActive()
-            && EndlessLogicalHeights.contains(y)
-            && EndlessHeights.isOutsideBuildHeight(y);
+            && EndlessLogicalHeights.isSparseBuildHeight(y);
     }
 }

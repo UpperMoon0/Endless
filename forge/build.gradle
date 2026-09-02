@@ -73,10 +73,11 @@ dependencies {
     shadowBundle project(path: ':common', configuration: 'transformProductionForge')
 
     // Real compatibility coverage only. Normal dev/runtime remains optional;
-    // existing local libs still work for manual compatibility testing.
+    // existing local libs still work for manual compatibility testing. CI uses
+    // exact published CurseForge files for Waystones 14.1.20 and Balm 7.3.38.
     if (System.getenv('ENDLESS_TEST_WAYSTONES') == 'true') {
-        modRuntimeOnly "net.blay09.mods:balm-forge:7.3.38+1.20.1"
-        modRuntimeOnly "net.blay09.mods:waystones-forge:14.1.20+1.20.1"
+        modRuntimeOnly "curse.maven:balm-531761:7420617"
+        modRuntimeOnly "curse.maven:waystones-245755:7682270"
     } else {
         if (file('libs/balm-forge-7.3.37+1.20.1.jar').exists()) {
             modRuntimeOnly "net.blay09.mods:balm-forge:7.3.37+1.20.1"
@@ -92,9 +93,9 @@ repositories {
         dirs 'libs'
     }
     maven {
-        url = uri('https://maven.twelveiterations.com/repository/maven-public/')
+        url = uri('https://www.cursemaven.com')
         content {
-            includeGroup 'net.blay09.mods'
+            includeGroup 'curse.maven'
         }
     }
 }

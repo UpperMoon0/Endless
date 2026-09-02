@@ -29,6 +29,7 @@ loom {
                 property "endless.liveJoinTest.preseedStaleRange", System.getenv('ENDLESS_TEST_PRESEED_STALE') ?: 'false'
                 property "endless.liveJoinTest.expectLogical", (System.getenv('ENDLESS_TEST_PRESEED_STALE') == 'true') ? 'false' : 'true'
                 property "endless.liveJoinTest.highY", (System.getenv('ENDLESS_TEST_EXPECTED_MIN') ?: '-1024') == '-1024' ? 'true' : 'false'
+                property "endless.liveJoinWaystonesTest", System.getenv('ENDLESS_TEST_WAYSTONES') ?: 'false'
                 programArgs "--quickPlayMultiplayer", "127.0.0.1:${System.getenv('ENDLESS_TEST_PORT') ?: '25575'}"
             }
             liveJoinTestServer {
@@ -36,6 +37,7 @@ loom {
                 runDir("run/live-join/server")
                 vmArg "-Xmx1536m"
                 property "endless.liveJoinHighYTest", System.getenv('ENDLESS_TEST_EXTREME') ?: 'false'
+                property "endless.liveJoinWaystonesTest", System.getenv('ENDLESS_TEST_WAYSTONES') ?: 'false'
                 programArg "nogui"
             }
         }
@@ -70,17 +72,27 @@ dependencies {
     common(project(path: ':common', configuration: 'namedElements')) { transitive false }
     shadowBundle project(path: ':common', configuration: 'transformProductionForge')
 
-    if (file('libs/balm-forge-7.3.37+1.20.1.jar').exists()) {
-        modRuntimeOnly "net.blay09.mods:balm-forge:7.3.37+1.20.1"
-    }
-    if (file('libs/waystones-forge-14.1.20+1.20.1.jar').exists()) {
+    // Real compatibility coverage only. Normal dev/runtime remains optional;
+    // existing local libs still work for manual compatibility testing.
+    if (System.getenv('ENDLESS_TEST_WAYSTONES') == 'true') {
+        modRuntimeOnly "net.blay09.mods:balm-forge:7.3.38+1.20.1"
         modRuntimeOnly "net.blay09.mods:waystones-forge:14.1.20+1.20.1"
+    } else {
+        if (file('libs/balm-forge-7.3.37+1.20.1.jar').exists()) {
+            modRuntimeOnly "net.blay09.mods:balm-forge:7.3.37+1.20.1"
+        }
+        if (file('libs/waystones-forge-14.1.20+1.20.1.jar').exists()) {
+            modRuntimeOnly "net.blay09.mods:waystones-forge:14.1.20+1.20.1"
+        }
     }
 }
 
 repositories {
     flatDir {
         dirs 'libs'
+    }
+    maven {
+        url = uri('https://maven.twelveiterations.com/repository/maven-releases/')
     }
 }
 

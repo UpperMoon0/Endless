@@ -5,9 +5,11 @@ import com.nstut.endless.heights.EndlessLogicalHeights;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.chunk.RenderChunkRegion;
 import net.minecraft.client.renderer.chunk.RenderRegionCache;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.levelgen.Heightmap;
 
 /** Client-side assertions used by tools/live_join_test.py. */
@@ -28,7 +30,8 @@ public final class LiveJoinTest {
     public static final String FAIL_MARKER = "ENDLESS_LIVE_JOIN_TEST_FAIL";
     public static final String PRE_LOGIN_PASS_MARKER = "ENDLESS_PRE_LOGIN_RANGE_PASS";
     public static final String PRESEED_MARKER = "ENDLESS_LIVE_JOIN_TEST_PRESEEDED_STALE_RANGE";
-    public static final String HIGH_Y_PASS_MARKER = "ENDLESS_HIGH_Y_CLIENT_PASS";
+    public static final String LOWER_EXTREME_PASS_MARKER = "ENDLESS_EXTREME_LOWER_CLIENT_PASS";
+    public static final String UPPER_EXTREME_PASS_MARKER = "ENDLESS_EXTREME_UPPER_CLIENT_PASS";
 
     public static final String SYSTEM_PROPERTY = "endless.liveJoinTest";
     public static final String PRESEED_STALE_PROPERTY = "endless.liveJoinTest.preseedStaleRange";
@@ -36,6 +39,7 @@ public final class LiveJoinTest {
     private static boolean armed;
     private static boolean staleRangePreseeded;
     private static boolean preLoginChecked;
+    private static boolean lowerExtremeSeen;
     private static int ticksWithLevel;
 
     private LiveJoinTest() {}
@@ -127,41 +131,7 @@ public final class LiveJoinTest {
         }
 
         if (HIGH_Y_TEST) {
-            boolean arrived = mc.player != null
-                && Math.abs(mc.player.getY() - (LiveHighYServerTest.TEST_Y + 2.0D)) < 8.0D;
-            boolean buildable = !level.isOutsideBuildHeight(LiveHighYServerTest.TEST_POS);
-            boolean glowstone = level.getBlockState(LiveHighYServerTest.TEST_POS).is(Blocks.GLOWSTONE);
-            boolean water = level.getFluidState(LiveHighYServerTest.WATER_POS).isSource();
-            boolean chest = level.getBlockState(LiveHighYServerTest.CHEST_POS).is(Blocks.CHEST)
-                && level.getBlockEntity(LiveHighYServerTest.CHEST_POS) != null;
-            boolean height = level.getHeight(Heightmap.Types.WORLD_SURFACE, 0, 0)
-                == LiveHighYServerTest.TEST_Y + 1;
-            boolean light = level.getBrightness(LightLayer.BLOCK, LiveHighYServerTest.TEST_POS) >= 15;
-            boolean render = canRenderHighY(level);
-
-            if (arrived && buildable && glowstone && water && chest && height && light && render) {
-                System.out.println(HIGH_Y_PASS_MARKER
-                    + " playerY=" + mc.player.getY()
-                    + " blockY=" + LiveHighYServerTest.TEST_Y
-                    + " height=" + level.getHeight(Heightmap.Types.WORLD_SURFACE, 0, 0)
-                    + " blockLight=" + level.getBrightness(LightLayer.BLOCK, LiveHighYServerTest.TEST_POS)
-                    + " render=true");
-                pass(levelMin, levelHeight, endlessMin, endlessMax, logical);
-                mc.stop();
-                return true;
-            }
-            if (ticksWithLevel < 300) return false;
-            fail("highY", " arrived=" + arrived
-                + " buildable=" + buildable
-                + " glowstone=" + glowstone
-                + " water=" + water
-                + " chest=" + chest
-                + " height=" + height
-                + " light=" + light
-                + " render=" + render
-                + " playerY=" + (mc.player == null ? "null" : mc.player.getY()));
-            mc.stop();
-            return true;
+            return tickExtremeTest(mc, level, levelMin, levelHeight, endlessMin, endlessMax, logical);
         }
 
         if (ticksWithLevel < 40) return false;
@@ -170,13 +140,95 @@ public final class LiveJoinTest {
         return true;
     }
 
-    private static boolean canRenderHighY(Level level) {
+    private static boolean tickExtremeTest(
+        Minecraft mc,
+        Level level,
+        int levelMin,
+        int levelHeight,
+        int endlessMin,
+        int endlessMax,
+        boolean logical
+    ) {
+        double playerY = mc.player == null ? Double.NaN : mc.player.getY();
+        boolean atLower = mc.player != null
+            && Math.abs(playerY - LiveHighYServerTest.LOWER_PLAYER_Y) < 8.0D;
+        boolean atUpper = mc.player != null
+            && Math.abs(playerY - LiveHighYServerTest.UPPER_PLAYER_Y) < 8.0D;
+
+        if (atLower && !lowerExtremeSeen) {
+            BoundaryStatus lower = boundaryStatus(level, false);
+            if (lower.ok()) {
+                lowerExtremeSeen = true;
+                System.out.println(LOWER_EXTREME_PASS_MARKER
+                    + " playerY=" + playerY
+                    + " blockY=" + LiveHighYServerTest.LOWER_Y
+                    + " light=" + lower.sourceLight
+                    + " render=true");
+            }
+        }
+
+        if (atUpper) {
+            BoundaryStatus upper = boundaryStatus(level, true);
+            if (lowerExtremeSeen && upper.ok()) {
+                System.out.println(UPPER_EXTREME_PASS_MARKER
+                    + " playerY=" + playerY
+                    + " blockY=" + LiveHighYServerTest.UPPER_Y
+                    + " height=" + level.getHeight(Heightmap.Types.WORLD_SURFACE, 0, 0)
+                    + " light=" + upper.sourceLight
+                    + " render=true");
+                pass(levelMin, levelHeight, endlessMin, endlessMax, logical);
+                mc.stop();
+                return true;
+            }
+        }
+
+        if (ticksWithLevel < 400) return false;
+        BoundaryStatus lower = boundaryStatus(level, false);
+        BoundaryStatus upper = boundaryStatus(level, true);
+        fail("extremeY", " lowerSeen=" + lowerExtremeSeen
+            + " atLower=" + atLower
+            + " atUpper=" + atUpper
+            + " playerY=" + (mc.player == null ? "null" : mc.player.getY())
+            + " lower=" + lower
+            + " upper=" + upper);
+        mc.stop();
+        return true;
+    }
+
+    private static BoundaryStatus boundaryStatus(Level level, boolean upper) {
+        BlockPos glowstone = upper ? LiveHighYServerTest.UPPER_TEST_POS : LiveHighYServerTest.LOWER_TEST_POS;
+        BlockPos water = upper ? LiveHighYServerTest.UPPER_WATER_POS : LiveHighYServerTest.LOWER_WATER_POS;
+        BlockPos chest = upper ? LiveHighYServerTest.UPPER_CHEST_POS : LiveHighYServerTest.LOWER_CHEST_POS;
+        BlockPos lamp = upper ? LiveHighYServerTest.UPPER_LAMP_POS : LiveHighYServerTest.LOWER_LAMP_POS;
+        BlockPos inward = upper ? glowstone.below() : glowstone.above();
+        int outsideY = upper ? EndlessLogicalHeights.MAX_BUILD_HEIGHT : EndlessLogicalHeights.MIN_BUILD_HEIGHT - 1;
+
+        boolean buildable = !level.isOutsideBuildHeight(glowstone);
+        boolean outsideRejected = level.isOutsideBuildHeight(outsideY);
+        boolean block = level.getBlockState(glowstone).is(Blocks.GLOWSTONE);
+        boolean fluid = level.getFluidState(water).isSource();
+        boolean blockEntity = level.getBlockState(chest).is(Blocks.CHEST)
+            && level.getBlockEntity(chest) != null;
+        boolean placedLamp = level.getBlockState(lamp).is(Blocks.REDSTONE_LAMP)
+            && level.getBlockState(lamp).getValue(BlockStateProperties.LIT);
+        int sourceLight = level.getBrightness(LightLayer.BLOCK, glowstone);
+        int inwardLight = level.getBrightness(LightLayer.BLOCK, inward);
+        boolean height = !upper || level.getHeight(Heightmap.Types.WORLD_SURFACE, 0, 0)
+            == LiveHighYServerTest.UPPER_Y + 1;
+        boolean render = canRender(level, glowstone);
+
+        return new BoundaryStatus(
+            buildable, outsideRejected, block, fluid, blockEntity, placedLamp,
+            sourceLight, inwardLight, height, render
+        );
+    }
+
+    private static boolean canRender(Level level, BlockPos pos) {
         try {
-            RenderChunkRegion region = new RenderRegionCache().createRegion(
-                level, LiveHighYServerTest.TEST_POS, LiveHighYServerTest.TEST_POS, 1);
-            return region != null && region.getBlockState(LiveHighYServerTest.TEST_POS).is(Blocks.GLOWSTONE);
+            RenderChunkRegion region = new RenderRegionCache().createRegion(level, pos, pos, 1);
+            return region != null && region.getBlockState(pos).is(Blocks.GLOWSTONE);
         } catch (Throwable t) {
-            System.out.println("ENDLESS_HIGH_Y_RENDER_FAIL error=" + t);
+            System.out.println("ENDLESS_EXTREME_RENDER_FAIL pos=" + pos + " error=" + t);
             return false;
         }
     }
@@ -197,5 +249,23 @@ public final class LiveJoinTest {
             + details
             + " expectedMin=" + EXPECTED_MIN_BUILD_HEIGHT
             + " expectedMax=" + EXPECTED_MAX_BUILD_HEIGHT);
+    }
+
+    private record BoundaryStatus(
+        boolean buildable,
+        boolean outsideRejected,
+        boolean block,
+        boolean fluid,
+        boolean blockEntity,
+        boolean placedLamp,
+        int sourceLight,
+        int inwardLight,
+        boolean height,
+        boolean render
+    ) {
+        boolean ok() {
+            return buildable && outsideRejected && block && fluid && blockEntity && placedLamp
+                && sourceLight >= 15 && inwardLight > 0 && height && render;
+        }
     }
 }

@@ -1,5 +1,6 @@
 package com.nstut.endless.vertical;
 
+import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import com.nstut.endless.testing.LiveHighYServerTest;
 import net.minecraft.network.protocol.Packet;
@@ -23,6 +24,7 @@ public final class VerticalNetworkBridge {
     private static final Map<UUID, PlayerWindow> PLAYER_WINDOWS = new HashMap<>();
     private static PageSender sender;
     private static int ticks;
+    private static boolean denseInvariantChecked;
 
     private VerticalNetworkBridge() {}
 
@@ -45,6 +47,7 @@ public final class VerticalNetworkBridge {
             return;
         }
 
+        verifyDenseCoreInvariantForLiveTest(server);
         LiveHighYServerTest.tick(server);
 
         if (++ticks >= FLUSH_INTERVAL_TICKS) {
@@ -81,6 +84,34 @@ public final class VerticalNetworkBridge {
         PLAYER_WINDOWS.clear();
         sender = null;
         ticks = 0;
+        denseInvariantChecked = false;
+    }
+
+    private static void verifyDenseCoreInvariantForLiveTest(MinecraftServer server) {
+        if (denseInvariantChecked
+            || !Boolean.parseBoolean(System.getProperty(LiveHighYServerTest.SYSTEM_PROPERTY, "false"))) {
+            return;
+        }
+
+        ServerLevel level = server.overworld();
+        int denseMin = EndlessHeights.getDenseMinBuildHeight();
+        int denseMax = EndlessHeights.getDenseMaxBuildHeight();
+        int expectedHeight = denseMax - denseMin;
+        int expectedMinSection = Math.floorDiv(denseMin, 16);
+        int expectedMaxSection = Math.floorDiv(denseMax - 1, 16) + 1;
+
+        if (level.getMinBuildHeight() != denseMin
+            || level.getHeight() != expectedHeight
+            || level.getMinSection() != expectedMinSection
+            || level.getMaxSection() != expectedMaxSection) {
+            throw new IllegalStateException(
+                "Logical range shifted vanilla dense section geometry: logical=["
+                    + EndlessHeights.getMinBuildHeight() + "," + EndlessHeights.getMaxBuildHeight()
+                    + ") dense=[" + denseMin + "," + denseMax + ") accessorMin="
+                    + level.getMinBuildHeight() + " accessorHeight=" + level.getHeight()
+                    + " sections=[" + level.getMinSection() + "," + level.getMaxSection() + ")");
+        }
+        denseInvariantChecked = true;
     }
 
     private static void sendPage(ServerPlayer player, LevelChunk chunk, int pageY) {

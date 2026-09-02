@@ -5,7 +5,6 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.level.storage.LevelResource;
@@ -17,19 +16,18 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 
 /** Dedicated compressed-NBT persistence for extended vertical pages. */
 public final class VerticalPageDiskStorage implements VerticalPagePersistence<LevelChunkSection> {
     private static final int FORMAT_VERSION = 1;
+    private static final String PAGE_PREFIX = "p.";
+    private static final String PAGE_SUFFIX = ".nbt";
 
     private final ServerLevel level;
     private final Path root;
-    private final Map<Long, List<Integer>> pageIndex = new HashMap<>();
 
     public VerticalPageDiskStorage(ServerLevel level) {
         this.level = level;
@@ -76,7 +74,6 @@ public final class VerticalPageDiskStorage implements VerticalPagePersistence<Le
                 throw new IOException("Invalid section payload for local Y " + localY + " at " + file, e);
             }
         }
-        rememberPage(pos, !page.isEmpty());
         return page.isEmpty() ? Optional.empty() : Optional.of(page);
     }
 
@@ -114,13 +111,13 @@ public final class VerticalPageDiskStorage implements VerticalPagePersistence<Le
         } catch (AtomicMoveNotSupportedException ignored) {
             Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING);
         }
-        rememberPage(pos, true);
     }
 
     @Override
     public synchronized void delete(VerticalPagePos pos) throws IOException {
-        Files.deleteIfExists(file(pos));
-        rememberPage(pos, false);
+        Path file = file(pos);
+        Files.deleteIfExists(file);
+        deleteDirectoryIfEmpty(file.getParent());
     }
 
     public synchronized boolean exists(VerticalPagePos pos) {
@@ -128,64 +125,64 @@ public final class VerticalPageDiskStorage implements VerticalPagePersistence<Le
     }
 
     /**
-     * Sparse page index for one horizontal chunk. The first lookup discovers
-     * existing page directories, then saves/deletes maintain the cached index.
+     * Discover only pages belonging to the requested horizontal chunk.
+     *
+     * <p>The storage layout is chunk-first ({@code c.x.z/p.y.nbt}), so this is
+     * O(pages in this chunk) instead of O(all distinct page Ys in the entire
+     * dimension). That keeps height queries stable even in highly fragmented
+     * million-block-tall worlds.</p>
      */
     public synchronized List<Integer> pageYs(int chunkX, int chunkZ) {
-        long key = ChunkPos.asLong(chunkX, chunkZ);
-        List<Integer> cached = pageIndex.get(key);
-        if (cached != null) {
-            return cached;
+        Path chunkDir = chunkDirectory(chunkX, chunkZ);
+        if (!Files.isDirectory(chunkDir)) {
+            return List.of();
         }
 
         ArrayList<Integer> found = new ArrayList<>();
-        if (Files.isDirectory(root)) {
-            String chunkFile = "c." + chunkX + "." + chunkZ + ".nbt";
-            try (Stream<Path> dirs = Files.list(root)) {
-                dirs.filter(Files::isDirectory).forEach(dir -> {
-                    String name = dir.getFileName().toString();
-                    if (!name.startsWith("p.")) {
-                        return;
-                    }
-                    try {
-                        int pageY = Integer.parseInt(name.substring(2));
-                        if (Files.isRegularFile(dir.resolve(chunkFile))) {
-                            found.add(pageY);
-                        }
-                    } catch (NumberFormatException ignored) {
-                        // Ignore foreign directories under Endless storage.
-                    }
-                });
-            } catch (IOException e) {
-                throw new IllegalStateException("Failed to index Endless vertical pages", e);
-            }
+        try (Stream<Path> files = Files.list(chunkDir)) {
+            files.filter(Files::isRegularFile).forEach(path -> {
+                Integer pageY = parsePageY(path.getFileName().toString());
+                if (pageY != null) {
+                    found.add(pageY);
+                }
+            });
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to index Endless vertical pages for chunk "
+                + chunkX + "," + chunkZ, e);
         }
         Collections.sort(found);
-        List<Integer> result = List.copyOf(found);
-        pageIndex.put(key, result);
-        return result;
+        return List.copyOf(found);
     }
 
-    private void rememberPage(VerticalPagePos pos, boolean present) {
-        long key = ChunkPos.asLong(pos.chunkX(), pos.chunkZ());
-        List<Integer> existing = pageIndex.get(key);
-        if (existing == null) {
+    private Integer parsePageY(String name) {
+        if (!name.startsWith(PAGE_PREFIX) || !name.endsWith(PAGE_SUFFIX)) {
+            return null;
+        }
+        String raw = name.substring(PAGE_PREFIX.length(), name.length() - PAGE_SUFFIX.length());
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private void deleteDirectoryIfEmpty(Path directory) throws IOException {
+        if (directory == null || !Files.isDirectory(directory)) {
             return;
         }
-        ArrayList<Integer> updated = new ArrayList<>(existing);
-        if (present) {
-            if (!updated.contains(pos.pageY())) {
-                updated.add(pos.pageY());
-                Collections.sort(updated);
+        try (Stream<Path> entries = Files.list(directory)) {
+            if (entries.findAny().isEmpty()) {
+                Files.deleteIfExists(directory);
             }
-        } else {
-            updated.remove(Integer.valueOf(pos.pageY()));
         }
-        pageIndex.put(key, List.copyOf(updated));
+    }
+
+    private Path chunkDirectory(int chunkX, int chunkZ) {
+        return root.resolve("c." + chunkX + "." + chunkZ);
     }
 
     private Path file(VerticalPagePos pos) {
-        return root.resolve("p." + pos.pageY())
-            .resolve("c." + pos.chunkX() + "." + pos.chunkZ() + ".nbt");
+        return chunkDirectory(pos.chunkX(), pos.chunkZ())
+            .resolve(PAGE_PREFIX + pos.pageY() + PAGE_SUFFIX);
     }
 }

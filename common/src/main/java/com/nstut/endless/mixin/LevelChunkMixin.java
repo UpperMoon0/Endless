@@ -10,6 +10,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.material.FluidState;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.gen.Invoker;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
@@ -17,6 +18,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 /** Routes coordinates outside the dense v0.4 core to sparse vertical pages. */
 @Mixin(LevelChunk.class)
 public abstract class LevelChunkMixin {
+
+    @Invoker("updateBlockEntityTicker")
+    protected abstract void endless$updateBlockEntityTicker(BlockEntity blockEntity);
 
     @Inject(method = "getBlockState", at = @At("HEAD"), cancellable = true)
     private void endless$getBlockState(BlockPos pos, CallbackInfoReturnable<BlockState> cir) {
@@ -82,10 +86,15 @@ public abstract class LevelChunkMixin {
             if (blockEntity == null) {
                 blockEntity = entityBlock.newBlockEntity(pos, state);
                 if (blockEntity != null) {
-                    self.setBlockEntity(blockEntity);
+                    // Match vanilla LevelChunk#setBlockState: this installs the
+                    // map entry, ticker, and server game-event listener.
+                    self.addAndRegisterBlockEntity(blockEntity);
                 }
             } else {
                 blockEntity.setBlockState(state);
+                // Match vanilla's existing-BE branch without re-registering a
+                // duplicate game-event listener.
+                endless$updateBlockEntityTicker(blockEntity);
             }
         }
 

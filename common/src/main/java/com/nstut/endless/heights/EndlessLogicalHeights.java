@@ -1,16 +1,19 @@
 package com.nstut.endless.heights;
 
+import com.nstut.endless.config.EndlessConfig;
+
 /**
  * Logical build range for the sparse v0.5 engine.
  *
- * <p>The vanilla LevelHeightAccessor remains bounded to the v0.4 dense core so
- * arrays and O(height) vanilla loops stay safe. Buildability outside that core
- * is controlled separately here and routed through sparse vertical pages.</p>
+ * <p>The fixed constants are the representation ceiling, not the active world
+ * limit. The active logical range comes from the normalized server/world config
+ * through {@link EndlessHeights}. Vanilla dense arrays remain separately
+ * bounded to the legacy-safe core.</p>
  */
 public final class EndlessLogicalHeights {
-    /** Kept inside the signed 20-bit SectionPos Y envelope (in block units). */
-    public static final int MIN_BUILD_HEIGHT = -8_000_000;
-    public static final int MAX_BUILD_HEIGHT = 8_000_000;
+    /** Fixed v0.5 representation envelope, kept inside signed SectionPos Y. */
+    public static final int MIN_BUILD_HEIGHT = EndlessConfig.MIN_BUILD_HEIGHT_MIN;
+    public static final int MAX_BUILD_HEIGHT = EndlessConfig.MAX_BUILD_HEIGHT_MAX;
 
     private static volatile boolean active;
 
@@ -28,7 +31,13 @@ public final class EndlessLogicalHeights {
         active = false;
     }
 
+    /** True only inside the currently configured/effective logical build range. */
     public static boolean contains(int y) {
+        return !EndlessHeights.isOutsideBuildHeight(y);
+    }
+
+    /** True anywhere the v0.5 sparse representation can safely address. */
+    public static boolean isRepresentable(int y) {
         return y >= MIN_BUILD_HEIGHT && y < MAX_BUILD_HEIGHT;
     }
 
@@ -36,11 +45,21 @@ public final class EndlessLogicalHeights {
         return !contains(y);
     }
 
+    /** First section in the currently configured/effective logical range. */
     public static int minSection() {
+        return Math.floorDiv(EndlessHeights.getMinBuildHeight(), 16);
+    }
+
+    /** Exclusive last section in the currently configured/effective logical range. */
+    public static int maxSectionExclusive() {
+        return Math.floorDiv(EndlessHeights.getMaxBuildHeight() - 1, 16) + 1;
+    }
+
+    public static int representableMinSection() {
         return Math.floorDiv(MIN_BUILD_HEIGHT, 16);
     }
 
-    public static int maxSectionExclusive() {
+    public static int representableMaxSectionExclusive() {
         return Math.floorDiv(MAX_BUILD_HEIGHT - 1, 16) + 1;
     }
 

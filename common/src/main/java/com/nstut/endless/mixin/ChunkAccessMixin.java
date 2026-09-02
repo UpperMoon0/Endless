@@ -1,5 +1,6 @@
 package com.nstut.endless.mixin;
 
+import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import com.nstut.endless.vertical.EndlessVerticalEngine;
 import com.nstut.endless.vertical.MinecraftVerticalWorld;
@@ -94,12 +95,13 @@ public abstract class ChunkAccessMixin {
         int fromY,
         int toY
     ) {
-        if (fromY > toY || toY < EndlessLogicalHeights.MIN_BUILD_HEIGHT
-            || fromY >= EndlessLogicalHeights.MAX_BUILD_HEIGHT) {
+        int logicalMin = EndlessHeights.getMinBuildHeight();
+        int logicalMax = EndlessHeights.getMaxBuildHeight();
+        if (fromY > toY || toY < logicalMin || fromY >= logicalMax) {
             return false;
         }
-        int boundedFrom = Math.max(fromY, EndlessLogicalHeights.MIN_BUILD_HEIGHT);
-        int boundedTo = Math.min(toY, EndlessLogicalHeights.MAX_BUILD_HEIGHT - 1);
+        int boundedFrom = Math.max(fromY, logicalMin);
+        int boundedTo = Math.min(toY, logicalMax - 1);
         int firstPage = VerticalPageLayout.pageYForBlockY(boundedFrom);
         int lastPage = VerticalPageLayout.pageYForBlockY(boundedTo);
         for (int pageY = firstPage; pageY <= lastPage; pageY++) {

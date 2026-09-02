@@ -31,7 +31,11 @@ import java.util.Set;
 
 /** Runtime sparse vertical storage attached to one Level instance. */
 public final class MinecraftVerticalWorld {
+    private static final int BLOCK_LIGHT_CACHE_LIMIT = 65_536;
     private static final int SKY_CACHE_LIMIT = 65_536;
+    /** Emission 15 loses at least one level per block, so only 14 steps can remain lit. */
+    private static final int BLOCK_LIGHT_SOURCE_RADIUS = 14;
+    private static final int BLOCK_LIGHT_INVALIDATION_RADIUS = 15;
 
     private final Level level;
     private final VerticalPageDiskStorage disk;
@@ -40,14 +44,18 @@ public final class MinecraftVerticalWorld {
     private final Set<VerticalPagePos> dirtyPages = new HashSet<>();
     private final Map<VerticalPagePos, Long> revisions = new HashMap<>();
     private final Map<HeightKey, Integer> heightCache = new HashMap<>();
-    private final Map<BlockKey, Byte> blockLight = new HashMap<>();
+    private final Map<BlockKey, Byte> blockLight = new LinkedHashMap<>(1024, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<BlockKey, Byte> eldest) {
+            return size() > BLOCK_LIGHT_CACHE_LIMIT;
+        }
+    };
     private final Map<BlockKey, Integer> skyLight = new LinkedHashMap<>(1024, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<BlockKey, Integer> eldest) {
             return size() > SKY_CACHE_LIMIT;
         }
     };
-    private boolean blockLightDirty = true;
     private long nextRevision = 1L;
 
     MinecraftVerticalWorld(Level level) {
@@ -130,8 +138,14 @@ public final class MinecraftVerticalWorld {
 
     public synchronized int getBrightness(LightLayer layer, BlockPos pos) {
         if (layer == LightLayer.BLOCK) {
-            ensureBlockLight();
-            return Byte.toUnsignedInt(blockLight.getOrDefault(BlockKey.of(pos), (byte) 0));
+            BlockKey key = BlockKey.of(pos);
+            Byte cached = blockLight.get(key);
+            if (cached != null) {
+                return Byte.toUnsignedInt(cached);
+            }
+            int value = computeBlockLight(pos);
+            blockLight.put(key, (byte) value);
+            return value;
         }
         BlockKey key = BlockKey.of(pos);
         Integer cached = skyLight.get(key);
@@ -169,7 +183,9 @@ public final class MinecraftVerticalWorld {
         }
         attemptedLoads.add(pos);
         revisions.put(pos, snapshot.revision());
-        invalidateColumn(key);
+        invalidateHeightColumn(key);
+        invalidateBlockLightPage(pos);
+        skyLight.clear();
     }
 
     public synchronized List<Integer> loadedPageYs(int chunkX, int chunkZ) {
@@ -207,7 +223,8 @@ public final class MinecraftVerticalWorld {
         attemptedLoads.removeIf(pos -> pos.chunkX() == chunkX && pos.chunkZ() == chunkZ);
         dirtyPages.removeIf(pos -> pos.chunkX() == chunkX && pos.chunkZ() == chunkZ);
         revisions.keySet().removeIf(pos -> pos.chunkX() == chunkX && pos.chunkZ() == chunkZ);
-        invalidateColumn(key);
+        invalidateHeightColumn(key);
+        evictColumnLightCaches(chunkX, chunkZ);
     }
 
     public synchronized void close() {
@@ -286,59 +303,53 @@ public final class MinecraftVerticalWorld {
         };
     }
 
-    private void ensureBlockLight() {
-        if (!blockLightDirty) {
-            return;
-        }
-        blockLightDirty = false;
-        blockLight.clear();
+    /**
+     * Solve block light only in the finite neighborhood that can influence the
+     * requested position. Vanilla block light has a maximum value of 15 and
+     * loses at least one level per step, so sources farther than 14 Manhattan
+     * blocks cannot contribute. Results discovered by the local solve are put
+     * into a bounded LRU cache and reused by nearby queries.
+     */
+    private int computeBlockLight(BlockPos target) {
+        BlockKey targetKey = BlockKey.of(target);
+        Map<BlockKey, Byte> local = new HashMap<>();
         ArrayDeque<LightNode> queue = new ArrayDeque<>();
 
-        for (Map.Entry<Long, SparseVerticalColumn<LevelChunkSection>> columnEntry : columns.entrySet()) {
-            int chunkX = ChunkPos.getX(columnEntry.getKey());
-            int chunkZ = ChunkPos.getZ(columnEntry.getKey());
-            SparseVerticalColumn<LevelChunkSection> column = columnEntry.getValue();
-            for (int pageY : column.pageYs()) {
-                VerticalPage<LevelChunkSection> page = column.getPage(pageY);
-                if (page == null) {
-                    continue;
+        for (int dx = -BLOCK_LIGHT_SOURCE_RADIUS; dx <= BLOCK_LIGHT_SOURCE_RADIUS; dx++) {
+            int remainingX = BLOCK_LIGHT_SOURCE_RADIUS - Math.abs(dx);
+            for (int dy = -remainingX; dy <= remainingX; dy++) {
+                int remaining = remainingX - Math.abs(dy);
+                for (int dz = -remaining; dz <= remaining; dz++) {
+                    int y = target.getY() + dy;
+                    if (!EndlessLogicalHeights.contains(y)) {
+                        continue;
+                    }
+                    BlockPos sourcePos = new BlockPos(target.getX() + dx, y, target.getZ() + dz);
+                    BlockState sourceState = level.getBlockState(sourcePos);
+                    int emission = sourceState.getLightEmission();
+                    if (emission <= 0) {
+                        continue;
+                    }
+                    BlockKey source = BlockKey.of(sourcePos);
+                    int old = Byte.toUnsignedInt(local.getOrDefault(source, (byte) 0));
+                    if (emission > old) {
+                        local.put(source, (byte) emission);
+                        queue.addLast(new LightNode(source, emission));
+                    }
                 }
-                page.forEachOccupiedSection((sectionY, section) -> {
-                    if (section.hasOnlyAir()) {
-                        return;
-                    }
-                    int baseX = chunkX << 4;
-                    int baseY = sectionY << 4;
-                    int baseZ = chunkZ << 4;
-                    for (int y = 0; y < 16; y++) {
-                        for (int z = 0; z < 16; z++) {
-                            for (int x = 0; x < 16; x++) {
-                                BlockState state = section.getBlockState(x, y, z);
-                                int emission = state.getLightEmission();
-                                if (emission > 0) {
-                                    BlockKey key = new BlockKey(baseX + x, baseY + y, baseZ + z);
-                                    int old = Byte.toUnsignedInt(blockLight.getOrDefault(key, (byte) 0));
-                                    if (emission > old) {
-                                        blockLight.put(key, (byte) emission);
-                                        queue.addLast(new LightNode(key, emission));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
             }
         }
 
         while (!queue.isEmpty()) {
             LightNode node = queue.removeFirst();
-            int currentStored = Byte.toUnsignedInt(blockLight.getOrDefault(node.pos, (byte) 0));
+            int currentStored = Byte.toUnsignedInt(local.getOrDefault(node.pos, (byte) 0));
             if (node.light < currentStored || node.light <= 1) {
                 continue;
             }
             for (Direction direction : Direction.values()) {
                 BlockKey next = node.pos.relative(direction);
-                if (!EndlessLogicalHeights.contains(next.y)) {
+                if (manhattanDistance(next, targetKey) > BLOCK_LIGHT_SOURCE_RADIUS
+                    || !EndlessLogicalHeights.contains(next.y)) {
                     continue;
                 }
                 BlockPos nextPos = next.toBlockPos();
@@ -348,13 +359,16 @@ public final class MinecraftVerticalWorld {
                 if (propagated <= 0) {
                     continue;
                 }
-                int old = Byte.toUnsignedInt(blockLight.getOrDefault(next, (byte) 0));
+                int old = Byte.toUnsignedInt(local.getOrDefault(next, (byte) 0));
                 if (propagated > old) {
-                    blockLight.put(next, (byte) propagated);
+                    local.put(next, (byte) propagated);
                     queue.addLast(new LightNode(next, propagated));
                 }
             }
         }
+
+        local.forEach(blockLight::put);
+        return Byte.toUnsignedInt(local.getOrDefault(targetKey, (byte) 0));
     }
 
     private int computeSkyLight(BlockPos pos) {
@@ -425,7 +439,7 @@ public final class MinecraftVerticalWorld {
                     VerticalPage<LevelChunkSection> loadedPage = loaded.get();
                     loadedPage.forEachOccupiedSection(
                         (sectionY, section) -> targetColumn.putSection(sectionY, section));
-                    invalidateColumn(key);
+                    invalidateHeightColumn(key);
                     return targetColumn.getPage(pos.pageY());
                 }
             } catch (IOException e) {
@@ -451,15 +465,48 @@ public final class MinecraftVerticalWorld {
         long key = ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4);
         int local = (pos.getX() & 15) | ((pos.getZ() & 15) << 4);
         heightCache.keySet().removeIf(heightKey -> heightKey.chunkKey == key && heightKey.localColumn == local);
-        blockLightDirty = true;
+        invalidateBlockLightAround(pos);
+        // Sky exposure depends on the highest sparse block in a column and can
+        // therefore change arbitrarily far below a modified high-Y block.
         skyLight.clear();
     }
 
-    private void invalidateColumn(long key) {
+    private void invalidateHeightColumn(long key) {
         heightCache.keySet().removeIf(heightKey -> heightKey.chunkKey == key);
-        blockLightDirty = true;
-        blockLight.clear();
-        skyLight.clear();
+    }
+
+    private void invalidateBlockLightAround(BlockPos pos) {
+        BlockKey center = BlockKey.of(pos);
+        for (int dx = -BLOCK_LIGHT_INVALIDATION_RADIUS; dx <= BLOCK_LIGHT_INVALIDATION_RADIUS; dx++) {
+            int remainingX = BLOCK_LIGHT_INVALIDATION_RADIUS - Math.abs(dx);
+            for (int dy = -remainingX; dy <= remainingX; dy++) {
+                int remaining = remainingX - Math.abs(dy);
+                for (int dz = -remaining; dz <= remaining; dz++) {
+                    blockLight.remove(new BlockKey(center.x + dx, center.y + dy, center.z + dz));
+                }
+            }
+        }
+    }
+
+    private void invalidateBlockLightPage(VerticalPagePos pos) {
+        int minX = (pos.chunkX() << 4) - BLOCK_LIGHT_INVALIDATION_RADIUS;
+        int maxX = (pos.chunkX() << 4) + 15 + BLOCK_LIGHT_INVALIDATION_RADIUS;
+        int minZ = (pos.chunkZ() << 4) - BLOCK_LIGHT_INVALIDATION_RADIUS;
+        int maxZ = (pos.chunkZ() << 4) + 15 + BLOCK_LIGHT_INVALIDATION_RADIUS;
+        int minY = VerticalPageLayout.pageMinBlockY(pos.pageY()) - BLOCK_LIGHT_INVALIDATION_RADIUS;
+        int maxY = VerticalPageLayout.pageMaxBlockY(pos.pageY()) + BLOCK_LIGHT_INVALIDATION_RADIUS;
+        blockLight.keySet().removeIf(key -> key.x >= minX && key.x <= maxX
+            && key.y >= minY && key.y <= maxY
+            && key.z >= minZ && key.z <= maxZ);
+    }
+
+    private void evictColumnLightCaches(int chunkX, int chunkZ) {
+        blockLight.keySet().removeIf(key -> (key.x >> 4) == chunkX && (key.z >> 4) == chunkZ);
+        skyLight.keySet().removeIf(key -> (key.x >> 4) == chunkX && (key.z >> 4) == chunkZ);
+    }
+
+    private static int manhattanDistance(BlockKey a, BlockKey b) {
+        return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.z - b.z);
     }
 
     private record HeightKey(long chunkKey, int localColumn, Heightmap.Types type) {}

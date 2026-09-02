@@ -18,10 +18,10 @@ import java.nio.file.Path;
  *   <li>The <b>logical range</b> is user intent from endless.json. It controls
  *       buildability, commands, sparse routing and teleport validity, and may be
  *       widened or narrowed between launches.</li>
- *   <li>The <b>dense core</b> is the vanilla Anvil/section-array layout. It is
- *       constrained to the legacy-safe envelope and persisted per world. Once
- *       a world has used a dense section, this range never shrinks, preventing
- *       vanilla ChunkSerializer from silently dropping old dense sections.</li>
+ *   <li>The <b>dense core</b> is the vanilla Anvil/section-array layout. Fresh
+ *       v0.5 worlds keep the vanilla [-64,320) core; migrated/existing worlds
+ *       may retain a wider historical dense core, which never shrinks so old
+ *       Anvil sections cannot be silently dropped.</li>
  * </ul>
  */
 public final class EndlessHeights {
@@ -59,8 +59,7 @@ public final class EndlessHeights {
         if (applied) {
             return effectiveDenseMin;
         }
-        int[] dense = denseRangeForLogical(getMinBuildHeight(), getMaxBuildHeight());
-        return dense[0];
+        return VANILLA_MIN_BUILD_HEIGHT;
     }
 
     /** Current vanilla-compatible dense core maximum (exclusive). */
@@ -68,8 +67,7 @@ public final class EndlessHeights {
         if (applied) {
             return effectiveDenseMax;
         }
-        int[] dense = denseRangeForLogical(getMinBuildHeight(), getMaxBuildHeight());
-        return dense[1];
+        return VANILLA_MAX_BUILD_HEIGHT;
     }
 
     /** Vanilla LevelHeightAccessor height. Never proportional to the sparse logical range. */
@@ -86,17 +84,16 @@ public final class EndlessHeights {
     }
 
     /**
-     * Project a logical range onto the largest vanilla-safe dense core it overlaps.
-     * A logical range entirely outside the vanilla-safe envelope still needs a
-     * small internal vanilla core so worldgen/chunk infrastructure can boot; the
-     * logical buildability guard keeps that implementation detail inaccessible.
+     * Dense-core candidate for a fresh v0.5 world.
+     *
+     * <p>The logical arguments are intentionally ignored. v0.5's sparse engine
+     * exists specifically so widening the user build range does not widen
+     * vanilla LevelChunkSection arrays. The vanilla core is also retained when
+     * the logical range excludes part of it because worldgen/chunk bootstrap
+     * still needs a normal internal dimension; logical build guards keep that
+     * implementation detail inaccessible to players and commands.</p>
      */
     public static int[] denseRangeForLogical(int logicalMin, int logicalMax) {
-        int min = Math.max(logicalMin, EndlessConfig.DENSE_MIN_BUILD_HEIGHT);
-        int max = Math.min(logicalMax, EndlessConfig.DENSE_MAX_BUILD_HEIGHT);
-        if (min < max) {
-            return new int[]{min, max};
-        }
         return new int[]{VANILLA_MIN_BUILD_HEIGHT, VANILLA_MAX_BUILD_HEIGHT};
     }
 
@@ -132,7 +129,7 @@ public final class EndlessHeights {
             dense = classifyUnpersistedWorld(server, cfg, candidateDense);
         } else {
             dense = mergeRange(savedDense[0], savedDense[1], candidateDense[0], candidateDense[1]);
-            if (candidateDense[0] > savedDense[0] || candidateDense[1] < savedDense[1]) {
+            if (savedDense[0] < candidateDense[0] || savedDense[1] > candidateDense[1]) {
                 System.err.println("Endless: logical config range [" + logicalMin + ", " + logicalMax
                     + ") is active, while the internal dense core remains [" + dense[0] + ", " + dense[1]
                     + ") for Anvil safety. The wider dense core does not widen the configured build limit.");
@@ -289,7 +286,7 @@ public final class EndlessHeights {
         }
     }
 
-    /** Apply a logical range and derive its safe dense core (tests/local preseed). */
+    /** Apply a logical range and use the fresh-v0.5 vanilla dense core (tests/local preseed). */
     public static void applyEffective(int min, int max) {
         EndlessConfig.BuildHeightConfig logical = normalizeLogicalRange(min, max);
         int[] dense = denseRangeForLogical(logical.getMinBuildHeight(), logical.getMaxBuildHeight());

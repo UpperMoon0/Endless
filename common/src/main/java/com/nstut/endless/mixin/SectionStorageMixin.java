@@ -74,6 +74,18 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
         }
     }
 
+    /**
+     * SectionStorage#getOrCreate checks this before calling getOrLoad. Without
+     * this narrow override, PoiManager.add rejects a valid sparse POI section
+     * before Endless' sidecar loader has a chance to service it.
+     */
+    @Inject(method = "outsideStoredRange", at = @At("HEAD"), cancellable = true)
+    private void endless$outsideStoredRange(long sectionKey, CallbackInfoReturnable<Boolean> cir) {
+        if (endless$isExtendedPoiSection(sectionKey)) {
+            cir.setReturnValue(false);
+        }
+    }
+
     @Inject(method = "getOrLoad", at = @At("HEAD"), cancellable = true)
     private void endless$getOrLoad(long sectionKey, CallbackInfoReturnable<Optional<R>> cir) {
         if (!endless$isExtendedPoiSection(sectionKey)) {

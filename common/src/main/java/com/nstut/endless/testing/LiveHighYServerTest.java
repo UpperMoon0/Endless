@@ -279,6 +279,11 @@ public final class LiveHighYServerTest {
      * LevelHeightAccessor range. These checks prove the sparse biome mixin
      * overrides that guard at both logical edges rather than silently falling
      * back to the dense core.
+     *
+     * <p>Frozen-ocean temperature has an X/Z noise modifier. Freeze and snow
+     * deliberately use the same column so both probes see the same modifier;
+     * otherwise adjacent X coordinates can legitimately disagree on whether
+     * precipitation is cold enough.</p>
      */
     private static void verifySparseBiomeSemantics(ServerLevel level) {
         Biome coldBiome = level.registryAccess().registryOrThrow(Registries.BIOME).get(Biomes.FROZEN_OCEAN);
@@ -289,24 +294,28 @@ public final class LiveHighYServerTest {
 
     private static void verifySparseBiomeEdge(ServerLevel level, Biome coldBiome, boolean upper) {
         String edge = upper ? "upper" : "lower";
-        int freezeY = upper ? upperY() : lowerY();
+        int freezeY = upper ? upperY() - 1 : lowerY();
         BlockPos freezePos = pos(40, freezeY);
         require(level.setBlock(freezePos, Blocks.WATER.defaultBlockState(), 3),
             edge + " sparse biome water setup failed");
         require(level.getBrightness(LightLayer.BLOCK, freezePos) < 10,
             edge + " sparse biome freeze probe unexpectedly has high block light");
+        require(!coldBiome.warmEnoughToRain(freezePos),
+            edge + " sparse biome probe landed in a warm frozen-ocean noise cell");
         require(coldBiome.shouldFreeze(level, freezePos, false),
             edge + " sparse Biome#shouldFreeze fell back to dense build bounds");
 
-        int snowY = upper ? upperY() : lowerY() + 1;
-        BlockPos snowPos = pos(41, snowY);
-        BlockPos snowSupport = snowPos.below();
-        require(level.setBlock(snowSupport, Blocks.STONE.defaultBlockState(), 3),
+        require(level.setBlock(freezePos, Blocks.STONE.defaultBlockState(), 3),
             edge + " sparse biome snow support setup failed");
+        BlockPos snowPos = freezePos.above();
+        require(snowPos.getY() == (upper ? upperY() : lowerY() + 1),
+            edge + " sparse biome snow probe is not at the intended logical edge");
         require(level.getBlockState(snowPos).isAir(),
             edge + " sparse biome snow probe must start as air");
         require(level.getBrightness(LightLayer.BLOCK, snowPos) < 10,
             edge + " sparse biome snow probe unexpectedly has high block light");
+        require(!coldBiome.warmEnoughToRain(snowPos),
+            edge + " sparse biome snow probe unexpectedly became warm");
         require(coldBiome.shouldSnow(level, snowPos),
             edge + " sparse Biome#shouldSnow fell back to dense build bounds");
     }
@@ -335,7 +344,14 @@ public final class LiveHighYServerTest {
         require(level.getBlockState(legalBase).is(waystoneBlock), "high-Y Waystone base missing after placement");
         require(level.getBlockState(upperWaystoneTopPos()).is(waystoneBlock), "high-Y Waystone top missing after placement");
         require(level.getBlockEntity(legalBase) != null, "high-Y Waystone block entity missing");
-        verifyWaystoneManager(level, legalBase);
+        require(level.getBlockEntity(upperWaystoneTopPos()) != null, "high-Y Waystone top block entity missing");
+
+        // Waystones initializes its backing record from the lower/base half.
+        // Balm invokes OnLoadHandler later; the canonical Waystones v14.1.20
+        // onLoad callback then writes each half's worldPosition into the same
+        // backing object in base-then-top registration order, so after the
+        // lifecycle callback the canonical stored position is the top half.
+        verifyWaystoneManager(level, legalBase, legalBase);
 
         // A double-height Waystone starting at max-1 would need a block at max,
         // so WaystoneBlockBase#getStateForPlacement must reject it. This call is
@@ -347,8 +363,6 @@ public final class LiveHighYServerTest {
         BlockState illegalState = placementState(player, illegalSupport, Direction.UP, item, waystoneBlock);
         require(illegalState == null, "Waystones allowed a two-block placement to escape configured logical max");
         require(!level.getBlockState(illegalTarget).is(waystoneBlock), "illegal top-edge Waystone was written");
-
-        System.out.println(WAYSTONES_PASS_MARKER + " pos=" + legalBase + " max=" + EndlessHeights.getMaxBuildHeight());
     }
 
     private static BlockState placementState(
@@ -365,22 +379,29 @@ public final class LiveHighYServerTest {
         return block.getStateForPlacement(context);
     }
 
-    private static void verifyWaystoneManager(ServerLevel level, BlockPos pos) throws Exception {
+    private static UUID verifyWaystoneManager(
+        ServerLevel level,
+        BlockPos lookupPos,
+        BlockPos expectedStoredPos
+    ) throws Exception {
         Class<?> managerClass = Class.forName("net.blay09.mods.waystones.core.WaystoneManager");
         Method getManager = managerClass.getMethod("get", MinecraftServer.class);
         Object manager = getManager.invoke(null, level.getServer());
         Method getAt = managerClass.getMethod("getWaystoneAt", BlockGetter.class, BlockPos.class);
-        Object atResult = getAt.invoke(manager, level, pos);
+        Object atResult = getAt.invoke(manager, level, lookupPos);
         require(atResult instanceof Optional<?> && ((Optional<?>) atResult).isPresent(),
-            "WaystoneManager could not resolve sparse Waystone at " + pos);
+            "WaystoneManager could not resolve sparse Waystone at " + lookupPos);
 
         Object waystone = ((Optional<?>) atResult).orElseThrow();
         BlockPos registeredPos = (BlockPos) waystone.getClass().getMethod("getPos").invoke(waystone);
         UUID uid = (UUID) waystone.getClass().getMethod("getWaystoneUid").invoke(waystone);
-        require(pos.equals(registeredPos), "WaystoneManager stored wrong high-Y position: " + registeredPos);
+        require(expectedStoredPos.equals(registeredPos),
+            "WaystoneManager stored wrong high-Y position: expected=" + expectedStoredPos
+                + " actual=" + registeredPos + " lookup=" + lookupPos);
         Object byId = managerClass.getMethod("getWaystoneById", UUID.class).invoke(manager, uid);
         require(byId instanceof Optional<?> && ((Optional<?>) byId).isPresent(),
             "WaystoneManager did not persist sparse Waystone UUID " + uid);
+        return uid;
     }
 
     private static void verifyDelayedMechanics(ServerLevel level) {
@@ -412,7 +433,14 @@ public final class LiveHighYServerTest {
         requirePoi(level, lowerPoiPos(), "lower-bound POI did not survive flush + eviction + reload");
         requirePoi(level, upperPoiPos(), "upper-bound POI did not survive flush + eviction + reload");
         if (Boolean.parseBoolean(System.getProperty(WAYSTONES_SYSTEM_PROPERTY, "false"))) {
-            verifyWaystoneManager(level, upperWaystoneBasePos());
+            UUID baseUid = verifyWaystoneManager(level, upperWaystoneBasePos(), upperWaystoneTopPos());
+            UUID topUid = verifyWaystoneManager(level, upperWaystoneTopPos(), upperWaystoneTopPos());
+            require(baseUid.equals(topUid),
+                "Waystone base/top halves no longer resolve to the same sparse Waystone UUID");
+            System.out.println(WAYSTONES_PASS_MARKER
+                + " base=" + upperWaystoneBasePos()
+                + " top=" + upperWaystoneTopPos()
+                + " uid=" + baseUid);
         }
 
         require(level.getHeight(Heightmap.Types.WORLD_SURFACE, 0, 0) == upperY() + 1,

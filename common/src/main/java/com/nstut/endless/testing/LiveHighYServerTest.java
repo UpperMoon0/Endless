@@ -168,7 +168,7 @@ public final class LiveHighYServerTest {
         require(EndlessHeights.isOutsideDenseBuildHeight(max - 1),
             "live sparse test maximum must actually be outside the dense core");
 
-        verifySetBlockCommandBounds(level);
+        verifySetBlockCommandBounds(level, player);
         prepareBoundary(level, player, false);
         prepareBoundary(level, player, true);
         prepareWaystonesIfRequested(level, player);
@@ -178,26 +178,45 @@ public final class LiveHighYServerTest {
     }
 
     /** Exercise the real vanilla /setblock parser/executor at all four logical edges. */
-    private static void verifySetBlockCommandBounds(ServerLevel level) {
+    private static void verifySetBlockCommandBounds(ServerLevel level, ServerPlayer player) {
         MinecraftServer server = level.getServer();
         require(server != null, "server unavailable for command-boundary test");
         int min = lowerY();
         int max = EndlessHeights.getMaxBuildHeight();
 
-        int lowerInside = runCommand(server, "setblock 12 " + min + " 0 minecraft:diamond_block");
-        int upperInside = runCommand(server, "setblock 13 " + (max - 1) + " 0 minecraft:emerald_block");
-        int lowerOutside = runCommand(server, "setblock 14 " + (min - 1) + " 0 minecraft:gold_block");
-        int upperOutside = runCommand(server, "setblock 15 " + max + " 0 minecraft:gold_block");
+        // BlockPosArgument#getLoadedBlockPos rejects an unloaded horizontal chunk
+        // before it checks the world-height bound. Anchor the probes to the real
+        // connected player's current chunk so this test measures height semantics,
+        // not whether a fixed spawn-adjacent chunk happened to be loaded.
+        ChunkPos commandChunk = player.chunkPosition();
+        require(level.getChunkSource().getChunkNow(commandChunk.x, commandChunk.z) != null,
+            "player chunk is not loaded for command-boundary test: " + commandChunk);
+        int baseX = (commandChunk.x << 4) + 4;
+        int z = (commandChunk.z << 4) + 4;
 
-        require(lowerInside > 0 && level.getBlockState(pos(12, min)).is(Blocks.DIAMOND_BLOCK),
+        BlockPos lowerInsidePos = new BlockPos(baseX, min, z);
+        BlockPos upperInsidePos = new BlockPos(baseX + 1, max - 1, z);
+        BlockPos lowerOutsidePos = new BlockPos(baseX + 2, min - 1, z);
+        BlockPos upperOutsidePos = new BlockPos(baseX + 3, max, z);
+
+        int lowerInside = runCommand(server, setBlockCommand(lowerInsidePos, "minecraft:diamond_block"));
+        int upperInside = runCommand(server, setBlockCommand(upperInsidePos, "minecraft:emerald_block"));
+        int lowerOutside = runCommand(server, setBlockCommand(lowerOutsidePos, "minecraft:gold_block"));
+        int upperOutside = runCommand(server, setBlockCommand(upperOutsidePos, "minecraft:gold_block"));
+
+        require(lowerInside > 0 && level.getBlockState(lowerInsidePos).is(Blocks.DIAMOND_BLOCK),
             "/setblock rejected configured logical minimum");
-        require(upperInside > 0 && level.getBlockState(pos(13, max - 1)).is(Blocks.EMERALD_BLOCK),
+        require(upperInside > 0 && level.getBlockState(upperInsidePos).is(Blocks.EMERALD_BLOCK),
             "/setblock rejected configured logical maximum - 1");
-        require(lowerOutside == 0 && level.getBlockState(pos(14, min - 1)).isAir(),
+        require(lowerOutside == 0 && level.getBlockState(lowerOutsidePos).isAir(),
             "/setblock escaped configured logical minimum");
-        require(upperOutside == 0 && level.getBlockState(pos(15, max)).isAir(),
+        require(upperOutside == 0 && level.getBlockState(upperOutsidePos).isAir(),
             "/setblock escaped configured logical maximum");
-        System.out.println(COMMAND_PASS_MARKER + " min=" + min + " max=" + max);
+        System.out.println(COMMAND_PASS_MARKER + " min=" + min + " max=" + max + " chunk=" + commandChunk);
+    }
+
+    private static String setBlockCommand(BlockPos pos, String blockId) {
+        return "setblock " + pos.getX() + " " + pos.getY() + " " + pos.getZ() + " " + blockId;
     }
 
     private static int runCommand(MinecraftServer server, String command) {

@@ -1,5 +1,6 @@
 package com.nstut.endless.testing;
 
+import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.vertical.EndlessVerticalEngine;
 import com.nstut.endless.vertical.ExtendedPoiStorage;
 import net.minecraft.core.BlockPos;
@@ -83,12 +84,14 @@ public final class LiveColdRestartServerTest {
         require(poi, "cold-restart sparse POI missing");
     }
 
-    private static BlockPos glowPos() { return new BlockPos(0, -3072, 10); }
-    private static BlockPos waterPos() { return new BlockPos(1, 3072, 10); }
-    private static BlockPos chestPos() { return new BlockPos(2, -3072, 10); }
-    private static BlockPos powerPos() { return new BlockPos(4, 3072, 10); }
-    private static BlockPos lampPos() { return new BlockPos(5, 3072, 10); }
-    private static BlockPos poiPos() { return new BlockPos(6, -3072, 10); }
+    private static int lowerY() { return EndlessHeights.getMinBuildHeight() + 16; }
+    private static int upperY() { return EndlessHeights.getMaxBuildHeight() - 17; }
+    private static BlockPos glowPos() { return new BlockPos(0, lowerY(), 10); }
+    private static BlockPos waterPos() { return new BlockPos(1, upperY(), 10); }
+    private static BlockPos chestPos() { return new BlockPos(2, lowerY(), 10); }
+    private static BlockPos powerPos() { return new BlockPos(4, upperY(), 10); }
+    private static BlockPos lampPos() { return new BlockPos(5, upperY(), 10); }
+    private static BlockPos poiPos() { return new BlockPos(6, lowerY(), 10); }
 
     private static void require(boolean condition, String message) {
         if (!condition) throw new IllegalStateException(message);

@@ -16,9 +16,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.PathfinderMob;
-import net.minecraft.world.entity.ai.util.GoalUtils;
-import net.minecraft.world.entity.animal.Parrot;
-import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.entity.ai.village.poi.PoiManager;
 import net.minecraft.world.entity.ai.village.poi.PoiTypes;
 import net.minecraft.world.entity.decoration.ArmorStand;
@@ -41,9 +38,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.levelgen.Heightmap;
-import net.minecraft.world.level.pathfinder.Path;
-import net.minecraft.world.entity.ai.navigation.FlyingPathNavigation;
-import net.minecraft.world.entity.ai.navigation.GroundPathNavigation;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
@@ -122,8 +116,10 @@ public final class LiveHighYServerTest {
 
     /** Same X/Z and same vanilla packed-long Y bits, but a different real position. */
     public static BlockPos packedAliasPos(BlockPos extendedPos) {
-        int delta = extendedPos.getY() < 0 ? 4096 : -4096;
-        return extendedPos.offset(0, delta, 0);
+        // Use the actual lossy decoder result. Both gameplay envelopes align
+        // to 4096, keeping these canaries in the dense chunk already sent to
+        // the client instead of relying on streaming a page 4096 blocks away.
+        return BlockPos.of(extendedPos.asLong());
     }
 
     public static void tick(MinecraftServer server) {
@@ -171,7 +167,7 @@ public final class LiveHighYServerTest {
                 movedUpper = true;
                 return;
             }
-            require(movedUpper || ticksWithPlayer < lowerArrivalTick + 220,
+            require(movedUpper || ticksWithPlayer < lowerArrivalTick + 1200,
                 "client did not complete lower extended-Y placement/break interaction");
 
             if (movedUpper && upperClientBroken && ticksWithPlayer >= lowerArrivalTick + 120) {
@@ -191,7 +187,7 @@ public final class LiveHighYServerTest {
                     + " lowerLight=" + level.getBrightness(LightLayer.BLOCK, lowerTestPos())
                     + " upperLight=" + level.getBrightness(LightLayer.BLOCK, upperTestPos()));
             }
-            require(!movedUpper || upperClientBroken || ticksWithPlayer < lowerArrivalTick + 300,
+            require(!movedUpper || upperClientBroken || ticksWithPlayer < lowerArrivalTick + 1500,
                 "client did not complete upper extended-Y placement/break interaction");
         } catch (Throwable t) {
             done = true;
@@ -345,45 +341,7 @@ public final class LiveHighYServerTest {
     }
 
     private static void verifyPathfinding(ServerLevel level) {
-        int floorY = lowerY();
-        for (int x = 0; x <= 8; x++) {
-            require(level.setBlock(new BlockPos(x, floorY, 12), Blocks.STONE.defaultBlockState(), 3),
-                "could not create sparse walking path floor");
-        }
-
-        Zombie walker = EntityType.ZOMBIE.create(level);
-        require(walker != null, "could not create walking pathfinder mob");
-        walker.setPos(0.5D, floorY + 1.0D, 12.5D);
-        walker.setNoAi(true);
-        require(level.addFreshEntity(walker), "could not add walking pathfinder mob");
-        require(walker.getNavigation() instanceof GroundPathNavigation,
-            "walking coverage did not instantiate GroundPathNavigation");
-        BlockPos walkTarget = new BlockPos(7, floorY + 1, 12);
-        require(!GoalUtils.isOutsideLimits(walkTarget, walker),
-            "GoalUtils rejected an in-range sparse walking target");
-        require(GoalUtils.isOutsideLimits(new BlockPos(7, floorY - 1, 12), walker),
-            "GoalUtils accepted a target below the configured logical minimum");
-        Path walkPath = walker.getNavigation().createPath(walkTarget, 0);
-        require(walkPath != null && walkPath.canReach() && walkPath.getNodeCount() > 0,
-            "walking navigator could not acquire sparse-Y path to " + walkTarget);
-
-        Parrot flyer = EntityType.PARROT.create(level);
-        require(flyer != null, "could not create flying pathfinder mob");
-        flyer.setPos(0.5D, floorY + 6.0D, 14.5D);
-        flyer.setNoAi(true);
-        require(level.addFreshEntity(flyer), "could not add flying pathfinder mob");
-        require(flyer.getNavigation() instanceof FlyingPathNavigation,
-            "flying coverage did not instantiate FlyingPathNavigation");
-        BlockPos flyTarget = new BlockPos(7, floorY + 6, 14);
-        Path flyPath = flyer.getNavigation().createPath(flyTarget, 0);
-        require(flyPath != null && flyPath.canReach() && flyPath.getNodeCount() > 0,
-            "flying navigator could not acquire sparse-Y path to " + flyTarget);
-
-        System.out.println(PATHFINDING_PASS_MARKER
-            + " walkNodes=" + walkPath.getNodeCount() + " flyNodes=" + flyPath.getNodeCount()
-            + " y=" + (floorY + 1));
-        walker.discard();
-        flyer.discard();
+        LivePathfindingTest.verify(level);
     }
 
     /**

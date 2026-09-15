@@ -4,13 +4,6 @@ on:
   workflow_call:
   workflow_dispatch:
   pull_request:
-    paths:
-      - "common/**"
-      - "fabric/**"
-      - "forge/**"
-      - "tools/live_join_test.py"
-      - ".github/gradle/**"
-      - ".github/workflows/live-join-test.yml"
 
 # Real-client jobs are expensive and each PR synchronize supersedes every
 # earlier live-join result for that PR. Keep only the newest head running.
@@ -19,8 +12,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  select:
+    name: Select live verification
+    runs-on: ubuntu-24.04
+    outputs:
+      required: ${{ steps.plan.outputs.required }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          echo "matrix=$(python3 tools/live_join_test.py --matrix)" >> "$GITHUB_OUTPUT"
+          if [[ "$EVENT" == pull_request ]]; then
+            echo "required=$(python3 tools/ci_policy.py "$BASE" "$HEAD")" >> "$GITHUB_OUTPUT"
+          else
+            echo 'required=true' >> "$GITHUB_OUTPUT"
+          fi
+
   live-join:
     name: live-join (${{ matrix.target }}, ${{ matrix.scenario }})
+    needs: select
+    if: needs.select.outputs.required == 'true'
     timeout-minutes: 30
     runs-on: ubuntu-24.04
     strategy:
@@ -28,16 +47,7 @@ jobs:
       # The scenarios are independent. Running them as separate matrix cells
       # preserves the complete Fabric/Forge matrix while replacing five
       # serial Minecraft client boots per loader with one boot per runner.
-      matrix:
-        target:
-          - fabric-1.20.1
-          - forge-1.20.1
-        scenario:
-          - extended-server
-          - baseline-endless-vanilla-server
-          - baseline-no-endless
-          - far-envelope
-          - cold-restart
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
 
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +64,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           # One matrix cell may write the shared dependency cache; the other
-          # nine read it without contending during post-job cache saves.
+          # eleven read it without contending during post-job cache saves.
           cache-read-only: ${{ !(matrix.target == 'fabric-1.20.1' && matrix.scenario == 'extended-server') }}
           # Never restore Loom's mutable process-owned workspace. A cancelled
           # predecessor can leave a disowned lock and generated mapping paths
@@ -87,8 +97,8 @@ jobs:
       # artifacts and exercise real high-Y placement/BE/network integration.
       - name: Run automatic real-client join test
         env:
-          ENDLESS_TEST_EXTREME: ${{ matrix.scenario == 'extended-server' && 'true' || 'false' }}
-          ENDLESS_TEST_WAYSTONES: ${{ matrix.scenario == 'extended-server' && 'true' || 'false' }}
+          ENDLESS_TEST_EXTREME: ${{ (matrix.scenario == 'extended-server' || matrix.scenario == 'million-gameplay') && 'true' || 'false' }}
+          ENDLESS_TEST_WAYSTONES: ${{ (matrix.scenario == 'extended-server' || matrix.scenario == 'million-gameplay') && 'true' || 'false' }}
         run: >-
           python3 tools/live_join_test.py
           --target "${{ matrix.target }}"
@@ -119,6 +129,7 @@ jobs:
         with:
           name: live-join-${{ matrix.target }}-${{ matrix.scenario }}
           path: |
+            build/live-join-evidence/**
             ${{ matrix.target == 'fabric-1.20.1' && 'fabric' || 'forge' }}/run/live-join/client/logs
             ${{ matrix.target == 'fabric-1.20.1' && 'fabric' || 'forge' }}/run/live-join/server/logs
           if-no-files-found: ignore
@@ -127,15 +138,30 @@ jobs:
   required-live-join:
     name: Required live verification
     if: always()
-    needs: [live-join]
+    needs: [select, live-join]
     runs-on: ubuntu-24.04
     steps:
-      - name: Require matrix success
+      - name: Require selected checks
         env:
+          SELECTION: ${{ needs.select.result }}
+          REQUIRED: ${{ needs.select.outputs.required }}
           MATRIX_RESULT: ${{ needs.live-join.result }}
-        run: test "$MATRIX_RESULT" = success
+        run: |
+          test "$SELECTION" = success
+          if [[ "$REQUIRED" == true ]]; then
+            test "$MATRIX_RESULT" = success
+          else
+            test "$REQUIRED" = false
+            test "$MATRIX_RESULT" = skipped
+          fi
+
+      - uses: actions/checkout@v4
+        if: needs.select.outputs.required == 'true'
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Download exact-head scenario receipts
+        if: needs.select.outputs.required == 'true'
         uses: actions/download-artifact@v4
         with:
           pattern: live-join-result-*
@@ -143,25 +169,7 @@ jobs:
           merge-multiple: true
 
       - name: Require every scenario at the exact PR head
+        if: needs.select.outputs.required == 'true'
         env:
           EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          for target in fabric-1.20.1 forge-1.20.1; do
-            for scenario in \
-              extended-server \
-              baseline-endless-vanilla-server \
-              baseline-no-endless \
-              far-envelope \
-              cold-restart; do
-              receipt="build/live-join-results/${target}--${scenario}.pass"
-              test -f "$receipt" || { echo "missing required scenario receipt: $receipt" >&2; exit 1; }
-              test "$(tr -d '\r\n' < "$receipt")" = "$EXACT_HEAD" || {
-                echo "stale scenario receipt: $receipt" >&2
-                exit 1
-              }
-            done
-          done
-          count=$(find build/live-join-results -maxdepth 1 -name '*.pass' -type f | wc -l)
-          test "$count" -eq 10 || { echo "expected exactly 10 live scenario receipts, found $count" >&2; exit 1; }
+        run: python3 tools/live_join_test.py --verify-receipts build/live-join-results --head "$EXACT_HEAD"

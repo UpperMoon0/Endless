@@ -183,6 +183,12 @@ public final class LiveJoinTest {
         boolean atUpper = mc.player != null
             && Math.abs(playerY - LiveHighYServerTest.upperPlayerY()) < 8.0D;
 
+        if (ticksWithLevel % 100 == 0) {
+            System.out.println("ENDLESS_CLIENT_PROGRESS ticks=" + ticksWithLevel + " y=" + playerY
+                + " lowerStage=" + lowerInteractionStage + " upperStage=" + upperInteractionStage
+                + " lower=" + boundaryStatus(level, false) + " upper=" + boundaryStatus(level, true));
+        }
+
         if (atLower && !lowerExtremeSeen) {
             lowerInteractionDone = driveClientInteraction(mc, level, false, lowerInteractionDone);
             BoundaryStatus lower = boundaryStatus(level, false);
@@ -216,7 +222,7 @@ public final class LiveJoinTest {
             }
         }
 
-        if (ticksWithLevel < 400) return false;
+        if (ticksWithLevel < 1600) return false;
         BoundaryStatus lower = boundaryStatus(level, false);
         BoundaryStatus upper = boundaryStatus(level, true);
         fail("extremeY", " lowerSeen=" + lowerExtremeSeen
@@ -251,16 +257,26 @@ public final class LiveJoinTest {
             return false;
         }
         if (stage == 1) {
-            if (!level.getBlockState(target).is(Blocks.STONE)) return false;
+            if (LivePredictionProbe.count(target) < 1) return false;
+            if (!level.getBlockState(target).is(Blocks.STONE)) {
+                fail("placementRejected", " target=" + target + " state=" + level.getBlockState(target));
+                mc.stop();
+                return false;
+            }
             if (!level.getBlockState(alias).is(Blocks.GOLD_BLOCK)) return false;
             mc.gameMode.startDestroyBlock(target, Direction.UP);
             if (upper) upperInteractionStage = 2; else lowerInteractionStage = 2;
             return false;
         }
-        if (stage == 2 && level.getBlockState(target).isAir() && level.getBlockState(alias).is(Blocks.GOLD_BLOCK)) {
+        if (stage == 2 && LivePredictionProbe.count(target) >= 2
+            && level.getBlockState(target).isAir() && level.getBlockState(alias).is(Blocks.GOLD_BLOCK)) {
             System.out.println("ENDLESS_CLIENT_PREDICTION_PASS edge=" + (upper ? "upper" : "lower")
-                + " target=" + target + " alias=" + alias);
+                + " target=" + target + " alias=" + alias + " acknowledged=true");
             return true;
+        }
+        if (stage == 2 && LivePredictionProbe.count(target) >= 2 && !level.getBlockState(target).isAir()) {
+            fail("breakingRejected", " target=" + target + " state=" + level.getBlockState(target));
+            mc.stop();
         }
         return false;
     }

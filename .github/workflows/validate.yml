@@ -1,4 +1,4 @@
-﻿name: Validate
+ï»¿name: Validate
 
 on:
   pull_request:
@@ -56,6 +56,19 @@ jobs:
 
       - name: Build and test
         run: ./gradlew build --stacktrace --no-daemon
+
+      - name: Test verification harness and CI selection
+        run: python3 -m unittest discover -s tools -p 'test_*.py' -v
+
+      - name: Preserve build and test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-verification
+          path: |
+            common/build/test-results/**
+            common/build/reports/tests/**
+            build/reports/**
 
   metadata:
     name: Metadata drift check

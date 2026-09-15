@@ -55,8 +55,7 @@ public final class EndlessFabricClient implements ClientModInitializer {
                 VerticalPageSnapshot snapshot = VerticalPageSnapshot.read(buf);
                 client.execute(() -> {
                     if (client.level == null || !EndlessLogicalHeights.isActive()) return;
-                    EndlessVerticalEngine.world(client.level).applySnapshot(snapshot);
-                    client.levelRenderer.allChanged();
+                    com.nstut.endless.vertical.VerticalClientUpdates.apply(client, snapshot);
                 });
             });
 

@@ -33,8 +33,7 @@ public final class EndlessForgeClient {
         if (client.level == null || !EndlessLogicalHeights.isActive()) {
             return;
         }
-        EndlessVerticalEngine.world(client.level).applySnapshot(snapshot);
-        client.levelRenderer.allChanged();
+        com.nstut.endless.vertical.VerticalClientUpdates.apply(client, snapshot);
     }
 
     @SubscribeEvent

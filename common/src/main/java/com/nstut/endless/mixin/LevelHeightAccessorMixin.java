@@ -5,6 +5,7 @@ import com.nstut.endless.heights.EndlessLogicalHeights;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelHeightAccessor;
+import net.minecraft.world.level.PathNavigationRegion;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
 
@@ -31,7 +32,8 @@ public interface LevelHeightAccessorMixin {
      */
     @Overwrite
     default boolean isOutsideBuildHeight(int y) {
-        if (EndlessLogicalHeights.isActive() && (Object) this instanceof Level) {
+        if (EndlessLogicalHeights.isActive()
+            && ((Object) this instanceof Level || (Object) this instanceof PathNavigationRegion)) {
             return EndlessHeights.isOutsideBuildHeight(y);
         }
         return EndlessHeights.isOutsideDenseBuildHeight(y);

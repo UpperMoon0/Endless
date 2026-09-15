@@ -87,6 +87,7 @@ public abstract class BlockStatePredictionHandlerMixin {
             BlockPos pos = entry.getKey();
             iterator.remove();
             level.syncBlockState(pos, predicted.state(), predicted.playerPos());
+            com.nstut.endless.testing.LivePredictionProbe.acknowledged(pos);
         }
     }
 }

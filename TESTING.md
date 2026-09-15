@@ -12,8 +12,8 @@ test alone does not certify real player interaction at large heights.
 | Harness | Scenario selection, marker failures, commit receipts, concurrent-run exclusion and failure evidence | Python standard library, no game boots |
 | Extended gameplay | Commands, boundaries, blocks/fluids/block entities, POIs, lighting, scheduled mechanics, persistence reload, Waystones, navigation, real client place/break and acknowledged prediction | Shared small fixtures at both edges |
 | Million gameplay | The same complete gameplay assertions in `[-1,048,576, 1,048,576)` | Reuses the extended scenario; bounded X/Z and vertical windows |
-| Representation envelope | Sparse access, POIs and page packet/storage round trips near Â±8,000,000 | Lightweight smoke, no full-height scans |
-| Cold restart | Blocks, fluids, block entities, redstone, light and POIs near Â±8,000,000 after a fresh server JVM | Two launches reuse only that scenario's saved world |
+| Representation envelope | Sparse access, POIs and page packet/storage round trips near ±8,000,000 | Lightweight smoke, no full-height scans |
+| Cold restart | Blocks, fluids, block entities, redstone, light and POIs near ±8,000,000 after a fresh server JVM | Two launches reuse only that scenario's saved world |
 | Compatibility baselines | Vanilla-range Endless server and genuine vanilla server, including stale client range reset | No gameplay compatibility dependencies |
 
 Every live scenario runs on Fabric and Forge: **12 required cells**. The

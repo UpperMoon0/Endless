@@ -3,14 +3,14 @@
 
 Three scenarios close the server-authority model in both directions:
 
-A. extended-server â€” the server is configured with an extended build range
+A. extended-server — the server is configured with an extended build range
    ([-4096, 4096)) and the client with the vanilla range ([-64, 320)). The
    client must adopt the server's authoritative range.
-B. baseline-endless-vanilla-server â€” an Endless server whose world range is
+B. baseline-endless-vanilla-server — an Endless server whose world range is
    vanilla with a client whose local config is extended. The server
    deliberately sends no login query for a vanilla range, so the client must
    enter the world on the vanilla baseline instead of its extended config.
-C. baseline-no-endless â€” a genuine vanilla server (official Mojang jar, no
+C. baseline-no-endless — a genuine vanilla server (official Mojang jar, no
    Endless) with a client whose local config is extended. The client is also
    deliberately pre-seeded with applied=true and an extended effective range
    before connecting. Neither loader's Endless login exchange runs, so the

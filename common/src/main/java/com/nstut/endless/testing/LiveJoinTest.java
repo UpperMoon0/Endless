@@ -9,6 +9,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.core.Direction;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -45,6 +49,12 @@ public final class LiveJoinTest {
     private static boolean staleRangePreseeded;
     private static boolean preLoginChecked;
     private static boolean lowerExtremeSeen;
+    private static boolean lowerInteractionDone;
+    private static boolean upperInteractionDone;
+    private static boolean lowerRenderMarkerPrinted;
+    private static boolean upperRenderMarkerPrinted;
+    private static int lowerInteractionStage;
+    private static int upperInteractionStage;
     private static int ticksWithLevel;
 
     private LiveJoinTest() {}
@@ -174,28 +184,32 @@ public final class LiveJoinTest {
             && Math.abs(playerY - LiveHighYServerTest.upperPlayerY()) < 8.0D;
 
         if (atLower && !lowerExtremeSeen) {
+            lowerInteractionDone = driveClientInteraction(mc, level, false, lowerInteractionDone);
             BoundaryStatus lower = boundaryStatus(level, false);
-            if (lower.ok()) {
+            printRenderMarkerOnce(lower, false);
+            if (lower.ok() && lowerInteractionDone) {
                 lowerExtremeSeen = true;
                 System.out.println(LOWER_EXTREME_PASS_MARKER
                     + " playerY=" + playerY
                     + " blockY=" + LiveHighYServerTest.lowerY()
                     + " light=" + lower.sourceLight
-                    + " render=true");
+                    + " render=true prediction=true");
             }
         }
 
         if (atUpper) {
+            upperInteractionDone = driveClientInteraction(mc, level, true, upperInteractionDone);
             BoundaryStatus upper = boundaryStatus(level, true);
+            printRenderMarkerOnce(upper, true);
             boolean waystones = !WAYSTONES_TEST || waystoneStatus(level);
-            if (lowerExtremeSeen && upper.ok() && waystones) {
+            if (lowerExtremeSeen && upperInteractionDone && upper.ok() && waystones) {
                 System.out.println(UPPER_EXTREME_PASS_MARKER
                     + " playerY=" + playerY
                     + " blockY=" + LiveHighYServerTest.upperY()
                     + " height=" + level.getHeight(Heightmap.Types.WORLD_SURFACE, 0, 0)
                     + " light=" + upper.sourceLight
                     + " waystones=" + waystones
-                    + " render=true");
+                    + " render=true prediction=true");
                 pass(levelMin, levelHeight, endlessMin, endlessMax, denseMin, denseMax, logical);
                 mc.stop();
                 return true;
@@ -214,6 +228,49 @@ public final class LiveJoinTest {
             + " waystones=" + (!WAYSTONES_TEST || waystoneStatus(level)));
         mc.stop();
         return true;
+    }
+
+    private static boolean driveClientInteraction(Minecraft mc, Level level, boolean upper, boolean done) {
+        if (done || mc.player == null || mc.gameMode == null) return done;
+        BlockPos support = upper ? LiveHighYServerTest.upperInteractionSupportPos() : LiveHighYServerTest.lowerInteractionSupportPos();
+        BlockPos target = upper ? LiveHighYServerTest.upperInteractionTargetPos() : LiveHighYServerTest.lowerInteractionTargetPos();
+        BlockPos alias = LiveHighYServerTest.packedAliasPos(target);
+        int stage = upper ? upperInteractionStage : lowerInteractionStage;
+
+        if (!level.getBlockState(alias).is(Blocks.GOLD_BLOCK)) {
+            return false;
+        }
+        if (stage == 0) {
+            if (!level.getBlockState(support).is(Blocks.DEEPSLATE) || !level.getBlockState(target).isAir()
+                || !mc.player.getMainHandItem().is(Blocks.STONE.asItem())) {
+                return false;
+            }
+            BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(support), Direction.UP, support, false);
+            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+            if (upper) upperInteractionStage = 1; else lowerInteractionStage = 1;
+            return false;
+        }
+        if (stage == 1) {
+            if (!level.getBlockState(target).is(Blocks.STONE)) return false;
+            if (!level.getBlockState(alias).is(Blocks.GOLD_BLOCK)) return false;
+            mc.gameMode.startDestroyBlock(target, Direction.UP);
+            if (upper) upperInteractionStage = 2; else lowerInteractionStage = 2;
+            return false;
+        }
+        if (stage == 2 && level.getBlockState(target).isAir() && level.getBlockState(alias).is(Blocks.GOLD_BLOCK)) {
+            System.out.println("ENDLESS_CLIENT_PREDICTION_PASS edge=" + (upper ? "upper" : "lower")
+                + " target=" + target + " alias=" + alias);
+            return true;
+        }
+        return false;
+    }
+
+    private static void printRenderMarkerOnce(BoundaryStatus status, boolean upper) {
+        if (!status.viewArea || !status.renderChunk) return;
+        if (upper ? upperRenderMarkerPrinted : lowerRenderMarkerPrinted) return;
+        if (upper) upperRenderMarkerPrinted = true; else lowerRenderMarkerPrinted = true;
+        System.out.println("ENDLESS_RENDER_PATH_PASS edge=" + (upper ? "upper" : "lower")
+            + " viewArea=true renderChunk=true");
     }
 
     private static BoundaryStatus boundaryStatus(Level level, boolean upper) {
@@ -237,10 +294,12 @@ public final class LiveJoinTest {
         boolean height = !upper || level.getHeight(Heightmap.Types.WORLD_SURFACE, 0, 0)
             == LiveHighYServerTest.upperY() + 1;
         boolean render = canRender(level, glowstone);
+        boolean viewArea = LiveRenderProbe.sawViewArea(glowstone);
+        boolean renderChunk = LiveRenderProbe.sawRenderChunk(glowstone);
 
         return new BoundaryStatus(
             buildable, outsideRejected, block, fluid, blockEntity, placedLamp,
-            sourceLight, inwardLight, height, render
+            sourceLight, inwardLight, height, render, viewArea, renderChunk
         );
     }
 
@@ -307,11 +366,13 @@ public final class LiveJoinTest {
         int sourceLight,
         int inwardLight,
         boolean height,
-        boolean render
+        boolean render,
+        boolean viewArea,
+        boolean renderChunk
     ) {
         boolean ok() {
             return buildable && outsideRejected && block && fluid && blockEntity && placedLamp
-                && sourceLight >= 15 && inwardLight > 0 && height && render;
+                && sourceLight >= 15 && inwardLight > 0 && height && render && viewArea && renderChunk;
         }
     }
 }

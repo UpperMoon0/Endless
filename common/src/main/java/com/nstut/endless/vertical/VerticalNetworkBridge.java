@@ -3,6 +3,8 @@ package com.nstut.endless.vertical;
 import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import com.nstut.endless.testing.LiveHighYServerTest;
+import com.nstut.endless.testing.LiveFarEnvelopeServerTest;
+import com.nstut.endless.testing.LiveColdRestartServerTest;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.server.MinecraftServer;
@@ -49,6 +51,8 @@ public final class VerticalNetworkBridge {
 
         verifyDenseCoreInvariantForLiveTest(server);
         LiveHighYServerTest.tick(server);
+        LiveFarEnvelopeServerTest.tick(server);
+        LiveColdRestartServerTest.tick(server);
 
         if (++ticks >= FLUSH_INTERVAL_TICKS) {
             ticks = 0;

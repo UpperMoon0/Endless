@@ -4,7 +4,7 @@
 Three scenarios close the server-authority model in both directions:
 
 A. extended-server — the server is configured with an extended build range
-   ([-1024, 1024)) and the client with the vanilla range ([-64, 320)). The
+   ([-4096, 4096)) and the client with the vanilla range ([-64, 320)). The
    client must adopt the server's authoritative range.
 B. baseline-endless-vanilla-server — an Endless server whose world range is
    vanilla with a client whose local config is extended. The server
@@ -52,6 +52,8 @@ CLIENT_OUTCOME_MARKERS = (PASS_MARKER, FAIL_MARKER, PRE_LOGIN_FAIL_MARKER)
 SERVER_READY_MARKERS = ("Done (", "For help, type \"help\"")
 SERVER_FATAL_MARKERS = (
     "ENDLESS_HIGH_Y_SERVER_FAIL",
+    "ENDLESS_FAR_ENVELOPE_FAIL",
+    "ENDLESS_COLD_RESTART_FAIL",
     "Encountered an unexpected exception",
     "This crash report has been saved to:",
     "Failed to start the minecraft server",
@@ -60,7 +62,8 @@ DEFAULT_TIMEOUT = 360
 
 # Shared config presets. The client's on-disk config deliberately disagrees
 # with the expectation so that a leaked local config is caught.
-EXTENDED_BUILD_HEIGHT = {"minBuildHeight": -1024, "maxBuildHeight": 1024}
+EXTENDED_BUILD_HEIGHT = {"minBuildHeight": -4096, "maxBuildHeight": 4096}
+FAR_BUILD_HEIGHT = {"minBuildHeight": -8_000_000, "maxBuildHeight": 8_000_000}
 VANILLA_BUILD_HEIGHT = {"minBuildHeight": -64, "maxBuildHeight": 320}
 
 MC_VERSION = "1.20.1"
@@ -82,6 +85,9 @@ class Scenario:
     client_config: dict
     expected: dict
     server_port: int
+    required_server_markers: tuple[str, ...] = ()
+    required_client_markers: tuple[str, ...] = ()
+    cold_restart: bool = False
 
 
 SCENARIOS = [
@@ -93,6 +99,19 @@ SCENARIOS = [
         client_config=VANILLA_BUILD_HEIGHT,
         expected=EXTENDED_BUILD_HEIGHT,
         server_port=25575,
+        required_server_markers=(
+            "ENDLESS_COMMAND_BOUNDS_PASS",
+            "ENDLESS_WAYSTONES_SPARSE_PASS",
+            "ENDLESS_PATHFINDING_PASS",
+            "ENDLESS_CLIENT_INTERACTION_SERVER_PASS",
+            "ENDLESS_HIGH_Y_SERVER_PASS",
+        ),
+        required_client_markers=(
+            "ENDLESS_CLIENT_PREDICTION_PASS edge=lower",
+            "ENDLESS_CLIENT_PREDICTION_PASS edge=upper",
+            "ENDLESS_RENDER_PATH_PASS edge=lower",
+            "ENDLESS_RENDER_PATH_PASS edge=upper",
+        ),
     ),
     Scenario(
         id="baseline-endless-vanilla-server",
@@ -112,6 +131,26 @@ SCENARIOS = [
         expected=VANILLA_BUILD_HEIGHT,
         server_port=25576,
     ),
+    Scenario(
+        id="far-envelope",
+        description="full sparse representation envelope smoke without logical-height scans",
+        server_kind="modded",
+        server_config=FAR_BUILD_HEIGHT,
+        client_config=VANILLA_BUILD_HEIGHT,
+        expected=FAR_BUILD_HEIGHT,
+        server_port=25577,
+        required_server_markers=("ENDLESS_FAR_ENVELOPE_PASS",),
+    ),
+    Scenario(
+        id="cold-restart",
+        description="fresh dedicated-server JVM reloads sparse persisted world state",
+        server_kind="modded",
+        server_config=EXTENDED_BUILD_HEIGHT,
+        client_config=VANILLA_BUILD_HEIGHT,
+        expected=EXTENDED_BUILD_HEIGHT,
+        server_port=25578,
+        cold_restart=True,
+    ),
 ]
 
 
@@ -120,6 +159,7 @@ class OutputPump:
         self.process = process
         self.prefix = prefix
         self.lines: queue.Queue[str] = queue.Queue()
+        self.history: list[str] = []
         self.thread = threading.Thread(target=self._read, daemon=True)
         self.thread.start()
 
@@ -127,6 +167,7 @@ class OutputPump:
         assert self.process.stdout is not None
         for line in self.process.stdout:
             print(f"[{self.prefix}] {line}", end="", flush=True)
+            self.history.append(line)
             self.lines.put(line)
 
     def wait_for(
@@ -159,6 +200,24 @@ class OutputPump:
                 return None
             if any(marker in line for marker in markers):
                 return line
+
+    def wait_until_seen(
+        self, markers: tuple[str, ...], timeout: int, fail_markers: tuple[str, ...] = ()
+    ) -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            history = list(self.history)
+            failure = next((line for line in history if any(m in line for m in fail_markers)), None)
+            if failure is not None:
+                raise RuntimeError(f"{self.prefix}: process reported failure: {failure.rstrip()}")
+            missing = [marker for marker in markers if not any(marker in line for line in history)]
+            if not missing:
+                return
+            if self.process.poll() is not None:
+                break
+            time.sleep(0.1)
+        missing = [marker for marker in markers if not any(marker in line for line in self.history)]
+        raise RuntimeError(f"{self.prefix}: missing required marker(s): {missing}")
 
     def exhausted(self) -> bool:
         return (
@@ -309,7 +368,8 @@ def prepare_server(module_dir: Path, scenario: Scenario) -> None:
         f"server-port={scenario.server_port}\n"
         "level-name=live-join-world\n"
         f"motd=Endless live join test ({scenario.server_kind})\n"
-        "spawn-protection=0\n",
+        "spawn-protection=0\n"
+        "allow-flight=true\n",
         encoding="utf-8",
     )
     if scenario.server_kind == "vanilla":
@@ -351,43 +411,37 @@ def prepare_client(module_dir: Path, module: str, scenario: Scenario) -> None:
         )
 
 
-def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeout: int) -> None:
-    label = f"{target}/{scenario.id}"
-    print(f"Preparing {label}: {scenario.description}", flush=True)
-    prepare_server(root / module, scenario)
-    prepare_client(root / module, module, scenario)
-
-    compile_cmd = command(root, f":{module}:classes")
-    subprocess.run(compile_cmd, cwd=root, check=True)
-
+def scenario_env(scenario: Scenario, cold_phase: str = "") -> dict[str, str]:
     env = dict(os.environ)
     env["ENDLESS_TEST_EXPECTED_MIN"] = str(scenario.expected["minBuildHeight"])
     env["ENDLESS_TEST_EXPECTED_MAX"] = str(scenario.expected["maxBuildHeight"])
     env["ENDLESS_TEST_PORT"] = str(scenario.server_port)
-    env["ENDLESS_TEST_PRESEED_STALE"] = (
-        "true" if scenario.id == "baseline-no-endless" else "false"
-    )
+    env["ENDLESS_TEST_PRESEED_STALE"] = "true" if scenario.id == "baseline-no-endless" else "false"
+    env["ENDLESS_TEST_EXTREME"] = "true" if scenario.id == "extended-server" else "false"
+    env["ENDLESS_TEST_WAYSTONES"] = "true" if scenario.id == "extended-server" else "false"
+    env["ENDLESS_TEST_FAR"] = "true" if scenario.id == "far-envelope" else "false"
+    env["ENDLESS_TEST_COLD_RESTART_PHASE"] = cold_phase
+    return env
 
+
+def run_live_session(
+    root: Path, target: str, module: str, scenario: Scenario, timeout: int, env: dict[str, str],
+    required_server_markers: tuple[str, ...] = (), required_client_markers: tuple[str, ...] = (),
+) -> None:
+    label = f"{target}/{scenario.id}" + (f"/phase-{env['ENDLESS_TEST_COLD_RESTART_PHASE']}" if env.get("ENDLESS_TEST_COLD_RESTART_PHASE") else "")
     if scenario.server_kind == "vanilla":
         server_dir = root / module / "run" / "live-join" / "server"
         jar = Path((server_dir / "vanilla-server-jar.txt").read_text(encoding="utf-8"))
         java = shutil.which("java")
         if java is None:
             raise RuntimeError("java not found on PATH for the vanilla server")
-        server = popen(
-            [java, "-Xmx1536m", "-jar", jar, "nogui"],
-            server_dir,
-        )
+        server = popen([java, "-Xmx1536m", "-jar", jar, "nogui"], server_dir, env=env)
     else:
-        server = popen(command(root, f":{module}:runLiveJoinTestServer"), root)
+        server = popen(command(root, f":{module}:runLiveJoinTestServer"), root, env=env)
     server_output = OutputPump(server, f"{label}/server")
     client: subprocess.Popen[str] | None = None
     try:
-        if server_output.wait_for(
-            SERVER_READY_MARKERS,
-            timeout,
-            fail_markers=SERVER_FATAL_MARKERS,
-        ) is None:
+        if server_output.wait_for(SERVER_READY_MARKERS, timeout, fail_markers=SERVER_FATAL_MARKERS) is None:
             raise RuntimeError(f"{label}: server did not become ready")
 
         client_cmd = command(root, f":{module}:runLiveJoinTestClient")
@@ -399,21 +453,16 @@ def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeo
 
         client = popen(client_cmd, root, env=env)
         client_output = OutputPump(client, f"{label}/client")
-        outcome = wait_for_live_join_outcome(
-            client_output,
-            server_output,
-            timeout,
-            label,
-        )
+        outcome = wait_for_live_join_outcome(client_output, server_output, timeout, label)
         if outcome is None:
             raise RuntimeError(f"{label}: client did not report a live-join outcome")
         if PASS_MARKER not in outcome:
             raise RuntimeError(f"{label}: client reported failure: {outcome.rstrip()}")
-        # PASS is authoritative: the client already proved the required
-        # runtime state, so the supervisor terminates the process tree itself.
-        # Requiring a natural exit previously made Forge fail after PASS
-        # (mc.stop() does not reliably end the Gradle userdev JVM promptly),
-        # which masked a passing scenario as red CI.
+
+        if required_server_markers:
+            server_output.wait_until_seen(required_server_markers, min(timeout, 90), SERVER_FATAL_MARKERS)
+        if required_client_markers:
+            client_output.wait_until_seen(required_client_markers, min(timeout, 30))
         print(f"{label}: PASS ({outcome.rstrip()})", flush=True)
         stop_tree(client)
         client = None
@@ -421,6 +470,31 @@ def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeo
         if client is not None:
             stop_tree(client)
         stop_tree(server, graceful_server=True)
+
+
+def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeout: int) -> None:
+    label = f"{target}/{scenario.id}"
+    print(f"Preparing {label}: {scenario.description}", flush=True)
+    prepare_server(root / module, scenario)
+    prepare_client(root / module, module, scenario)
+
+    env = scenario_env(scenario, "A" if scenario.cold_restart else "")
+    compile_cmd = command(root, f":{module}:classes")
+    subprocess.run(compile_cmd, cwd=root, env=env, check=True)
+
+    if not scenario.cold_restart:
+        run_live_session(
+            root, target, module, scenario, timeout, env,
+            scenario.required_server_markers, scenario.required_client_markers,
+        )
+        return
+
+    # Phase A saves and gracefully stops. Phase B deliberately reuses the same
+    # world directory but starts a brand-new dedicated-server JVM.
+    run_live_session(root, target, module, scenario, timeout, env, ("ENDLESS_COLD_RESTART_PHASE_A_PASS",))
+    prepare_client(root / module, module, scenario)
+    phase_b_env = scenario_env(scenario, "B")
+    run_live_session(root, target, module, scenario, timeout, phase_b_env, ("ENDLESS_COLD_RESTART_PHASE_B_PASS",))
 
 
 def run_target(root: Path, target: str, timeout: int) -> None:

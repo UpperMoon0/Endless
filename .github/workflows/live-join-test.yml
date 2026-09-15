@@ -21,12 +21,12 @@ concurrency:
 jobs:
   live-join:
     name: live-join (${{ matrix.target }}, ${{ matrix.scenario }})
-    timeout-minutes: 20
+    timeout-minutes: 30
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       # The scenarios are independent. Running them as separate matrix cells
-      # preserves the complete Fabric/Forge matrix while replacing three
+      # preserves the complete Fabric/Forge matrix while replacing five
       # serial Minecraft client boots per loader with one boot per runner.
       matrix:
         target:
@@ -36,9 +36,13 @@ jobs:
           - extended-server
           - baseline-endless-vanilla-server
           - baseline-no-endless
+          - far-envelope
+          - cold-restart
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -50,7 +54,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           # One matrix cell may write the shared dependency cache; the other
-          # five read it without contending during post-job cache saves.
+          # nine read it without contending during post-job cache saves.
           cache-read-only: ${{ !(matrix.target == 'fabric-1.20.1' && matrix.scenario == 'extended-server') }}
           # Never restore Loom's mutable process-owned workspace. A cancelled
           # predecessor can leave a disowned lock and generated mapping paths
@@ -91,6 +95,24 @@ jobs:
           --scenario "${{ matrix.scenario }}"
           --timeout 300
 
+      - name: Write exact-head scenario receipt
+        if: success()
+        env:
+          EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          TARGET: ${{ matrix.target }}
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          mkdir -p build/live-join-results
+          printf '%s\n' "$EXACT_HEAD" > "build/live-join-results/${TARGET}--${SCENARIO}.pass"
+
+      - name: Upload exact-head scenario receipt
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-join-result-${{ matrix.target }}-${{ matrix.scenario }}
+          path: build/live-join-results/*.pass
+          if-no-files-found: error
+
       - name: Upload test logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -100,3 +122,46 @@ jobs:
             ${{ matrix.target == 'fabric-1.20.1' && 'fabric' || 'forge' }}/run/live-join/client/logs
             ${{ matrix.target == 'fabric-1.20.1' && 'fabric' || 'forge' }}/run/live-join/server/logs
           if-no-files-found: ignore
+
+
+  required-live-join:
+    name: Required live verification
+    if: always()
+    needs: [live-join]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require matrix success
+        env:
+          MATRIX_RESULT: ${{ needs.live-join.result }}
+        run: test "$MATRIX_RESULT" = success
+
+      - name: Download exact-head scenario receipts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: live-join-result-*
+          path: build/live-join-results
+          merge-multiple: true
+
+      - name: Require every scenario at the exact PR head
+        env:
+          EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for target in fabric-1.20.1 forge-1.20.1; do
+            for scenario in \
+              extended-server \
+              baseline-endless-vanilla-server \
+              baseline-no-endless \
+              far-envelope \
+              cold-restart; do
+              receipt="build/live-join-results/${target}--${scenario}.pass"
+              test -f "$receipt" || { echo "missing required scenario receipt: $receipt" >&2; exit 1; }
+              test "$(tr -d '\r\n' < "$receipt")" = "$EXACT_HEAD" || {
+                echo "stale scenario receipt: $receipt" >&2
+                exit 1
+              }
+            done
+          done
+          count=$(find build/live-join-results -maxdepth 1 -name '*.pass' -type f | wc -l)
+          test "$count" -eq 10 || { echo "expected exactly 10 live scenario receipts, found $count" >&2; exit 1; }

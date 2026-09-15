@@ -1,6 +1,7 @@
 package com.nstut.endless.mixin;
 
 import com.nstut.endless.vertical.EndlessVerticalEngine;
+import com.nstut.endless.testing.LiveRenderProbe;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -25,6 +26,7 @@ public abstract class RenderChunkMixin {
     @Inject(method = "getBlockState", at = @At("HEAD"), cancellable = true)
     private void endless$getBlockState(BlockPos pos, CallbackInfoReturnable<BlockState> cir) {
         if (EndlessVerticalEngine.isExtendedY(wrapped.getLevel(), pos.getY())) {
+            LiveRenderProbe.recordRenderChunk(pos);
             cir.setReturnValue(EndlessVerticalEngine.world(wrapped.getLevel()).getBlockState(pos));
         }
     }

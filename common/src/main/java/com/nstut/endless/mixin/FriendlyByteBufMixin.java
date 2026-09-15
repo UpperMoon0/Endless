@@ -1,10 +1,9 @@
 package com.nstut.endless.mixin;
 
-import com.nstut.endless.heights.EndlessLogicalHeights;
+import com.nstut.endless.network.ExtendedBlockPosCodec;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
@@ -16,33 +15,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(FriendlyByteBuf.class)
 public abstract class FriendlyByteBufMixin {
-    @Unique
-    private static final long ENDLESS_EXTENDED_BLOCK_POS = Long.MIN_VALUE;
-
     @Inject(method = "readBlockPos", at = @At("HEAD"), cancellable = true)
     private void endless$readBlockPos(CallbackInfoReturnable<BlockPos> cir) {
         FriendlyByteBuf self = (FriendlyByteBuf) (Object) this;
-        long packed = self.readLong();
-        if (packed == ENDLESS_EXTENDED_BLOCK_POS && EndlessLogicalHeights.isActive()) {
-            cir.setReturnValue(new BlockPos(self.readInt(), self.readInt(), self.readInt()));
-        } else {
-            cir.setReturnValue(BlockPos.of(packed));
-        }
+        cir.setReturnValue(ExtendedBlockPosCodec.read(self));
     }
 
     @Inject(method = "writeBlockPos", at = @At("HEAD"), cancellable = true)
     private void endless$writeBlockPos(BlockPos pos, CallbackInfoReturnable<FriendlyByteBuf> cir) {
         FriendlyByteBuf self = (FriendlyByteBuf) (Object) this;
-        long packed = pos.asLong();
-        if (EndlessLogicalHeights.needsExtendedBlockPosEncoding(pos.getY())
-            || (EndlessLogicalHeights.isActive() && packed == ENDLESS_EXTENDED_BLOCK_POS)) {
-            self.writeLong(ENDLESS_EXTENDED_BLOCK_POS);
-            self.writeInt(pos.getX());
-            self.writeInt(pos.getY());
-            self.writeInt(pos.getZ());
-        } else {
-            self.writeLong(packed);
-        }
-        cir.setReturnValue(self);
+        cir.setReturnValue(ExtendedBlockPosCodec.write(self, pos));
     }
 }

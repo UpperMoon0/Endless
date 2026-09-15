@@ -1,6 +1,7 @@
 package com.nstut.endless.mixin;
 
 import com.nstut.endless.heights.EndlessLogicalHeights;
+import com.nstut.endless.testing.LiveRenderProbe;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ViewArea;
@@ -96,7 +97,9 @@ public abstract class ViewAreaMixin {
         }
         int xSection = Mth.positiveModulo(Math.floorDiv(pos.getX(), 16), chunkGridSizeX);
         int zSection = Mth.positiveModulo(Math.floorDiv(pos.getZ(), 16), chunkGridSizeZ);
-        cir.setReturnValue(this.chunks[this.getChunkIndex(xSection, ySection, zSection)]);
+        ChunkRenderDispatcher.RenderChunk renderChunk = this.chunks[this.getChunkIndex(xSection, ySection, zSection)];
+        LiveRenderProbe.recordViewArea(pos);
+        cir.setReturnValue(renderChunk);
     }
 
     @Inject(method = "setDirty", at = @At("HEAD"), cancellable = true)

@@ -14,6 +14,11 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.entity.ai.util.GoalUtils;
+import net.minecraft.world.entity.animal.Parrot;
+import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.entity.ai.village.poi.PoiManager;
 import net.minecraft.world.entity.ai.village.poi.PoiTypes;
 import net.minecraft.world.entity.decoration.ArmorStand;
@@ -25,6 +30,7 @@ import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.ItemLike;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.Biomes;
@@ -35,6 +41,9 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.pathfinder.Path;
+import net.minecraft.world.entity.ai.navigation.FlyingPathNavigation;
+import net.minecraft.world.entity.ai.navigation.GroundPathNavigation;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
@@ -50,6 +59,8 @@ public final class LiveHighYServerTest {
     public static final String FAIL_MARKER = "ENDLESS_HIGH_Y_SERVER_FAIL";
     public static final String COMMAND_PASS_MARKER = "ENDLESS_COMMAND_BOUNDS_PASS";
     public static final String WAYSTONES_PASS_MARKER = "ENDLESS_WAYSTONES_SPARSE_PASS";
+    public static final String PATHFINDING_PASS_MARKER = "ENDLESS_PATHFINDING_PASS";
+    public static final String CLIENT_INTERACTION_PASS_MARKER = "ENDLESS_CLIENT_INTERACTION_SERVER_PASS";
 
     private static boolean prepared;
     private static boolean mechanicsVerified;
@@ -60,6 +71,11 @@ public final class LiveHighYServerTest {
     private static int lowerArrivalTick;
     private static ArmorStand lowerStand;
     private static ArmorStand upperStand;
+    private static boolean lowerClientPlaced;
+    private static boolean lowerClientBroken;
+    private static boolean upperClientPlaced;
+    private static boolean upperClientBroken;
+    private static boolean clientInteractionPassPrinted;
 
     private LiveHighYServerTest() {}
 
@@ -98,6 +114,18 @@ public final class LiveHighYServerTest {
     public static BlockPos upperWaystoneBasePos() { return pos(24, upperY() - 1); }
     public static BlockPos upperWaystoneTopPos() { return upperWaystoneBasePos().above(); }
 
+    /** Client-originated interaction targets intentionally live outside packed BlockPos Y. */
+    public static BlockPos lowerInteractionSupportPos() { return new BlockPos(1, lowerY(), 4); }
+    public static BlockPos lowerInteractionTargetPos() { return lowerInteractionSupportPos().above(); }
+    public static BlockPos upperInteractionSupportPos() { return new BlockPos(1, upperY() - 2, 4); }
+    public static BlockPos upperInteractionTargetPos() { return upperInteractionSupportPos().above(); }
+
+    /** Same X/Z and same vanilla packed-long Y bits, but a different real position. */
+    public static BlockPos packedAliasPos(BlockPos extendedPos) {
+        int delta = extendedPos.getY() < 0 ? 4096 : -4096;
+        return extendedPos.offset(0, delta, 0);
+    }
+
     public static void tick(MinecraftServer server) {
         if (done || !Boolean.parseBoolean(System.getProperty(SYSTEM_PROPERTY, "false"))) return;
         if (server.getPlayerList().getPlayers().isEmpty()) return;
@@ -126,21 +154,33 @@ public final class LiveHighYServerTest {
                 requireEntityAlive(lowerStand, "lower-bound entity did not survive normal ticking");
                 requireEntityAlive(upperStand, "upper-bound entity did not survive normal ticking");
                 mechanicsVerified = true;
+                player.setGameMode(GameType.CREATIVE);
+                player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Blocks.STONE));
                 player.setNoGravity(true);
                 player.teleportTo(0.5D, lowerPlayerY(), 0.5D);
                 lowerArrivalTick = ticksWithPlayer;
                 return;
             }
 
-            // Give the real client enough time to receive and render the lower
-            // sparse page before moving the same connection to the upper edge.
-            if (!movedUpper && ticksWithPlayer >= lowerArrivalTick + 80) {
+            observeClientInteractions(level);
+
+            // Do not move away until the real client has placed and broken the
+            // lower extended-Y target through the ordinary prediction path.
+            if (!movedUpper && lowerClientBroken && ticksWithPlayer >= lowerArrivalTick + 80) {
                 player.teleportTo(0.5D, upperPlayerY(), 0.5D);
                 movedUpper = true;
                 return;
             }
+            require(movedUpper || ticksWithPlayer < lowerArrivalTick + 220,
+                "client did not complete lower extended-Y placement/break interaction");
 
-            if (movedUpper && ticksWithPlayer >= lowerArrivalTick + 120) {
+            if (movedUpper && upperClientBroken && ticksWithPlayer >= lowerArrivalTick + 120) {
+                if (!clientInteractionPassPrinted) {
+                    clientInteractionPassPrinted = true;
+                    System.out.println(CLIENT_INTERACTION_PASS_MARKER
+                        + " lower=" + lowerInteractionTargetPos() + " lowerAlias=" + packedAliasPos(lowerInteractionTargetPos())
+                        + " upper=" + upperInteractionTargetPos() + " upperAlias=" + packedAliasPos(upperInteractionTargetPos()));
+                }
                 done = true;
                 System.out.println(PASS_MARKER
                     + " lowerY=" + lowerY()
@@ -151,6 +191,8 @@ public final class LiveHighYServerTest {
                     + " lowerLight=" + level.getBrightness(LightLayer.BLOCK, lowerTestPos())
                     + " upperLight=" + level.getBrightness(LightLayer.BLOCK, upperTestPos()));
             }
+            require(!movedUpper || upperClientBroken || ticksWithPlayer < lowerArrivalTick + 300,
+                "client did not complete upper extended-Y placement/break interaction");
         } catch (Throwable t) {
             done = true;
             System.out.println(FAIL_MARKER + " error=" + t);
@@ -174,6 +216,8 @@ public final class LiveHighYServerTest {
         verifySetBlockCommandBounds(level, player);
         prepareBoundary(level, player, false);
         prepareBoundary(level, player, true);
+        prepareClientInteractionFixtures(level);
+        verifyPathfinding(level);
         verifySparseBiomeSemantics(level);
         prepareWaystonesIfRequested(level, player);
 
@@ -274,6 +318,74 @@ public final class LiveHighYServerTest {
         require(level.removeBlock(power, false), edge + " redstone source removal failed");
     }
 
+    private static void prepareClientInteractionFixtures(ServerLevel level) {
+        for (BlockPos target : new BlockPos[]{lowerInteractionTargetPos(), upperInteractionTargetPos()}) {
+            BlockPos support = target.below();
+            BlockPos alias = packedAliasPos(target);
+            require(level.setBlock(support, Blocks.DEEPSLATE.defaultBlockState(), 3),
+                "could not create client-interaction support at " + support);
+            require(level.removeBlock(target, false) || level.getBlockState(target).isAir(),
+                "could not clear client-interaction target at " + target);
+            require(level.setBlock(alias, Blocks.GOLD_BLOCK.defaultBlockState(), 3),
+                "could not create packed-Y alias canary at " + alias);
+            require(target.asLong() == alias.asLong(),
+                "test fixture is not a true packed BlockPos alias: target=" + target + " alias=" + alias);
+        }
+    }
+
+    private static void observeClientInteractions(ServerLevel level) {
+        lowerClientPlaced |= level.getBlockState(lowerInteractionTargetPos()).is(Blocks.STONE)
+            && level.getBlockState(packedAliasPos(lowerInteractionTargetPos())).is(Blocks.GOLD_BLOCK);
+        lowerClientBroken |= lowerClientPlaced && level.getBlockState(lowerInteractionTargetPos()).isAir()
+            && level.getBlockState(packedAliasPos(lowerInteractionTargetPos())).is(Blocks.GOLD_BLOCK);
+        upperClientPlaced |= level.getBlockState(upperInteractionTargetPos()).is(Blocks.STONE)
+            && level.getBlockState(packedAliasPos(upperInteractionTargetPos())).is(Blocks.GOLD_BLOCK);
+        upperClientBroken |= upperClientPlaced && level.getBlockState(upperInteractionTargetPos()).isAir()
+            && level.getBlockState(packedAliasPos(upperInteractionTargetPos())).is(Blocks.GOLD_BLOCK);
+    }
+
+    private static void verifyPathfinding(ServerLevel level) {
+        int floorY = lowerY();
+        for (int x = 0; x <= 8; x++) {
+            require(level.setBlock(new BlockPos(x, floorY, 12), Blocks.STONE.defaultBlockState(), 3),
+                "could not create sparse walking path floor");
+        }
+
+        Zombie walker = EntityType.ZOMBIE.create(level);
+        require(walker != null, "could not create walking pathfinder mob");
+        walker.setPos(0.5D, floorY + 1.0D, 12.5D);
+        walker.setNoAi(true);
+        require(level.addFreshEntity(walker), "could not add walking pathfinder mob");
+        require(walker.getNavigation() instanceof GroundPathNavigation,
+            "walking coverage did not instantiate GroundPathNavigation");
+        BlockPos walkTarget = new BlockPos(7, floorY + 1, 12);
+        require(!GoalUtils.isOutsideLimits(walkTarget, walker),
+            "GoalUtils rejected an in-range sparse walking target");
+        require(GoalUtils.isOutsideLimits(new BlockPos(7, floorY - 1, 12), walker),
+            "GoalUtils accepted a target below the configured logical minimum");
+        Path walkPath = walker.getNavigation().createPath(walkTarget, 0);
+        require(walkPath != null && walkPath.canReach() && walkPath.getNodeCount() > 0,
+            "walking navigator could not acquire sparse-Y path to " + walkTarget);
+
+        Parrot flyer = EntityType.PARROT.create(level);
+        require(flyer != null, "could not create flying pathfinder mob");
+        flyer.setPos(0.5D, floorY + 6.0D, 14.5D);
+        flyer.setNoAi(true);
+        require(level.addFreshEntity(flyer), "could not add flying pathfinder mob");
+        require(flyer.getNavigation() instanceof FlyingPathNavigation,
+            "flying coverage did not instantiate FlyingPathNavigation");
+        BlockPos flyTarget = new BlockPos(7, floorY + 6, 14);
+        Path flyPath = flyer.getNavigation().createPath(flyTarget, 0);
+        require(flyPath != null && flyPath.canReach() && flyPath.getNodeCount() > 0,
+            "flying navigator could not acquire sparse-Y path to " + flyTarget);
+
+        System.out.println(PATHFINDING_PASS_MARKER
+            + " walkNodes=" + walkPath.getNodeCount() + " flyNodes=" + flyPath.getNodeCount()
+            + " y=" + (floorY + 1));
+        walker.discard();
+        flyer.discard();
+    }
+
     /**
      * Vanilla Biome#shouldFreeze/#shouldSnow reject positions outside the dense
      * LevelHeightAccessor range. These checks prove the sparse biome mixin
@@ -346,12 +458,11 @@ public final class LiveHighYServerTest {
         require(level.getBlockEntity(legalBase) != null, "high-Y Waystone block entity missing");
         require(level.getBlockEntity(upperWaystoneTopPos()) != null, "high-Y Waystone top block entity missing");
 
-        // Waystones initializes its backing record from the lower/base half.
-        // Balm invokes OnLoadHandler later; the canonical Waystones v14.1.20
-        // onLoad callback then writes each half's worldPosition into the same
-        // backing object in base-then-top registration order, so after the
-        // lifecycle callback the canonical stored position is the top half.
-        verifyWaystoneManager(level, legalBase, legalBase);
+        // Waystones initializes one mutable backing record and both block halves
+        // share it. Each half's Balm OnLoadHandler writes its own worldPosition,
+        // so callback ordering may leave either physical half as getPos(). The
+        // stable invariant is same UUID plus a position on one of the two halves.
+        verifyWaystoneManager(level, legalBase, legalBase, upperWaystoneTopPos());
 
         // A double-height Waystone starting at max-1 would need a block at max,
         // so WaystoneBlockBase#getStateForPlacement must reject it. This call is
@@ -382,7 +493,7 @@ public final class LiveHighYServerTest {
     private static UUID verifyWaystoneManager(
         ServerLevel level,
         BlockPos lookupPos,
-        BlockPos expectedStoredPos
+        BlockPos... allowedStoredPositions
     ) throws Exception {
         Class<?> managerClass = Class.forName("net.blay09.mods.waystones.core.WaystoneManager");
         Method getManager = managerClass.getMethod("get", MinecraftServer.class);
@@ -395,8 +506,13 @@ public final class LiveHighYServerTest {
         Object waystone = ((Optional<?>) atResult).orElseThrow();
         BlockPos registeredPos = (BlockPos) waystone.getClass().getMethod("getPos").invoke(waystone);
         UUID uid = (UUID) waystone.getClass().getMethod("getWaystoneUid").invoke(waystone);
-        require(expectedStoredPos.equals(registeredPos),
-            "WaystoneManager stored wrong high-Y position: expected=" + expectedStoredPos
+        boolean canonicalHalf = false;
+        for (BlockPos allowed : allowedStoredPositions) {
+            canonicalHalf |= allowed.equals(registeredPos);
+        }
+        require(canonicalHalf,
+            "WaystoneManager stored position outside the double-block Waystone: allowed="
+                + java.util.Arrays.toString(allowedStoredPositions)
                 + " actual=" + registeredPos + " lookup=" + lookupPos);
         Object byId = managerClass.getMethod("getWaystoneById", UUID.class).invoke(manager, uid);
         require(byId instanceof Optional<?> && ((Optional<?>) byId).isPresent(),
@@ -433,8 +549,8 @@ public final class LiveHighYServerTest {
         requirePoi(level, lowerPoiPos(), "lower-bound POI did not survive flush + eviction + reload");
         requirePoi(level, upperPoiPos(), "upper-bound POI did not survive flush + eviction + reload");
         if (Boolean.parseBoolean(System.getProperty(WAYSTONES_SYSTEM_PROPERTY, "false"))) {
-            UUID baseUid = verifyWaystoneManager(level, upperWaystoneBasePos(), upperWaystoneTopPos());
-            UUID topUid = verifyWaystoneManager(level, upperWaystoneTopPos(), upperWaystoneTopPos());
+            UUID baseUid = verifyWaystoneManager(level, upperWaystoneBasePos(), upperWaystoneBasePos(), upperWaystoneTopPos());
+            UUID topUid = verifyWaystoneManager(level, upperWaystoneTopPos(), upperWaystoneBasePos(), upperWaystoneTopPos());
             require(baseUid.equals(topUid),
                 "Waystone base/top halves no longer resolve to the same sparse Waystone UUID");
             System.out.println(WAYSTONES_PASS_MARKER

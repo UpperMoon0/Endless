@@ -191,7 +191,12 @@ public final class LiveJoinTest {
                 + " lower=" + boundaryStatus(level, false) + " upper=" + boundaryStatus(level, true));
         }
 
-        if (atLower && !lowerExtremeSeen) {
+        // Once the lower break has been issued (stage 2), keep consuming its
+        // prediction acknowledgement even if the authoritative server has
+        // already moved the player to the upper fixture. Under a slow server
+        // the teleport can beat the client tick that observes the second ack.
+        boolean lowerAwaitingAck = lowerInteractionStage == 2;
+        if ((atLower || lowerAwaitingAck) && !lowerExtremeSeen) {
             lowerInteractionDone = driveClientInteraction(mc, level, false, lowerInteractionDone);
             BoundaryStatus lower = boundaryStatus(level, false);
             printRenderMarkerOnce(lower, false);

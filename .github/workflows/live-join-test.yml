@@ -64,7 +64,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           # One matrix cell may write the shared dependency cache; the other
-          # thirteen read it without contending during post-job cache saves.
+          # fifteen read it without contending during post-job cache saves.
           cache-read-only: ${{ !(matrix.target == 'fabric-1.20.1' && matrix.scenario == 'extended-server') }}
           # Never restore Loom's mutable process-owned workspace. A cancelled
           # predecessor can leave a disowned lock and generated mapping paths

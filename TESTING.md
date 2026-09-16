@@ -16,7 +16,7 @@ test alone does not certify real player interaction at large heights.
 | Cold restart | Blocks, fluids, block entities, redstone, light and POIs near ±8,000,000 after a fresh server JVM | Two launches reuse only that scenario's saved world |
 | Compatibility baselines | Vanilla-range Endless server and genuine vanilla server, including stale client range reset | No gameplay compatibility dependencies |
 
-Every live scenario runs on Fabric and Forge: **16 required cells**. The
+Every live scenario runs on Fabric and Forge: **16 required cells**. The same-jvm-rejoin cell is fully automated: it creates/opens the singleplayer world, performs the million-height sparse edit, saves, shuts down the integrated server, reopens the same save in the same client JVM, returns to dense terrain, and verifies persistence/render state without manual menu navigation or clicks. The
 scenario list in `tools/live_join_test.py` generates both the CI matrix and the
 receipt requirements, preventing the gate from silently omitting a new scenario.
 Missing, extra and stale receipts fail verification. CI cancels superseded PR

@@ -74,7 +74,8 @@ public final class EndlessFabricClient implements ClientModInitializer {
 
     private static void reset(net.minecraft.client.multiplayer.ClientLevel level) {
         if (level != null) EndlessVerticalEngine.close(level);
-        EndlessLogicalHeights.deactivate();
-        EndlessHeights.resetToLocalConfig();
+        // Client disconnect can happen before an integrated server finishes its
+        // final save. Never mutate the shared height holders here; the next server
+        // startup or remote handshake establishes the next authoritative range.
     }
 }

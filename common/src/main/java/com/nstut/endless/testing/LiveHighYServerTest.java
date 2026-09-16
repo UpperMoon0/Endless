@@ -63,6 +63,7 @@ public final class LiveHighYServerTest {
     private static boolean done;
     private static int ticksWithPlayer;
     private static int preparedTick;
+    private static int mechanicsEligibilityTick = -1;
     private static int lowerArrivalTick;
     private static ArmorStand lowerStand;
     private static ArmorStand upperStand;
@@ -143,19 +144,31 @@ public final class LiveHighYServerTest {
             }
 
             if (!mechanicsVerified) {
-                if (ticksWithPlayer < preparedTick + 6) return;
-                // A redstone lamp schedules its turn-off four game ticks later. The
-                // live harness also runs heavy setup/pathfinding in the preparation
-                // tick, so assert eventual completion with a bounded tick deadline
-                // instead of assuming the callback has already drained at exactly +6.
-                // This still fails a stuck sparse scheduled-tick path deterministically.
+                // LevelTicks intentionally leaves ticks queued while the horizontal
+                // chunk is not entity-loaded/ticking. This fixture lives in chunk 0,0,
+                // independently of the random world spawn, so start the mechanics
+                // deadline only after vanilla says that chunk is eligible to tick.
+                if (mechanicsEligibilityTick < 0) {
+                    if (!mechanicsChunkTickEligible(level)) {
+                        require(ticksWithPlayer < preparedTick + 200,
+                            "scheduled-tick fixture chunk never entered vanilla ticking state"
+                                + scheduledTickChunkStatus(level));
+                        return;
+                    }
+                    mechanicsEligibilityTick = ticksWithPlayer;
+                }
+                if (ticksWithPlayer < mechanicsEligibilityTick + 6) return;
+                // Once eligible, a redstone lamp's four-tick turn-off must drain
+                // promptly. A queued tick after twenty eligible server ticks is a
+                // real scheduler failure, not startup/chunk-load latency.
                 if (!delayedMechanicsSettled(level)) {
-                    require(ticksWithPlayer < preparedTick + 40,
-                        "scheduled redstone-lamp ticks did not settle within 40 server ticks"
+                    require(ticksWithPlayer < mechanicsEligibilityTick + 20,
+                        "scheduled redstone-lamp ticks did not settle within 20 eligible server ticks"
                             + " lower=" + level.getBlockState(lowerLampPos())
                             + " upper=" + level.getBlockState(upperLampPos())
                             + " lowerQueued=" + level.getBlockTicks().hasScheduledTick(lowerLampPos(), Blocks.REDSTONE_LAMP)
-                            + " upperQueued=" + level.getBlockTicks().hasScheduledTick(upperLampPos(), Blocks.REDSTONE_LAMP));
+                            + " upperQueued=" + level.getBlockTicks().hasScheduledTick(upperLampPos(), Blocks.REDSTONE_LAMP)
+                            + scheduledTickChunkStatus(level));
                     return;
                 }
                 // Vanilla ServerLevel queues POI registration onto the server executor
@@ -230,6 +243,14 @@ public final class LiveHighYServerTest {
             "live sparse test minimum must actually be outside the dense core");
         require(EndlessHeights.isOutsideDenseBuildHeight(max - 1),
             "live sparse test maximum must actually be outside the dense core");
+
+        // The high-Y fixtures use fixed X/Z so the client and server can share
+        // deterministic coordinates. Force that horizontal column to tick; otherwise
+        // a random spawn outside simulation distance correctly leaves vanilla
+        // scheduled ticks queued and turns this into a chunk-ticket test.
+        level.setChunkForced(0, 0, true);
+        require(level.getForcedChunks().contains(mechanicsChunkKey()),
+            "could not force-load scheduled-tick fixture chunk 0,0");
 
         verifySetBlockCommandBounds(level, player);
         prepareBoundary(level, player, false);
@@ -520,6 +541,25 @@ public final class LiveHighYServerTest {
     private static void verifyDelayedMechanics(ServerLevel level) {
         verifyLampScheduledTick(level, lowerPowerPos(), lowerLampPos(), "lower");
         verifyLampScheduledTick(level, upperPowerPos(), upperLampPos(), "upper");
+    }
+
+    private static long mechanicsChunkKey() {
+        return ChunkPos.asLong(0, 0);
+    }
+
+    private static boolean mechanicsChunkTickEligible(ServerLevel level) {
+        long chunkKey = mechanicsChunkKey();
+        return level.areEntitiesLoaded(chunkKey)
+            && level.getChunkSource().isPositionTicking(chunkKey);
+    }
+
+    private static String scheduledTickChunkStatus(ServerLevel level) {
+        long chunkKey = mechanicsChunkKey();
+        return " gameTime=" + level.getGameTime()
+            + " entitiesLoaded=" + level.areEntitiesLoaded(chunkKey)
+            + " positionTicking=" + level.getChunkSource().isPositionTicking(chunkKey)
+            + " shouldTickBlocks=" + level.shouldTickBlocksAt(chunkKey)
+            + " forced=" + level.getForcedChunks().contains(chunkKey);
     }
 
     private static boolean delayedMechanicsSettled(ServerLevel level) {

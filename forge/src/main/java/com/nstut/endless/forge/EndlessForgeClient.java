@@ -51,7 +51,9 @@ public final class EndlessForgeClient {
         if (client.level != null) {
             EndlessVerticalEngine.close(client.level);
         }
-        EndlessLogicalHeights.deactivate();
-        EndlessHeights.resetToLocalConfig();
+        // Do not mutate the process-global height state from a client disconnect.
+        // In singleplayer the integrated server shares these statics and continues
+        // saving chunks after the play connection has gone away. The next server
+        // startup or remote handshake establishes the next authoritative range.
     }
 }

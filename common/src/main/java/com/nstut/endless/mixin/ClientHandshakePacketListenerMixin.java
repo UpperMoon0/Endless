@@ -30,9 +30,15 @@ public class ClientHandshakePacketListenerMixin {
         Consumer<Component> statusConsumer,
         CallbackInfo ci
     ) {
-        if (!connection.isMemoryConnection()) {
-            EndlessLogicalHeights.deactivate();
+        // The listener is constructed before Connection has necessarily installed its
+        // Netty channel. At this point isMemoryConnection() can therefore report
+        // false for an integrated-server LocalChannel and clobber the server-owned
+        // process-global height range. Minecraft already owns the integrated server
+        // before its client handshake starts, so use that lifecycle fact instead.
+        if (minecraft.hasSingleplayerServer()) {
+            return;
         }
-        EndlessHeights.applyVanillaBaselineForNewConnection(connection.isMemoryConnection());
+        EndlessLogicalHeights.deactivate();
+        EndlessHeights.applyVanillaBaselineForNewConnection(false);
     }
 }

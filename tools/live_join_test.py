@@ -45,6 +45,8 @@ from pathlib import Path
 
 PASS_MARKER = "ENDLESS_LIVE_JOIN_TEST_PASS"
 FAIL_MARKER = "ENDLESS_LIVE_JOIN_TEST_FAIL"
+SAME_JVM_REJOIN_PASS_MARKER = "ENDLESS_SAME_JVM_REJOIN_PASS"
+SAME_JVM_REJOIN_FAIL_MARKER = "ENDLESS_SAME_JVM_REJOIN_FAIL"
 # Printed at ClientboundLoginPacket handling, before the client world exists.
 # A pre-login failure also prints FAIL_MARKER, but matching it here fails the
 # test immediately instead of waiting for the post-join timeout.
@@ -94,6 +96,7 @@ class Scenario:
     required_client_markers: tuple[str, ...] = ()
     cold_restart: bool = False
     gameplay: bool = False
+    integrated_rejoin: bool = False
 
 
 SCENARIOS = [
@@ -111,6 +114,7 @@ SCENARIOS = [
             "ENDLESS_WAYSTONES_SPARSE_PASS",
             "ENDLESS_PATHFINDING_PASS",
             "ENDLESS_CLIENT_INTERACTION_SERVER_PASS",
+            "ENDLESS_CLIENT_PLACEMENT_PERSISTENCE_PASS",
             "ENDLESS_HIGH_Y_SERVER_PASS",
         ),
         required_client_markers=(
@@ -118,6 +122,7 @@ SCENARIOS = [
             "ENDLESS_CLIENT_PREDICTION_PASS edge=upper",
             "ENDLESS_RENDER_PATH_PASS edge=lower",
             "ENDLESS_RENDER_PATH_PASS edge=upper",
+            "ENDLESS_CLIENT_PERSISTENT_PLACEMENT_PASS",
         ),
     ),
     Scenario(
@@ -173,6 +178,31 @@ SCENARIOS.append(Scenario(
     required_server_markers=SCENARIOS[0].required_server_markers,
     required_client_markers=SCENARIOS[0].required_client_markers,
     gameplay=True,
+))
+
+SCENARIOS.append(Scenario(
+    id="full-envelope-gameplay",
+    description="real client persistence, prediction and render-graph traversal at the full +/-8M envelope",
+    server_kind="modded",
+    server_config=FAR_BUILD_HEIGHT,
+    client_config=VANILLA_BUILD_HEIGHT,
+    expected=FAR_BUILD_HEIGHT,
+    server_port=25580,
+    required_server_markers=SCENARIOS[0].required_server_markers,
+    required_client_markers=SCENARIOS[0].required_client_markers,
+    gameplay=True,
+))
+
+SCENARIOS.append(Scenario(
+    id="same-jvm-rejoin",
+    description="singleplayer save/leave/reopen in one client JVM preserves a real block at Y=1,000,000",
+    server_kind="integrated",
+    server_config=None,
+    client_config=MILLION_BUILD_HEIGHT,
+    expected=MILLION_BUILD_HEIGHT,
+    server_port=0,
+    required_client_markers=(SAME_JVM_REJOIN_PASS_MARKER,),
+    integrated_rejoin=True,
 ))
 
 
@@ -456,33 +486,43 @@ def prepare_server(module_dir: Path, scenario: Scenario) -> None:
     write_endless_config(server_dir / "config", scenario.server_config)  # type: ignore[arg-type]
 
 
-def prepare_client(module_dir: Path, module: str, scenario: Scenario) -> None:
-    client_dir = module_dir / "run" / "live-join" / "client"
+def prepare_client_dir(client_dir: Path, module: str, config: dict) -> None:
     reset_dir(client_dir)
     # A fresh Minecraft directory otherwise opens the accessibility/narrator
-    # onboarding screen, which blocks quick-play and makes the test interactive.
+    # onboarding screen, which blocks automation and makes the test interactive.
     (client_dir / "options.txt").write_text(
         "narrator:0\n"
         "narratorHotkey:false\n"
         "onboardAccessibility:false\n"
         "skipMultiplayerWarning:true\n"
         "renderDistance:4\n"
-        "simulationDistance:4\n"
+        "simulationDistance:5\n"
         "maxFps:60\n",
         encoding="utf-8",
     )
-    write_endless_config(client_dir / "config", scenario.client_config)
+    write_endless_config(client_dir / "config", config)
     if module == "forge":
         # Forge's early-display window creates its own GL context before the
         # game launches and only reaches GL 4.6/4.5 core profiles; on the CI
         # runner's virtual display it times out ("Timed out trying to setup
         # the Game Window" in fmlearlydisplay), opens an unanswerable console
         # dialog, and kills the client. Disabling early window control defers
-        # window creation to Minecraft's own GLFW path, which works there
-        # (Fabric's client joins successfully on the same runner).
+        # window creation to Minecraft's own GLFW path, which works there.
         (client_dir / "config" / "fml.toml").write_text(
             "earlyWindowControl = false\n", encoding="utf-8"
         )
+
+
+def prepare_client(module_dir: Path, module: str, scenario: Scenario) -> None:
+    prepare_client_dir(
+        module_dir / "run" / "live-join" / "client", module, scenario.client_config
+    )
+
+
+def prepare_integrated_client(module_dir: Path, module: str, scenario: Scenario) -> None:
+    prepare_client_dir(
+        module_dir / "run" / "live-rejoin" / "client", module, scenario.client_config
+    )
 
 
 def scenario_env(scenario: Scenario, cold_phase: str = "") -> dict[str, str]:
@@ -495,6 +535,7 @@ def scenario_env(scenario: Scenario, cold_phase: str = "") -> dict[str, str]:
     env["ENDLESS_TEST_WAYSTONES"] = "true" if scenario.gameplay else "false"
     env["ENDLESS_TEST_FAR"] = "true" if scenario.id == "far-envelope" else "false"
     env["ENDLESS_TEST_COLD_RESTART_PHASE"] = cold_phase
+    env["ENDLESS_TEST_SAME_JVM_REJOIN"] = "true" if scenario.integrated_rejoin else "false"
     return env
 
 
@@ -548,13 +589,58 @@ def run_live_session(
         stop_tree(server, graceful_server=True)
 
 
+def run_integrated_rejoin(
+    root: Path, target: str, module: str, scenario: Scenario, timeout: int, env: dict[str, str]
+) -> None:
+    label = f"{target}/{scenario.id}"
+    evidence = root / "build" / "live-join-evidence" / label
+    evidence.mkdir(parents=True, exist_ok=True)
+    client_cmd = command(root, f":{module}:runSameJvmRejoinTestClient")
+    if os.name != "nt" and not os.environ.get("DISPLAY"):
+        xvfb = shutil.which("xvfb-run")
+        if xvfb is None:
+            raise RuntimeError("DISPLAY is unset and xvfb-run is not installed")
+        client_cmd = [xvfb, "-a", *client_cmd]
+
+    client = popen(client_cmd, root, env=env)
+    output = OutputPump(client, f"{label}/client", evidence / "client.log")
+    try:
+        line = output.wait_for(
+            (SAME_JVM_REJOIN_PASS_MARKER,),
+            timeout,
+            fail_markers=(
+                SAME_JVM_REJOIN_FAIL_MARKER,
+                "Encountered an unexpected exception",
+                "This crash report has been saved to:",
+                "Critical injection failure",
+                'because "this.modelGroups" is null',
+                "BUILD FAILED",
+            ),
+        )
+        if line is None:
+            raise RuntimeError(f"{label}: client did not finish same-JVM rejoin verification")
+        output.wait_until_seen(
+            scenario.required_client_markers, min(timeout, 60), (SAME_JVM_REJOIN_FAIL_MARKER,)
+        )
+        print(f"{label}: PASS ({line.rstrip()})", flush=True)
+    finally:
+        stop_tree(client)
+
+
 def _run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeout: int) -> None:
     label = f"{target}/{scenario.id}"
     print(f"Preparing {label}: {scenario.description}", flush=True)
+    env = scenario_env(scenario, "A" if scenario.cold_restart else "")
+
+    if scenario.integrated_rejoin:
+        prepare_integrated_client(root / module, module, scenario)
+        compile_cmd = command(root, f":{module}:classes")
+        subprocess.run(compile_cmd, cwd=root, env=env, check=True, timeout=max(timeout, 600))
+        run_integrated_rejoin(root, target, module, scenario, timeout, env)
+        return
+
     prepare_server(root / module, scenario)
     prepare_client(root / module, module, scenario)
-
-    env = scenario_env(scenario, "A" if scenario.cold_restart else "")
     compile_cmd = command(root, f":{module}:classes")
     subprocess.run(compile_cmd, cwd=root, env=env, check=True, timeout=max(timeout, 600))
 

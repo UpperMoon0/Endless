@@ -4,6 +4,7 @@ import com.nstut.endless.Endless;
 import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import com.nstut.endless.testing.LiveJoinTest;
+import com.nstut.endless.testing.LiveSameJvmRejoinTest;
 import com.nstut.endless.vertical.EndlessVerticalEngine;
 import com.nstut.endless.vertical.VerticalPageSnapshot;
 import io.netty.buffer.Unpooled;
@@ -65,6 +66,9 @@ public final class EndlessFabricClient implements ClientModInitializer {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> reset(client.level));
         if (LiveJoinTest.isArmed()) {
             ClientTickEvents.END_CLIENT_TICK.register(client -> LiveJoinTest.tick());
+        }
+        if (LiveSameJvmRejoinTest.isArmed()) {
+            ClientTickEvents.END_CLIENT_TICK.register(client -> LiveSameJvmRejoinTest.tick());
         }
     }
 

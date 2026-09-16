@@ -4,6 +4,7 @@ import com.nstut.endless.Endless;
 import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import com.nstut.endless.testing.LiveJoinTest;
+import com.nstut.endless.testing.LiveSameJvmRejoinTest;
 import com.nstut.endless.vertical.EndlessVerticalEngine;
 import com.nstut.endless.vertical.VerticalPageSnapshot;
 import net.minecraft.client.Minecraft;
@@ -40,6 +41,7 @@ public final class EndlessForgeClient {
     public void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
             LiveJoinTest.tick();
+            LiveSameJvmRejoinTest.tick();
         }
     }
 

@@ -16,7 +16,7 @@ test alone does not certify real player interaction at large heights.
 | Cold restart | Blocks, fluids, block entities, redstone, light and POIs near ±8,000,000 after a fresh server JVM | Two launches reuse only that scenario's saved world |
 | Compatibility baselines | Vanilla-range Endless server and genuine vanilla server, including stale client range reset | No gameplay compatibility dependencies |
 
-Every live scenario runs on Fabric and Forge: **12 required cells**. The
+Every live scenario runs on Fabric and Forge: **16 required cells**. The
 scenario list in `tools/live_join_test.py` generates both the CI matrix and the
 receipt requirements, preventing the gate from silently omitting a new scenario.
 Missing, extra and stale receipts fail verification. CI cancels superseded PR
@@ -48,10 +48,18 @@ local search radius.
 Placement and breaking use the real client game mode, server packets and normal
 prediction reconciliation. The client waits for separate server acknowledgements
 before progressing; observing its own optimistic block state is insufficient.
-Both sides require the true packed-Y alias canary to remain unchanged.
+The authoritative server always requires the true packed-Y alias canary to remain
+unchanged. The client checks the same canary when it lies in the dense core; at the
+full envelope that alias can itself be an unloaded sparse page, so pretending it
+must be client-visible would be a false test. The upper client also leaves a real
+player-placed stone in sparse storage; the server flushes,
+evicts and reloads that page before the gameplay scenario can pass. A separate
+core regression requires the loader-global page sender to survive a same-JVM
+integrated-server stop/reopen lifecycle.
 
-Render markers prove the camera-following view area and sparse render-chunk
-lookup paths ran and returned expected data. They **do not certify final pixels,
+Render markers prove the camera-following view area, sparse render-chunk lookup,
+and vanilla `LevelRenderer` neighbor graph all traversed the target high-Y section.
+They **do not certify final pixels,
 shader compatibility, Sodium/Embeddium, every third-party mod, or sustained
 performance under a large player-built world**. Those require dedicated graphical
 and workload coverage before making those release claims.
@@ -70,6 +78,7 @@ From the repository root (use `gradlew.bat` on Windows):
 python -m unittest discover -s tools -p 'test_*.py' -v
 python tools/live_join_test.py --target fabric-1.20.1 --scenario extended-server
 python tools/live_join_test.py --target forge-1.20.1 --scenario million-gameplay
+python tools/live_join_test.py --target forge-1.20.1 --scenario full-envelope-gameplay
 python tools/live_join_test.py
 ```
 

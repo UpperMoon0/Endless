@@ -86,7 +86,10 @@ public final class VerticalNetworkBridge {
     public static synchronized void shutdown() {
         EndlessVerticalEngine.closeAll();
         PLAYER_WINDOWS.clear();
-        sender = null;
+        // The sender is loader-global process state, not server-instance state.
+        // Clearing it here breaks the second integrated-server session in the
+        // same Minecraft JVM: the mod bootstrap does not run again, so saved
+        // sparse pages can never be resynchronized to the client after rejoin.
         ticks = 0;
         denseInvariantChecked = false;
     }

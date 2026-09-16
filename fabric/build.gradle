@@ -27,6 +27,14 @@ loom {
             property "endless.liveJoinColdRestartPhase", System.getenv('ENDLESS_TEST_COLD_RESTART_PHASE') ?: ''
             programArgs "--quickPlayMultiplayer", "127.0.0.1:${System.getenv('ENDLESS_TEST_PORT') ?: '25575'}"
         }
+        sameJvmRejoinTestClient {
+            client()
+            runDir("run/live-rejoin/client")
+            vmArg "-Xmx2G"
+            property "endless.sameJvmRejoinTest", "true"
+            property "endless.sameJvmRejoinTest.expectedMin", System.getenv('ENDLESS_TEST_EXPECTED_MIN') ?: '-1048576'
+            property "endless.sameJvmRejoinTest.expectedMax", System.getenv('ENDLESS_TEST_EXPECTED_MAX') ?: '1048576'
+        }
         liveJoinTestServer {
             server()
             runDir("run/live-join/server")

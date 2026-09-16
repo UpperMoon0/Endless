@@ -55,6 +55,7 @@ public final class LiveHighYServerTest {
     public static final String WAYSTONES_PASS_MARKER = "ENDLESS_WAYSTONES_SPARSE_PASS";
     public static final String PATHFINDING_PASS_MARKER = "ENDLESS_PATHFINDING_PASS";
     public static final String CLIENT_INTERACTION_PASS_MARKER = "ENDLESS_CLIENT_INTERACTION_SERVER_PASS";
+    public static final String CLIENT_PERSISTENCE_PASS_MARKER = "ENDLESS_CLIENT_PLACEMENT_PERSISTENCE_PASS";
 
     private static boolean prepared;
     private static boolean mechanicsVerified;
@@ -69,6 +70,7 @@ public final class LiveHighYServerTest {
     private static boolean lowerClientBroken;
     private static boolean upperClientPlaced;
     private static boolean upperClientBroken;
+    private static boolean upperPersistentClientPlaced;
     private static boolean clientInteractionPassPrinted;
 
     private LiveHighYServerTest() {}
@@ -113,6 +115,8 @@ public final class LiveHighYServerTest {
     public static BlockPos lowerInteractionTargetPos() { return lowerInteractionSupportPos().above(); }
     public static BlockPos upperInteractionSupportPos() { return new BlockPos(1, upperY() - 2, 4); }
     public static BlockPos upperInteractionTargetPos() { return upperInteractionSupportPos().above(); }
+    public static BlockPos upperPersistentSupportPos() { return new BlockPos(2, upperY() - 2, 4); }
+    public static BlockPos upperPersistentTargetPos() { return upperPersistentSupportPos().above(); }
 
     /** Same X/Z and same vanilla packed-long Y bits, but a different real position. */
     public static BlockPos packedAliasPos(BlockPos extendedPos) {
@@ -140,6 +144,20 @@ public final class LiveHighYServerTest {
 
             if (!mechanicsVerified) {
                 if (ticksWithPlayer < preparedTick + 6) return;
+                // A redstone lamp schedules its turn-off four game ticks later. The
+                // live harness also runs heavy setup/pathfinding in the preparation
+                // tick, so assert eventual completion with a bounded tick deadline
+                // instead of assuming the callback has already drained at exactly +6.
+                // This still fails a stuck sparse scheduled-tick path deterministically.
+                if (!delayedMechanicsSettled(level)) {
+                    require(ticksWithPlayer < preparedTick + 40,
+                        "scheduled redstone-lamp ticks did not settle within 40 server ticks"
+                            + " lower=" + level.getBlockState(lowerLampPos())
+                            + " upper=" + level.getBlockState(upperLampPos())
+                            + " lowerQueued=" + level.getBlockTicks().hasScheduledTick(lowerLampPos(), Blocks.REDSTONE_LAMP)
+                            + " upperQueued=" + level.getBlockTicks().hasScheduledTick(upperLampPos(), Blocks.REDSTONE_LAMP));
+                    return;
+                }
                 // Vanilla ServerLevel queues POI registration onto the server executor
                 // after a block-state change. Check it on a later tick instead of
                 // racing the queued add from the same setBlock call stack.
@@ -170,13 +188,16 @@ public final class LiveHighYServerTest {
             require(movedUpper || ticksWithPlayer < lowerArrivalTick + 1200,
                 "client did not complete lower extended-Y placement/break interaction");
 
-            if (movedUpper && upperClientBroken && ticksWithPlayer >= lowerArrivalTick + 120) {
+            if (movedUpper && upperClientBroken && upperPersistentClientPlaced
+                && ticksWithPlayer >= lowerArrivalTick + 120) {
                 if (!clientInteractionPassPrinted) {
                     clientInteractionPassPrinted = true;
                     System.out.println(CLIENT_INTERACTION_PASS_MARKER
                         + " lower=" + lowerInteractionTargetPos() + " lowerAlias=" + packedAliasPos(lowerInteractionTargetPos())
-                        + " upper=" + upperInteractionTargetPos() + " upperAlias=" + packedAliasPos(upperInteractionTargetPos()));
+                        + " upper=" + upperInteractionTargetPos() + " upperAlias=" + packedAliasPos(upperInteractionTargetPos())
+                        + " persisted=" + upperPersistentTargetPos());
                 }
+                verifyClientPlacedPersistence(level);
                 done = true;
                 System.out.println(PASS_MARKER
                     + " lowerY=" + lowerY()
@@ -187,8 +208,9 @@ public final class LiveHighYServerTest {
                     + " lowerLight=" + level.getBrightness(LightLayer.BLOCK, lowerTestPos())
                     + " upperLight=" + level.getBrightness(LightLayer.BLOCK, upperTestPos()));
             }
-            require(!movedUpper || upperClientBroken || ticksWithPlayer < lowerArrivalTick + 1500,
-                "client did not complete upper extended-Y placement/break interaction");
+            require(!movedUpper || (upperClientBroken && upperPersistentClientPlaced)
+                || ticksWithPlayer < lowerArrivalTick + 1500,
+                "client did not complete upper extended-Y placement/break/persist interaction");
         } catch (Throwable t) {
             done = true;
             System.out.println(FAIL_MARKER + " error=" + t);
@@ -327,6 +349,11 @@ public final class LiveHighYServerTest {
             require(target.asLong() == alias.asLong(),
                 "test fixture is not a true packed BlockPos alias: target=" + target + " alias=" + alias);
         }
+        require(level.setBlock(upperPersistentSupportPos(), Blocks.DEEPSLATE.defaultBlockState(), 3),
+            "could not create persistent client-placement support at " + upperPersistentSupportPos());
+        require(level.removeBlock(upperPersistentTargetPos(), false)
+                || level.getBlockState(upperPersistentTargetPos()).isAir(),
+            "could not clear persistent client-placement target at " + upperPersistentTargetPos());
     }
 
     private static void observeClientInteractions(ServerLevel level) {
@@ -338,6 +365,18 @@ public final class LiveHighYServerTest {
             && level.getBlockState(packedAliasPos(upperInteractionTargetPos())).is(Blocks.GOLD_BLOCK);
         upperClientBroken |= upperClientPlaced && level.getBlockState(upperInteractionTargetPos()).isAir()
             && level.getBlockState(packedAliasPos(upperInteractionTargetPos())).is(Blocks.GOLD_BLOCK);
+        upperPersistentClientPlaced |= level.getBlockState(upperPersistentTargetPos()).is(Blocks.STONE);
+    }
+
+    private static void verifyClientPlacedPersistence(ServerLevel level) {
+        MinecraftVerticalWorld vertical = EndlessVerticalEngine.world(level);
+        vertical.flushDirty();
+        EndlessVerticalEngine.close(level);
+        require(level.getBlockState(upperPersistentTargetPos()).is(Blocks.STONE),
+            "real client-placed sparse block disappeared after save + engine eviction + reload at "
+                + upperPersistentTargetPos());
+        System.out.println(CLIENT_PERSISTENCE_PASS_MARKER
+            + " target=" + upperPersistentTargetPos() + " saveReload=true");
     }
 
     private static void verifyPathfinding(ServerLevel level) {
@@ -481,6 +520,15 @@ public final class LiveHighYServerTest {
     private static void verifyDelayedMechanics(ServerLevel level) {
         verifyLampScheduledTick(level, lowerPowerPos(), lowerLampPos(), "lower");
         verifyLampScheduledTick(level, upperPowerPos(), upperLampPos(), "upper");
+    }
+
+    private static boolean delayedMechanicsSettled(ServerLevel level) {
+        BlockState lower = level.getBlockState(lowerLampPos());
+        BlockState upper = level.getBlockState(upperLampPos());
+        require(lower.is(Blocks.REDSTONE_LAMP), "lower lamp disappeared before scheduled tick");
+        require(upper.is(Blocks.REDSTONE_LAMP), "upper lamp disappeared before scheduled tick");
+        return !lower.getValue(BlockStateProperties.LIT)
+            && !upper.getValue(BlockStateProperties.LIT);
     }
 
     private static void verifyLampScheduledTick(ServerLevel level, BlockPos power, BlockPos lamp, String edge) {

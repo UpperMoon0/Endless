@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class LiveRenderProbe {
     private static final Set<Integer> VIEW_AREA_SECTIONS = ConcurrentHashMap.newKeySet();
     private static final Set<Integer> RENDER_CHUNK_SECTIONS = ConcurrentHashMap.newKeySet();
+    private static final Set<Integer> RENDER_GRAPH_SECTIONS = ConcurrentHashMap.newKeySet();
 
     private LiveRenderProbe() {}
 
@@ -25,7 +26,15 @@ public final class LiveRenderProbe {
         return VIEW_AREA_SECTIONS.contains(SectionPos.blockToSectionCoord(pos.getY()));
     }
 
+    public static void recordRenderGraph(BlockPos pos) {
+        if (LiveJoinTest.isArmed()) RENDER_GRAPH_SECTIONS.add(SectionPos.blockToSectionCoord(pos.getY()));
+    }
+
     public static boolean sawRenderChunk(BlockPos pos) {
         return RENDER_CHUNK_SECTIONS.contains(SectionPos.blockToSectionCoord(pos.getY()));
+    }
+
+    public static boolean sawRenderGraph(BlockPos pos) {
+        return RENDER_GRAPH_SECTIONS.contains(SectionPos.blockToSectionCoord(pos.getY()));
     }
 }

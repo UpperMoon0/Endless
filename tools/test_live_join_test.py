@@ -23,17 +23,36 @@ class VerificationPolicyTest(unittest.TestCase):
 
     def test_unique_matrix(self):
         self.assertEqual(len(live.SCENARIOS), len({s.id for s in live.SCENARIOS}))
-        self.assertEqual(12, len(live.SCENARIOS) * len(live.TARGETS))
+        self.assertEqual(16, len(live.SCENARIOS) * len(live.TARGETS))
 
     def test_million_gameplay_cannot_degrade_to_join_only(self):
         scenario = next(s for s in live.SCENARIOS if s.id == "million-gameplay")
         self.assertEqual(live.MILLION_BUILD_HEIGHT, scenario.expected)
         self.assertTrue(scenario.gameplay)
-        for marker in ["ENDLESS_PATHFINDING_PASS", "ENDLESS_CLIENT_INTERACTION_SERVER_PASS", "ENDLESS_HIGH_Y_SERVER_PASS"]:
+        for marker in ["ENDLESS_PATHFINDING_PASS", "ENDLESS_CLIENT_INTERACTION_SERVER_PASS",
+                       "ENDLESS_CLIENT_PLACEMENT_PERSISTENCE_PASS", "ENDLESS_HIGH_Y_SERVER_PASS"]:
             self.assertIn(marker, scenario.required_server_markers)
         for edge in ["lower", "upper"]:
             self.assertIn(f"ENDLESS_CLIENT_PREDICTION_PASS edge={edge}", scenario.required_client_markers)
             self.assertIn(f"ENDLESS_RENDER_PATH_PASS edge={edge}", scenario.required_client_markers)
+        self.assertIn("ENDLESS_CLIENT_PERSISTENT_PLACEMENT_PASS", scenario.required_client_markers)
+
+    def test_full_envelope_gameplay_is_a_real_client_gate(self):
+        scenario = next(s for s in live.SCENARIOS if s.id == "full-envelope-gameplay")
+        self.assertEqual(live.FAR_BUILD_HEIGHT, scenario.expected)
+        self.assertTrue(scenario.gameplay)
+        self.assertIn("ENDLESS_CLIENT_PLACEMENT_PERSISTENCE_PASS", scenario.required_server_markers)
+        self.assertIn("ENDLESS_CLIENT_PERSISTENT_PLACEMENT_PASS", scenario.required_client_markers)
+        for edge in ["lower", "upper"]:
+            self.assertIn(f"ENDLESS_RENDER_PATH_PASS edge={edge}", scenario.required_client_markers)
+
+    def test_same_jvm_rejoin_is_exact_integrated_lifecycle_gate(self):
+        scenario = next(s for s in live.SCENARIOS if s.id == "same-jvm-rejoin")
+        self.assertTrue(scenario.integrated_rejoin)
+        self.assertEqual("integrated", scenario.server_kind)
+        self.assertEqual(live.MILLION_BUILD_HEIGHT, scenario.expected)
+        self.assertEqual((live.SAME_JVM_REJOIN_PASS_MARKER,), scenario.required_client_markers)
+        self.assertFalse(scenario.required_server_markers)
 
     def test_scenario_environment_does_not_leak(self):
         with patch.dict(live.os.environ, {"ENDLESS_TEST_WAYSTONES": "true", "ENDLESS_TEST_EXTREME": "true"}):
@@ -43,6 +62,7 @@ class VerificationPolicyTest(unittest.TestCase):
                 self.assertEqual(str(s.gameplay).lower(), env["ENDLESS_TEST_WAYSTONES"])
                 self.assertEqual(str(s.id == "far-envelope").lower(), env["ENDLESS_TEST_FAR"])
                 self.assertEqual("", env["ENDLESS_TEST_COLD_RESTART_PHASE"])
+                self.assertEqual(str(s.integrated_rejoin).lower(), env["ENDLESS_TEST_SAME_JVM_REJOIN"])
 
     def test_cold_restart_uses_far_envelope(self):
         scenario = next(s for s in live.SCENARIOS if s.cold_restart)

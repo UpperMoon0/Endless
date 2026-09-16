@@ -55,6 +55,7 @@ public final class LiveJoinTest {
     private static boolean upperRenderMarkerPrinted;
     private static int lowerInteractionStage;
     private static int upperInteractionStage;
+    private static boolean extremeClientDone;
     private static int ticksWithLevel;
 
     private LiveJoinTest() {}
@@ -177,6 +178,7 @@ public final class LiveJoinTest {
         int denseMax,
         boolean logical
     ) {
+        if (extremeClientDone) return false;
         double playerY = mc.player == null ? Double.NaN : mc.player.getY();
         boolean atLower = mc.player != null
             && Math.abs(playerY - LiveHighYServerTest.lowerPlayerY()) < 8.0D;
@@ -217,7 +219,10 @@ public final class LiveJoinTest {
                     + " waystones=" + waystones
                     + " render=true prediction=true");
                 pass(levelMin, levelHeight, endlessMin, endlessMax, denseMin, denseMax, logical);
-                mc.stop();
+                // Keep the real client connected after its local assertions pass.
+                // The harness still has required server-side mechanics/persistence
+                // markers to collect; disconnecting here can race those checks.
+                extremeClientDone = true;
                 return true;
             }
         }
@@ -242,8 +247,14 @@ public final class LiveJoinTest {
         BlockPos target = upper ? LiveHighYServerTest.upperInteractionTargetPos() : LiveHighYServerTest.lowerInteractionTargetPos();
         BlockPos alias = LiveHighYServerTest.packedAliasPos(target);
         int stage = upper ? upperInteractionStage : lowerInteractionStage;
+        // At the full +/-8M envelope the 12-bit packed-Y alias can itself be
+        // sparse and hundreds of blocks outside the client's current page window.
+        // Only require client visibility when the alias is in the always-sent dense
+        // core; the authoritative server test always checks that the alias remains
+        // the gold canary before and after the real client interaction.
+        boolean clientAliasVisible = !EndlessHeights.isOutsideDenseBuildHeight(alias.getY());
 
-        if (!level.getBlockState(alias).is(Blocks.GOLD_BLOCK)) {
+        if (clientAliasVisible && !level.getBlockState(alias).is(Blocks.GOLD_BLOCK)) {
             return false;
         }
         if (stage == 0) {
@@ -263,30 +274,61 @@ public final class LiveJoinTest {
                 mc.stop();
                 return false;
             }
-            if (!level.getBlockState(alias).is(Blocks.GOLD_BLOCK)) return false;
+            if (clientAliasVisible && !level.getBlockState(alias).is(Blocks.GOLD_BLOCK)) return false;
             mc.gameMode.startDestroyBlock(target, Direction.UP);
             if (upper) upperInteractionStage = 2; else lowerInteractionStage = 2;
             return false;
         }
         if (stage == 2 && LivePredictionProbe.count(target) >= 2
-            && level.getBlockState(target).isAir() && level.getBlockState(alias).is(Blocks.GOLD_BLOCK)) {
+            && level.getBlockState(target).isAir()
+            && (!clientAliasVisible || level.getBlockState(alias).is(Blocks.GOLD_BLOCK))) {
             System.out.println("ENDLESS_CLIENT_PREDICTION_PASS edge=" + (upper ? "upper" : "lower")
-                + " target=" + target + " alias=" + alias + " acknowledged=true");
-            return true;
+                + " target=" + target + " alias=" + alias
+                + " clientAliasVisible=" + clientAliasVisible + " acknowledged=true");
+            if (!upper) return true;
+            upperInteractionStage = 3;
+            return false;
         }
         if (stage == 2 && LivePredictionProbe.count(target) >= 2 && !level.getBlockState(target).isAir()) {
             fail("breakingRejected", " target=" + target + " state=" + level.getBlockState(target));
             mc.stop();
+            return false;
+        }
+        if (upper && stage == 3) {
+            BlockPos persistentSupport = LiveHighYServerTest.upperPersistentSupportPos();
+            BlockPos persistentTarget = LiveHighYServerTest.upperPersistentTargetPos();
+            if (!level.getBlockState(persistentSupport).is(Blocks.DEEPSLATE)
+                || !level.getBlockState(persistentTarget).isAir()
+                || !mc.player.getMainHandItem().is(Blocks.STONE.asItem())) {
+                return false;
+            }
+            BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(persistentSupport), Direction.UP, persistentSupport, false);
+            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+            upperInteractionStage = 4;
+            return false;
+        }
+        if (upper && stage == 4) {
+            BlockPos persistentTarget = LiveHighYServerTest.upperPersistentTargetPos();
+            if (LivePredictionProbe.count(persistentTarget) < 1) return false;
+            if (!level.getBlockState(persistentTarget).is(Blocks.STONE)) {
+                fail("persistentPlacementRejected", " target=" + persistentTarget
+                    + " state=" + level.getBlockState(persistentTarget));
+                mc.stop();
+                return false;
+            }
+            System.out.println("ENDLESS_CLIENT_PERSISTENT_PLACEMENT_PASS target=" + persistentTarget
+                + " acknowledged=true");
+            return true;
         }
         return false;
     }
 
     private static void printRenderMarkerOnce(BoundaryStatus status, boolean upper) {
-        if (!status.viewArea || !status.renderChunk) return;
+        if (!status.viewArea || !status.renderChunk || !status.renderGraph) return;
         if (upper ? upperRenderMarkerPrinted : lowerRenderMarkerPrinted) return;
         if (upper) upperRenderMarkerPrinted = true; else lowerRenderMarkerPrinted = true;
         System.out.println("ENDLESS_RENDER_PATH_PASS edge=" + (upper ? "upper" : "lower")
-            + " viewArea=true renderChunk=true");
+            + " viewArea=true renderChunk=true renderGraph=true");
     }
 
     private static BoundaryStatus boundaryStatus(Level level, boolean upper) {
@@ -312,10 +354,11 @@ public final class LiveJoinTest {
         boolean render = canRender(level, glowstone);
         boolean viewArea = LiveRenderProbe.sawViewArea(glowstone);
         boolean renderChunk = LiveRenderProbe.sawRenderChunk(glowstone);
+        boolean renderGraph = LiveRenderProbe.sawRenderGraph(glowstone);
 
         return new BoundaryStatus(
             buildable, outsideRejected, block, fluid, blockEntity, placedLamp,
-            sourceLight, inwardLight, height, render, viewArea, renderChunk
+            sourceLight, inwardLight, height, render, viewArea, renderChunk, renderGraph
         );
     }
 
@@ -384,11 +427,12 @@ public final class LiveJoinTest {
         boolean height,
         boolean render,
         boolean viewArea,
-        boolean renderChunk
+        boolean renderChunk,
+        boolean renderGraph
     ) {
         boolean ok() {
             return buildable && outsideRejected && block && fluid && blockEntity && placedLamp
-                && sourceLight >= 15 && inwardLight > 0 && height && render && viewArea && renderChunk;
+                && sourceLight >= 15 && inwardLight > 0 && height && render && viewArea && renderChunk && renderGraph;
         }
     }
 }

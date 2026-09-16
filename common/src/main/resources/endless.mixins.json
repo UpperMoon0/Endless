@@ -17,6 +17,7 @@
     "LevelReaderMixin",
     "LevelMixin",
     "ChunkAccessMixin",
+    "ChunkSkyLightSourcesMixin",
     "ChunkHolderMixin",
     "LevelChunkMixin",
     "LevelLightEngineMixin",

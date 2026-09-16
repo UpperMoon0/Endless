@@ -46,6 +46,29 @@ class EndlessHeightsTest {
     }
 
     @Test
+    void legacyDenseCoreReservesSkyLightGuardCapacity() {
+        EndlessHeights.applyEffective(-1_048_576, 1_048_576, -2032, 2032);
+        try {
+            assertEquals(4064, EndlessHeights.getHeight());
+            assertEquals(13, EndlessHeights.skyLightStorageBits(12));
+            long maxEncoded = (1L << EndlessHeights.skyLightStorageBits(12)) - 1L;
+            assertTrue(maxEncoded >= EndlessHeights.getHeight() + 32L);
+        } finally {
+            EndlessHeights.resetToLocalConfig();
+        }
+    }
+
+    @Test
+    void vanillaDenseCoreDoesNotGrowSkyLightStorage() {
+        EndlessHeights.applyEffective(-1_048_576, 1_048_576, -64, 320);
+        try {
+            assertEquals(9, EndlessHeights.skyLightStorageBits(9));
+        } finally {
+            EndlessHeights.resetToLocalConfig();
+        }
+    }
+
+    @Test
     void logicalShrinkDoesNotRequireDenseShrink() {
         EndlessHeights.applyEffective(-64, 320, -1024, 1024);
         try {

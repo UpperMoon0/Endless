@@ -133,6 +133,30 @@ class OutputEvidenceTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "reported failure"):
             pump.wait_for(live.SERVER_READY_MARKERS, 1, live.SERVER_FATAL_MARKERS)
 
+
+    def test_prelogin_transport_failure_retries_once_but_assertion_failure_does_not(self):
+        scenario = next(s for s in live.SCENARIOS if s.id == "million-gameplay")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(live, "prepare_server") as prepare_server, \
+                 patch.object(live, "prepare_client") as prepare_client, \
+                 patch.object(live.subprocess, "run"), \
+                 patch.object(live, "run_live_session", side_effect=[live.TransientPreLoginFailure("transport"), None]) as run_session:
+                live._run_scenario(root, "fabric-1.20.1", "fabric", scenario, 1)
+            self.assertEqual(2, run_session.call_count)
+            self.assertEqual(2, prepare_server.call_count)
+            self.assertEqual(2, prepare_client.call_count)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(live, "prepare_server"), \
+                 patch.object(live, "prepare_client"), \
+                 patch.object(live.subprocess, "run"), \
+                 patch.object(live, "run_live_session", side_effect=RuntimeError("real assertion")) as run_session:
+                with self.assertRaisesRegex(RuntimeError, "real assertion"):
+                    live._run_scenario(root, "fabric-1.20.1", "fabric", scenario, 1)
+            self.assertEqual(1, run_session.call_count)
+
     def test_failure_receipt_survives_exception(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

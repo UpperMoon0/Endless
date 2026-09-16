@@ -50,6 +50,7 @@ SAME_JVM_REJOIN_FAIL_MARKER = "ENDLESS_SAME_JVM_REJOIN_FAIL"
 # Printed at ClientboundLoginPacket handling, before the client world exists.
 # A pre-login failure also prints FAIL_MARKER, but matching it here fails the
 # test immediately instead of waiting for the post-join timeout.
+PRE_LOGIN_PASS_MARKER = "ENDLESS_PRE_LOGIN_RANGE_PASS"
 PRE_LOGIN_FAIL_MARKER = "ENDLESS_PRE_LOGIN_RANGE_FAIL"
 CLIENT_OUTCOME_MARKERS = (PASS_MARKER, FAIL_MARKER, PRE_LOGIN_FAIL_MARKER)
 SERVER_READY_MARKERS = ("Done (", "For help, type \"help\"")
@@ -65,6 +66,12 @@ SERVER_FATAL_MARKERS = (
     "BUILD FAILED",
 )
 DEFAULT_TIMEOUT = 360
+SERVER_DISCONNECT_MARKERS = ("lost connection: Disconnected", "lost connection: Timed out")
+
+
+class TransientPreLoginFailure(RuntimeError):
+    """Transport/startup failure before Endless reported any test progress."""
+
 
 # Shared config presets. The client's on-disk config deliberately disagrees
 # with the expectation so that a leaked local config is caught.
@@ -344,6 +351,28 @@ def wait_for_live_join_outcome(
         outcome = client_output.poll_for(CLIENT_OUTCOME_MARKERS)
         if outcome is not None:
             return outcome
+
+        # A heavily loaded dev/CI host can occasionally drop the connection
+        # before the login query is handled at all. Distinguish that transport
+        # failure from a real Endless assertion: once any Endless test marker
+        # has been emitted, the attempt is authoritative and must not retry.
+        server_history = list(server_output.history)
+        client_history = list(client_output.history)
+        disconnected = any(
+            marker in line for marker in SERVER_DISCONNECT_MARKERS for line in server_history
+        )
+        test_progress = any("ENDLESS_" in line for line in client_history)
+        if disconnected and not test_progress:
+            # Give the client pump a short grace period so a concurrently
+            # emitted FAIL marker always wins over transport classification.
+            time.sleep(0.5)
+            outcome = client_output.poll_for(CLIENT_OUTCOME_MARKERS)
+            if outcome is not None:
+                return outcome
+            if not any("ENDLESS_" in line for line in client_output.history):
+                raise TransientPreLoginFailure(
+                    f"{label}: connection dropped before Endless login verification began"
+                )
 
         if server_output.exhausted():
             raise RuntimeError(
@@ -645,10 +674,22 @@ def _run_scenario(root: Path, target: str, module: str, scenario: Scenario, time
     subprocess.run(compile_cmd, cwd=root, env=env, check=True, timeout=max(timeout, 600))
 
     if not scenario.cold_restart:
-        run_live_session(
-            root, target, module, scenario, timeout, env,
-            scenario.required_server_markers, scenario.required_client_markers,
-        )
+        try:
+            run_live_session(
+                root, target, module, scenario, timeout, env,
+                scenario.required_server_markers, scenario.required_client_markers,
+            )
+        except TransientPreLoginFailure as first_error:
+            # Retry exactly once, from a virgin world/client directory, and
+            # only when the first attempt died before any Endless test marker.
+            # Assertion failures and post-login stalls are never retried.
+            print(f"{label}: transient pre-login transport failure; retrying once: {first_error}", flush=True)
+            prepare_server(root / module, scenario)
+            prepare_client(root / module, module, scenario)
+            run_live_session(
+                root, target, module, scenario, timeout, env,
+                scenario.required_server_markers, scenario.required_client_markers,
+            )
         return
 
     # Phase A saves and gracefully stops. Phase B deliberately reuses the same

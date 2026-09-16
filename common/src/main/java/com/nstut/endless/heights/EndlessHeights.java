@@ -75,6 +75,19 @@ public final class EndlessHeights {
         return getDenseMaxBuildHeight() - getDenseMinBuildHeight();
     }
 
+    /**
+     * Size ChunkSkyLightSources for the two light-section guard layers used
+     * around a chunk's dense section array. Vanilla dimensions have ample
+     * spare codes in their bit width, but the legacy 254-section Endless core
+     * is only 30 codes below the 12-bit ceiling; the upper guard can therefore
+     * legitimately reach encoded value 4096 during a full relight.
+     */
+    public static int skyLightStorageBits(int vanillaBits) {
+        long highestEncodedValue = (long) getHeight() + 32L;
+        int requiredBits = 64 - Long.numberOfLeadingZeros(highestEncodedValue);
+        return Math.max(vanillaBits, requiredBits);
+    }
+
     public static boolean isOutsideBuildHeight(int y) {
         return y < getMinBuildHeight() || y >= getMaxBuildHeight();
     }

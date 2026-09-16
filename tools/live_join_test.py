@@ -4,7 +4,7 @@
 Three scenarios close the server-authority model in both directions:
 
 A. extended-server — the server is configured with an extended build range
-   ([-1024, 1024)) and the client with the vanilla range ([-64, 320)). The
+   ([-4096, 4096)) and the client with the vanilla range ([-64, 320)). The
    client must adopt the server's authoritative range.
 B. baseline-endless-vanilla-server — an Endless server whose world range is
    vanilla with a client whose local config is extended. The server
@@ -28,6 +28,7 @@ A compile-passing build that fails this test would still be rejected.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 import os
 import queue
@@ -44,16 +45,39 @@ from pathlib import Path
 
 PASS_MARKER = "ENDLESS_LIVE_JOIN_TEST_PASS"
 FAIL_MARKER = "ENDLESS_LIVE_JOIN_TEST_FAIL"
+SAME_JVM_REJOIN_PASS_MARKER = "ENDLESS_SAME_JVM_REJOIN_PASS"
+SAME_JVM_REJOIN_FAIL_MARKER = "ENDLESS_SAME_JVM_REJOIN_FAIL"
 # Printed at ClientboundLoginPacket handling, before the client world exists.
 # A pre-login failure also prints FAIL_MARKER, but matching it here fails the
 # test immediately instead of waiting for the post-join timeout.
+PRE_LOGIN_PASS_MARKER = "ENDLESS_PRE_LOGIN_RANGE_PASS"
 PRE_LOGIN_FAIL_MARKER = "ENDLESS_PRE_LOGIN_RANGE_FAIL"
+CLIENT_OUTCOME_MARKERS = (PASS_MARKER, FAIL_MARKER, PRE_LOGIN_FAIL_MARKER)
 SERVER_READY_MARKERS = ("Done (", "For help, type \"help\"")
+SERVER_FATAL_MARKERS = (
+    "ENDLESS_HIGH_Y_SERVER_FAIL",
+    "ENDLESS_FAR_ENVELOPE_FAIL",
+    "ENDLESS_COLD_RESTART_FAIL",
+    "Encountered an unexpected exception",
+    "This crash report has been saved to:",
+    "Failed to start the minecraft server",
+    "Critical injection failure",
+    "Exception generating new chunk",
+    "BUILD FAILED",
+)
 DEFAULT_TIMEOUT = 360
+SERVER_DISCONNECT_MARKERS = ("lost connection: Disconnected", "lost connection: Timed out")
+
+
+class TransientPreLoginFailure(RuntimeError):
+    """Transport/startup failure before Endless reported any test progress."""
+
 
 # Shared config presets. The client's on-disk config deliberately disagrees
 # with the expectation so that a leaked local config is caught.
-EXTENDED_BUILD_HEIGHT = {"minBuildHeight": -1024, "maxBuildHeight": 1024}
+EXTENDED_BUILD_HEIGHT = {"minBuildHeight": -4096, "maxBuildHeight": 4096}
+FAR_BUILD_HEIGHT = {"minBuildHeight": -8_000_000, "maxBuildHeight": 8_000_000}
+MILLION_BUILD_HEIGHT = {"minBuildHeight": -1_048_576, "maxBuildHeight": 1_048_576}
 VANILLA_BUILD_HEIGHT = {"minBuildHeight": -64, "maxBuildHeight": 320}
 
 MC_VERSION = "1.20.1"
@@ -75,6 +99,11 @@ class Scenario:
     client_config: dict
     expected: dict
     server_port: int
+    required_server_markers: tuple[str, ...] = ()
+    required_client_markers: tuple[str, ...] = ()
+    cold_restart: bool = False
+    gameplay: bool = False
+    integrated_rejoin: bool = False
 
 
 SCENARIOS = [
@@ -86,6 +115,22 @@ SCENARIOS = [
         client_config=VANILLA_BUILD_HEIGHT,
         expected=EXTENDED_BUILD_HEIGHT,
         server_port=25575,
+        gameplay=True,
+        required_server_markers=(
+            "ENDLESS_COMMAND_BOUNDS_PASS",
+            "ENDLESS_WAYSTONES_SPARSE_PASS",
+            "ENDLESS_PATHFINDING_PASS",
+            "ENDLESS_CLIENT_INTERACTION_SERVER_PASS",
+            "ENDLESS_CLIENT_PLACEMENT_PERSISTENCE_PASS",
+            "ENDLESS_HIGH_Y_SERVER_PASS",
+        ),
+        required_client_markers=(
+            "ENDLESS_CLIENT_PREDICTION_PASS edge=lower",
+            "ENDLESS_CLIENT_PREDICTION_PASS edge=upper",
+            "ENDLESS_RENDER_PATH_PASS edge=lower",
+            "ENDLESS_RENDER_PATH_PASS edge=upper",
+            "ENDLESS_CLIENT_PERSISTENT_PLACEMENT_PASS",
+        ),
     ),
     Scenario(
         id="baseline-endless-vanilla-server",
@@ -105,35 +150,239 @@ SCENARIOS = [
         expected=VANILLA_BUILD_HEIGHT,
         server_port=25576,
     ),
+    Scenario(
+        id="far-envelope",
+        description="full sparse representation envelope smoke without logical-height scans",
+        server_kind="modded",
+        server_config=FAR_BUILD_HEIGHT,
+        client_config=VANILLA_BUILD_HEIGHT,
+        expected=FAR_BUILD_HEIGHT,
+        server_port=25577,
+        required_server_markers=("ENDLESS_FAR_ENVELOPE_PASS",),
+    ),
+    Scenario(
+        id="cold-restart",
+        description="fresh dedicated-server JVM reloads sparse persisted world state at +/-8M",
+        server_kind="modded",
+        server_config=FAR_BUILD_HEIGHT,
+        client_config=VANILLA_BUILD_HEIGHT,
+        expected=FAR_BUILD_HEIGHT,
+        server_port=25578,
+        cold_restart=True,
+    ),
 ]
+
+# Reuse every gameplay assertion, including real client prediction and render
+# routing, at million scale. Keep the fast +/-8M representation smoke separate.
+SCENARIOS.append(Scenario(
+    id="million-gameplay",
+    description="real client placement/break, prediction, render routing and mechanics at +/-1M",
+    server_kind="modded",
+    server_config=MILLION_BUILD_HEIGHT,
+    client_config=VANILLA_BUILD_HEIGHT,
+    expected=MILLION_BUILD_HEIGHT,
+    server_port=25579,
+    required_server_markers=SCENARIOS[0].required_server_markers,
+    required_client_markers=SCENARIOS[0].required_client_markers,
+    gameplay=True,
+))
+
+SCENARIOS.append(Scenario(
+    id="full-envelope-gameplay",
+    description="real client persistence, prediction and render-graph traversal at the full +/-8M envelope",
+    server_kind="modded",
+    server_config=FAR_BUILD_HEIGHT,
+    client_config=VANILLA_BUILD_HEIGHT,
+    expected=FAR_BUILD_HEIGHT,
+    server_port=25580,
+    required_server_markers=SCENARIOS[0].required_server_markers,
+    required_client_markers=SCENARIOS[0].required_client_markers,
+    gameplay=True,
+))
+
+SCENARIOS.append(Scenario(
+    id="same-jvm-rejoin",
+    description="singleplayer save/leave/reopen in one client JVM preserves a real block at Y=1,000,000",
+    server_kind="integrated",
+    server_config=None,
+    client_config=MILLION_BUILD_HEIGHT,
+    expected=MILLION_BUILD_HEIGHT,
+    server_port=0,
+    required_client_markers=(SAME_JVM_REJOIN_PASS_MARKER,),
+    integrated_rejoin=True,
+))
+
+
+@contextmanager
+def checkout_lock(root: Path):
+    """Do not let another run erase this run's live worlds or evidence."""
+    lock_path = root / "build" / "live-join.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as lock:
+        lock.write(b"0")
+        lock.flush()
+        lock.seek(0)
+        try:
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            raise RuntimeError("another live verification run owns this checkout") from exc
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def verify_receipts(directory: Path, head: str) -> None:
+    expected = {f"{target}--{scenario.id}.pass" for target in TARGETS for scenario in SCENARIOS}
+    actual = {p.name for p in directory.glob("*.pass")}
+    if expected != actual:
+        raise RuntimeError(f"scenario receipts differ: missing={sorted(expected-actual)} extra={sorted(actual-expected)}")
+    for name in sorted(expected):
+        if (directory / name).read_text(encoding="utf-8").strip() != head:
+            raise RuntimeError(f"stale scenario receipt: {name}")
 
 
 class OutputPump:
-    def __init__(self, process: subprocess.Popen[str], prefix: str) -> None:
+    def __init__(self, process: subprocess.Popen[str], prefix: str, log_path: Path | None = None) -> None:
         self.process = process
         self.prefix = prefix
         self.lines: queue.Queue[str] = queue.Queue()
+        self.history: list[str] = []
+        self.log_path = log_path
         self.thread = threading.Thread(target=self._read, daemon=True)
         self.thread.start()
 
     def _read(self) -> None:
         assert self.process.stdout is not None
-        for line in self.process.stdout:
-            print(f"[{self.prefix}] {line}", end="", flush=True)
-            self.lines.put(line)
+        log = self.log_path.open("w", encoding="utf-8") if self.log_path else None
+        try:
+            for line in self.process.stdout:
+                if log:
+                    log.write(line)
+                    log.flush()
+                print(f"[{self.prefix}] {line}", end="", flush=True)
+                self.history.append(line)
+                self.lines.put(line)
+        finally:
+            if log:
+                log.close()
 
-    def wait_for(self, markers: tuple[str, ...], timeout: int) -> str | None:
+    def wait_for(
+        self,
+        markers: tuple[str, ...],
+        timeout: int,
+        fail_markers: tuple[str, ...] = (),
+    ) -> str | None:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            if self.process.poll() is not None and self.lines.empty():
+            if self.exhausted():
                 return None
             try:
-                line = self.lines.get(timeout=min(1.0, deadline - time.monotonic()))
+                line = self.lines.get(timeout=max(0.001, min(1.0, deadline - time.monotonic())))
             except queue.Empty:
                 continue
+            if any(marker in line for marker in fail_markers):
+                raise RuntimeError(
+                    f"{self.prefix}: process reported failure: {line.rstrip()}"
+                )
             if any(marker in line for marker in markers):
                 return line
         return None
+
+    def poll_for(self, markers: tuple[str, ...]) -> str | None:
+        while True:
+            try:
+                line = self.lines.get_nowait()
+            except queue.Empty:
+                return None
+            if any(marker in line for marker in markers):
+                return line
+
+    def wait_until_seen(
+        self, markers: tuple[str, ...], timeout: int, fail_markers: tuple[str, ...] = ()
+    ) -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            history = list(self.history)
+            failure = next((line for line in history if any(m in line for m in fail_markers)), None)
+            if failure is not None:
+                raise RuntimeError(f"{self.prefix}: process reported failure: {failure.rstrip()}")
+            missing = [marker for marker in markers if not any(marker in line for line in history)]
+            if not missing:
+                return
+            if self.process.poll() is not None and not self.thread.is_alive():
+                break
+            time.sleep(0.1)
+        missing = [marker for marker in markers if not any(marker in line for line in self.history)]
+        raise RuntimeError(f"{self.prefix}: missing required marker(s): {missing}")
+
+    def exhausted(self) -> bool:
+        return (
+            self.process.poll() is not None
+            and not self.thread.is_alive()
+            and self.lines.empty()
+        )
+
+
+def wait_for_live_join_outcome(
+    client_output: OutputPump,
+    server_output: OutputPump,
+    timeout: int,
+    label: str,
+) -> str | None:
+    """Wait for the client result while failing immediately on server crashes."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        server_failure = server_output.poll_for(SERVER_FATAL_MARKERS)
+        if server_failure is not None:
+            raise RuntimeError(
+                f"{label}: server reported failure: {server_failure.rstrip()}"
+            )
+
+        outcome = client_output.poll_for(CLIENT_OUTCOME_MARKERS)
+        if outcome is not None:
+            return outcome
+
+        # A heavily loaded dev/CI host can occasionally drop the connection
+        # before the login query is handled at all. Distinguish that transport
+        # failure from a real Endless assertion: once any Endless test marker
+        # has been emitted, the attempt is authoritative and must not retry.
+        server_history = list(server_output.history)
+        client_history = list(client_output.history)
+        disconnected = any(
+            marker in line for marker in SERVER_DISCONNECT_MARKERS for line in server_history
+        )
+        test_progress = any("ENDLESS_" in line for line in client_history)
+        if disconnected and not test_progress:
+            # Give the client pump a short grace period so a concurrently
+            # emitted FAIL marker always wins over transport classification.
+            time.sleep(0.5)
+            outcome = client_output.poll_for(CLIENT_OUTCOME_MARKERS)
+            if outcome is not None:
+                return outcome
+            if not any("ENDLESS_" in line for line in client_output.history):
+                raise TransientPreLoginFailure(
+                    f"{label}: connection dropped before Endless login verification began"
+                )
+
+        if server_output.exhausted():
+            raise RuntimeError(
+                f"{label}: server exited before the client reported an outcome"
+            )
+        if client_output.exhausted():
+            return None
+
+        time.sleep(0.1)
+    return None
 
 
 def command(root: Path, task: str) -> list[str]:
@@ -247,7 +496,10 @@ def prepare_server(module_dir: Path, scenario: Scenario) -> None:
         f"server-port={scenario.server_port}\n"
         "level-name=live-join-world\n"
         f"motd=Endless live join test ({scenario.server_kind})\n"
-        "spawn-protection=0\n",
+        "spawn-protection=0\n"
+        "view-distance=4\n"
+        "simulation-distance=4\n"
+        "allow-flight=true\n",
         encoding="utf-8",
     )
     if scenario.server_kind == "vanilla":
@@ -263,65 +515,79 @@ def prepare_server(module_dir: Path, scenario: Scenario) -> None:
     write_endless_config(server_dir / "config", scenario.server_config)  # type: ignore[arg-type]
 
 
-def prepare_client(module_dir: Path, module: str, scenario: Scenario) -> None:
-    client_dir = module_dir / "run" / "live-join" / "client"
+def prepare_client_dir(client_dir: Path, module: str, config: dict) -> None:
     reset_dir(client_dir)
     # A fresh Minecraft directory otherwise opens the accessibility/narrator
-    # onboarding screen, which blocks quick-play and makes the test interactive.
+    # onboarding screen, which blocks automation and makes the test interactive.
     (client_dir / "options.txt").write_text(
         "narrator:0\n"
         "narratorHotkey:false\n"
         "onboardAccessibility:false\n"
-        "skipMultiplayerWarning:true\n",
+        "skipMultiplayerWarning:true\n"
+        "renderDistance:4\n"
+        "simulationDistance:5\n"
+        "maxFps:60\n",
         encoding="utf-8",
     )
-    write_endless_config(client_dir / "config", scenario.client_config)
+    write_endless_config(client_dir / "config", config)
     if module == "forge":
         # Forge's early-display window creates its own GL context before the
         # game launches and only reaches GL 4.6/4.5 core profiles; on the CI
         # runner's virtual display it times out ("Timed out trying to setup
         # the Game Window" in fmlearlydisplay), opens an unanswerable console
         # dialog, and kills the client. Disabling early window control defers
-        # window creation to Minecraft's own GLFW path, which works there
-        # (Fabric's client joins successfully on the same runner).
+        # window creation to Minecraft's own GLFW path, which works there.
         (client_dir / "config" / "fml.toml").write_text(
             "earlyWindowControl = false\n", encoding="utf-8"
         )
 
 
-def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeout: int) -> None:
-    label = f"{target}/{scenario.id}"
-    print(f"Preparing {label}: {scenario.description}", flush=True)
-    prepare_server(root / module, scenario)
-    prepare_client(root / module, module, scenario)
+def prepare_client(module_dir: Path, module: str, scenario: Scenario) -> None:
+    prepare_client_dir(
+        module_dir / "run" / "live-join" / "client", module, scenario.client_config
+    )
 
-    compile_cmd = command(root, f":{module}:classes")
-    subprocess.run(compile_cmd, cwd=root, check=True)
 
+def prepare_integrated_client(module_dir: Path, module: str, scenario: Scenario) -> None:
+    prepare_client_dir(
+        module_dir / "run" / "live-rejoin" / "client", module, scenario.client_config
+    )
+
+
+def scenario_env(scenario: Scenario, cold_phase: str = "") -> dict[str, str]:
     env = dict(os.environ)
     env["ENDLESS_TEST_EXPECTED_MIN"] = str(scenario.expected["minBuildHeight"])
     env["ENDLESS_TEST_EXPECTED_MAX"] = str(scenario.expected["maxBuildHeight"])
     env["ENDLESS_TEST_PORT"] = str(scenario.server_port)
-    env["ENDLESS_TEST_PRESEED_STALE"] = (
-        "true" if scenario.id == "baseline-no-endless" else "false"
-    )
+    env["ENDLESS_TEST_PRESEED_STALE"] = "true" if scenario.id == "baseline-no-endless" else "false"
+    env["ENDLESS_TEST_EXTREME"] = "true" if scenario.gameplay else "false"
+    env["ENDLESS_TEST_WAYSTONES"] = "true" if scenario.gameplay else "false"
+    env["ENDLESS_TEST_FAR"] = "true" if scenario.id == "far-envelope" else "false"
+    env["ENDLESS_TEST_COLD_RESTART_PHASE"] = cold_phase
+    env["ENDLESS_TEST_SAME_JVM_REJOIN"] = "true" if scenario.integrated_rejoin else "false"
+    return env
 
+
+def run_live_session(
+    root: Path, target: str, module: str, scenario: Scenario, timeout: int, env: dict[str, str],
+    required_server_markers: tuple[str, ...] = (), required_client_markers: tuple[str, ...] = (),
+) -> None:
+    label = f"{target}/{scenario.id}" + (f"/phase-{env['ENDLESS_TEST_COLD_RESTART_PHASE']}" if env.get("ENDLESS_TEST_COLD_RESTART_PHASE") else "")
+    evidence = root / "build" / "live-join-evidence" / label
+    evidence.mkdir(parents=True, exist_ok=True)
     if scenario.server_kind == "vanilla":
         server_dir = root / module / "run" / "live-join" / "server"
         jar = Path((server_dir / "vanilla-server-jar.txt").read_text(encoding="utf-8"))
         java = shutil.which("java")
         if java is None:
             raise RuntimeError("java not found on PATH for the vanilla server")
-        server = popen(
-            [java, "-Xmx1536m", "-jar", jar, "nogui"],
-            server_dir,
-        )
+        server = popen([java, "-Xmx1536m", "-jar", jar, "nogui"], server_dir, env=env)
     else:
-        server = popen(command(root, f":{module}:runLiveJoinTestServer"), root)
-    server_output = OutputPump(server, f"{label}/server")
+        server = popen(command(root, f":{module}:runLiveJoinTestServer"), root, env=env)
+    server_output = OutputPump(server, f"{label}/server", evidence / "server.log")
     client: subprocess.Popen[str] | None = None
     try:
-        if server_output.wait_for(SERVER_READY_MARKERS, timeout) is None:
+        if server_output.wait_for(SERVER_READY_MARKERS, timeout, fail_markers=SERVER_FATAL_MARKERS) is None:
             raise RuntimeError(f"{label}: server did not become ready")
 
         client_cmd = command(root, f":{module}:runLiveJoinTestClient")
@@ -332,18 +598,17 @@ def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeo
             client_cmd = [xvfb, "-a", *client_cmd]
 
         client = popen(client_cmd, root, env=env)
-        client_output = OutputPump(client, f"{label}/client")
-        outcome = client_output.wait_for(
-            (PASS_MARKER, FAIL_MARKER, PRE_LOGIN_FAIL_MARKER), timeout)
+        client_output = OutputPump(client, f"{label}/client", evidence / "client.log")
+        outcome = wait_for_live_join_outcome(client_output, server_output, timeout, label)
         if outcome is None:
             raise RuntimeError(f"{label}: client did not report a live-join outcome")
         if PASS_MARKER not in outcome:
             raise RuntimeError(f"{label}: client reported failure: {outcome.rstrip()}")
-        # PASS is authoritative: the client already proved the required
-        # runtime state, so the supervisor terminates the process tree itself.
-        # Requiring a natural exit previously made Forge fail after PASS
-        # (mc.stop() does not reliably end the Gradle userdev JVM promptly),
-        # which masked a passing scenario as red CI.
+
+        if required_server_markers:
+            server_output.wait_until_seen(required_server_markers, min(timeout, 90), SERVER_FATAL_MARKERS)
+        if required_client_markers:
+            client_output.wait_until_seen(required_client_markers, min(timeout, 30), (FAIL_MARKER, PRE_LOGIN_FAIL_MARKER))
         print(f"{label}: PASS ({outcome.rstrip()})", flush=True)
         stop_tree(client)
         client = None
@@ -351,6 +616,117 @@ def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeo
         if client is not None:
             stop_tree(client)
         stop_tree(server, graceful_server=True)
+
+
+def run_integrated_rejoin(
+    root: Path, target: str, module: str, scenario: Scenario, timeout: int, env: dict[str, str]
+) -> None:
+    label = f"{target}/{scenario.id}"
+    evidence = root / "build" / "live-join-evidence" / label
+    evidence.mkdir(parents=True, exist_ok=True)
+    client_cmd = command(root, f":{module}:runSameJvmRejoinTestClient")
+    if os.name != "nt" and not os.environ.get("DISPLAY"):
+        xvfb = shutil.which("xvfb-run")
+        if xvfb is None:
+            raise RuntimeError("DISPLAY is unset and xvfb-run is not installed")
+        client_cmd = [xvfb, "-a", *client_cmd]
+
+    client = popen(client_cmd, root, env=env)
+    output = OutputPump(client, f"{label}/client", evidence / "client.log")
+    try:
+        line = output.wait_for(
+            (SAME_JVM_REJOIN_PASS_MARKER,),
+            timeout,
+            fail_markers=(
+                SAME_JVM_REJOIN_FAIL_MARKER,
+                "Encountered an unexpected exception",
+                "This crash report has been saved to:",
+                "Critical injection failure",
+                'because "this.modelGroups" is null',
+                "BUILD FAILED",
+            ),
+        )
+        if line is None:
+            raise RuntimeError(f"{label}: client did not finish same-JVM rejoin verification")
+        output.wait_until_seen(
+            scenario.required_client_markers, min(timeout, 60), (SAME_JVM_REJOIN_FAIL_MARKER,)
+        )
+        print(f"{label}: PASS ({line.rstrip()})", flush=True)
+    finally:
+        stop_tree(client)
+
+
+def _run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeout: int) -> None:
+    label = f"{target}/{scenario.id}"
+    print(f"Preparing {label}: {scenario.description}", flush=True)
+    env = scenario_env(scenario, "A" if scenario.cold_restart else "")
+
+    if scenario.integrated_rejoin:
+        prepare_integrated_client(root / module, module, scenario)
+        compile_cmd = command(root, f":{module}:classes")
+        subprocess.run(compile_cmd, cwd=root, env=env, check=True, timeout=max(timeout, 600))
+        run_integrated_rejoin(root, target, module, scenario, timeout, env)
+        return
+
+    prepare_server(root / module, scenario)
+    prepare_client(root / module, module, scenario)
+    compile_cmd = command(root, f":{module}:classes")
+    subprocess.run(compile_cmd, cwd=root, env=env, check=True, timeout=max(timeout, 600))
+
+    if not scenario.cold_restart:
+        try:
+            run_live_session(
+                root, target, module, scenario, timeout, env,
+                scenario.required_server_markers, scenario.required_client_markers,
+            )
+        except TransientPreLoginFailure as first_error:
+            # Retry exactly once, from a virgin world/client directory, and
+            # only when the first attempt died before any Endless test marker.
+            # Assertion failures and post-login stalls are never retried.
+            print(f"{label}: transient pre-login transport failure; retrying once: {first_error}", flush=True)
+            prepare_server(root / module, scenario)
+            prepare_client(root / module, module, scenario)
+            run_live_session(
+                root, target, module, scenario, timeout, env,
+                scenario.required_server_markers, scenario.required_client_markers,
+            )
+        return
+
+    # Phase A saves and gracefully stops. Phase B deliberately reuses the same
+    # world directory but starts a brand-new dedicated-server JVM.
+    run_live_session(root, target, module, scenario, timeout, env, ("ENDLESS_COLD_RESTART_PHASE_A_PASS",))
+    prepare_client(root / module, module, scenario)
+    phase_b_env = scenario_env(scenario, "B")
+    run_live_session(root, target, module, scenario, timeout, phase_b_env, ("ENDLESS_COLD_RESTART_PHASE_B_PASS",))
+
+
+def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeout: int) -> None:
+    evidence = root / "build" / "live-join-evidence" / target / scenario.id
+    evidence.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic()
+    result = {
+        "target": target, "scenario": scenario.id,
+        "head": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(),
+        "dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=root, text=True).strip()),
+        "expected": scenario.expected, "status": "running",
+        "required_server_markers": scenario.required_server_markers,
+        "required_client_markers": scenario.required_client_markers,
+    }
+    try:
+        _run_scenario(root, target, module, scenario, timeout)
+        result["status"] = "pass"
+    except BaseException as exc:
+        result.update(status="fail", error=str(exc))
+        raise
+    finally:
+        result["elapsed_seconds"] = round(time.monotonic() - started, 3)
+        (evidence / "result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+        # Preserve diagnostics before the next scenario recreates its run dirs.
+        for role in ("client", "server"):
+            source = root / module / "run" / "live-join" / role
+            for folder in ("logs", "crash-reports"):
+                if (source / folder).is_dir():
+                    shutil.copytree(source / folder, evidence / role / folder, dirs_exist_ok=True)
 
 
 def run_target(root: Path, target: str, timeout: int) -> None:
@@ -364,15 +740,34 @@ def main() -> int:
     parser.add_argument("--target", choices=TARGETS, action="append")
     parser.add_argument("--scenario", choices=[s.id for s in SCENARIOS], action="append")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
+    parser.add_argument("--matrix", action="store_true", help="print the canonical CI matrix without launching Minecraft")
+    parser.add_argument("--verify-receipts", type=Path)
+    parser.add_argument("--head")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parents[1]
+    if args.matrix:
+        print(json.dumps({"target": list(TARGETS), "scenario": [s.id for s in SCENARIOS]}))
+        return 0
+    if args.verify_receipts:
+        if not args.head:
+            parser.error("--verify-receipts requires --head")
+        verify_receipts(args.verify_receipts, args.head)
+        return 0
+    if args.timeout <= 0:
+        parser.error("--timeout must be positive")
     targets = args.target or list(TARGETS)
     scenarios = [s for s in SCENARIOS if args.scenario is None or s.id in args.scenario]
-    for target in targets:
-        for scenario in scenarios:
-            run_scenario(root, target, TARGETS[target], scenario, args.timeout)
-    return 0
+    failures = []
+    with checkout_lock(root):
+        for target in targets:
+            for scenario in scenarios:
+                try:
+                    run_scenario(root, target, TARGETS[target], scenario, args.timeout)
+                except (RuntimeError, subprocess.SubprocessError, OSError) as exc:
+                    failures.append(f"{target}/{scenario.id}: {exc}")
+                    print(f"LIVE JOIN TEST FAILED: {failures[-1]}", file=sys.stderr)
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":

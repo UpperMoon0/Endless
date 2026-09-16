@@ -20,6 +20,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
       - name: Setup Java 17
@@ -30,6 +31,17 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          # Loom's mutable remap workspace contains process-owned lock and
+          # generated mapping files. Restoring it after a cancelled build can
+          # invalidate the Mixin AP input mid-configuration. Keep dependency
+          # caches warm, but always regenerate Loom state for this checkout.
+          gradle-home-cache-excludes: |
+            caches/fabric-loom
+
+      - name: Reset mutable Loom cache
+        shell: bash
+        run: rm -rf "$GRADLE_USER_HOME/caches/fabric-loom"
 
       - name: Configure CI Maven Central mirror
         shell: bash
@@ -45,6 +57,19 @@ jobs:
       - name: Build and test
         run: ./gradlew build --stacktrace --no-daemon
 
+      - name: Test verification harness and CI selection
+        run: python3 -m unittest discover -s tools -p 'test_*.py' -v
+
+      - name: Preserve build and test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-verification
+          path: |
+            common/build/test-results/**
+            common/build/reports/tests/**
+            build/reports/**
+
   metadata:
     name: Metadata drift check
     runs-on: ubuntu-latest
@@ -52,6 +77,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Check release metadata for stale claims
         shell: bash

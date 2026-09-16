@@ -3,10 +3,8 @@
   "id": "endless",
   "version": "${version}",
   "name": "Endless",
-  "description": "A Minecraft mod that customizes the world build height range. Extends the vertical world height through simple configuration, within the packed block position envelope.",
-  "authors": [
-    "NsTut"
-  ],
+  "description": "Sparse, practically unbounded vertical building for Minecraft 1.20.1 while preserving a vanilla-compatible dense core.",
+  "authors": ["NsTut"],
   "contact": {
     "homepage": "https://github.com/UpperMoon0/Endless",
     "issues": "https://github.com/UpperMoon0/Endless/issues"
@@ -15,26 +13,15 @@
   "icon": "assets/endless/icon.png",
   "environment": "*",
   "entrypoints": {
-    "main": [
-      "com.nstut.endless.fabric.EndlessFabric"
-    ],
-    "client": [
-      "com.nstut.endless.fabric.EndlessFabric"
-    ],
-    "server": [
-      "com.nstut.endless.fabric.EndlessFabric"
-    ]
+    "main": ["com.nstut.endless.fabric.EndlessFabric"],
+    "client": ["com.nstut.endless.fabric.EndlessFabricClient"]
   },
-  "mixins": [
-    "endless.mixins.json"
-  ],  
+  "mixins": ["endless.mixins.json"],
   "depends": {
     "fabricloader": ">=0.16.14",
     "minecraft": "=1.20.1",
     "java": ">=17",
     "architectury": ">=9.2.14",
     "fabric-api": "*"
-  },
-  "suggests": {
   }
 }

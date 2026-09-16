@@ -45,10 +45,11 @@ public final class LegacyWorldMigration {
     /**
      * Classify a raw legacy config before touching region files.
      *
-     * <p>Bounds are normalized to section boundaries without applying the new
-     * v0.4 guard band first. This preserves evidence such as [-2048, 2048),
-     * which would otherwise be silently rewritten to [-2032, 2032) before we
-     * had a chance to inspect the two unsafe edge sections.</p>
+     * <p>Bounds are normalized to section boundaries without applying the
+     * legacy dense guard band first. This preserves evidence such as
+     * [-2048, 2048), which would otherwise be silently rewritten to
+     * [-2032, 2032) before we had a chance to inspect the two unsafe edge
+     * sections.</p>
      *
      * <p>A MIGRATE result here is only a syntactic candidate. For a played
      * world, callers must still scan saved sections/heightmaps and pass the
@@ -69,10 +70,10 @@ public final class LegacyWorldMigration {
                 + ") cannot be reconstructed safely from the signed-byte section Y format");
         }
 
-        boolean inspectBottom = min < EndlessConfig.MIN_BUILD_HEIGHT_MIN;
-        boolean inspectTop = max > EndlessConfig.MAX_BUILD_HEIGHT_MAX;
-        int migratedMin = (int) Math.max(min, EndlessConfig.MIN_BUILD_HEIGHT_MIN);
-        int migratedMax = (int) Math.min(max, EndlessConfig.MAX_BUILD_HEIGHT_MAX);
+        boolean inspectBottom = min < EndlessConfig.DENSE_MIN_BUILD_HEIGHT;
+        boolean inspectTop = max > EndlessConfig.DENSE_MAX_BUILD_HEIGHT;
+        int migratedMin = (int) Math.max(min, EndlessConfig.DENSE_MIN_BUILD_HEIGHT);
+        int migratedMax = (int) Math.min(max, EndlessConfig.DENSE_MAX_BUILD_HEIGHT);
 
         if (inspectBottom || inspectTop) {
             return new Resolution(

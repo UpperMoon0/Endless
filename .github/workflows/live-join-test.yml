@@ -4,34 +4,55 @@ on:
   workflow_call:
   workflow_dispatch:
   pull_request:
-    paths:
-      - "common/**"
-      - "fabric/**"
-      - "forge/**"
-      - "tools/live_join_test.py"
-      - ".github/gradle/**"
-      - ".github/workflows/live-join-test.yml"
 
 # Real-client jobs are expensive and each PR synchronize supersedes every
 # earlier live-join result for that PR. Keep only the newest head running.
-# Reusable release invocations group by ref (master), which is already
-# serialized by the parent release workflow.
 concurrency:
   group: endless-live-join-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  select:
+    name: Select live verification
+    runs-on: ubuntu-24.04
+    outputs:
+      required: ${{ steps.plan.outputs.required }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          echo "matrix=$(python3 tools/live_join_test.py --matrix)" >> "$GITHUB_OUTPUT"
+          if [[ "$EVENT" == pull_request ]]; then
+            echo "required=$(python3 tools/ci_policy.py "$BASE" "$HEAD")" >> "$GITHUB_OUTPUT"
+          else
+            echo 'required=true' >> "$GITHUB_OUTPUT"
+          fi
+
   live-join:
-    timeout-minutes: 25
+    name: live-join (${{ matrix.target }}, ${{ matrix.scenario }})
+    needs: select
+    if: needs.select.outputs.required == 'true'
+    timeout-minutes: 30
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - target: fabric-1.20.1
-          - target: forge-1.20.1
+      # The scenarios are independent. Running them as separate matrix cells
+      # preserves the complete Fabric/Forge matrix while replacing five
+      # serial Minecraft client boots per loader with one boot per runner.
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -42,9 +63,18 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          # Let one matrix leg seed Gradle state for later runs; the other is
-          # read-only so parallel jobs never contend while saving the same cache.
-          cache-read-only: ${{ matrix.target == 'forge-1.20.1' }}
+          # One matrix cell may write the shared dependency cache; the other
+          # fifteen read it without contending during post-job cache saves.
+          cache-read-only: ${{ !(matrix.target == 'fabric-1.20.1' && matrix.scenario == 'extended-server') }}
+          # Never restore Loom's mutable process-owned workspace. A cancelled
+          # predecessor can leave a disowned lock and generated mapping paths
+          # that disappear while :common Mixin AP is compiling.
+          gradle-home-cache-excludes: |
+            caches/fabric-loom
+
+      - name: Reset mutable Loom cache
+        shell: bash
+        run: rm -rf "$GRADLE_USER_HOME/caches/fabric-loom"
 
       - name: Configure CI Maven Central mirror
         shell: bash
@@ -60,18 +90,86 @@ jobs:
       - name: Install virtual display
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
-      - name: Build mod once
-        run: ./gradlew build --no-daemon --no-configuration-cache
-
+      # tools/live_join_test.py compiles the selected loader exactly once.
+      # Do not run a redundant full ./gradlew build here; Validate already owns
+      # JUnit/build coverage and the live job only needs the selected runtime.
+      # The two extended cells additionally resolve canonical Waystones+Balm
+      # artifacts and exercise real high-Y placement/BE/network integration.
       - name: Run automatic real-client join test
-        run: python3 tools/live_join_test.py --target "${{ matrix.target }}"
+        env:
+          ENDLESS_TEST_EXTREME: ${{ (matrix.scenario == 'extended-server' || matrix.scenario == 'million-gameplay' || matrix.scenario == 'full-envelope-gameplay') && 'true' || 'false' }}
+          ENDLESS_TEST_WAYSTONES: ${{ (matrix.scenario == 'extended-server' || matrix.scenario == 'million-gameplay' || matrix.scenario == 'full-envelope-gameplay') && 'true' || 'false' }}
+        run: >-
+          python3 tools/live_join_test.py
+          --target "${{ matrix.target }}"
+          --scenario "${{ matrix.scenario }}"
+          --timeout 300
+
+      - name: Write exact-head scenario receipt
+        if: success()
+        env:
+          EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          TARGET: ${{ matrix.target }}
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          mkdir -p build/live-join-results
+          printf '%s\n' "$EXACT_HEAD" > "build/live-join-results/${TARGET}--${SCENARIO}.pass"
+
+      - name: Upload exact-head scenario receipt
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-join-result-${{ matrix.target }}-${{ matrix.scenario }}
+          path: build/live-join-results/*.pass
+          if-no-files-found: error
 
       - name: Upload test logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: live-join-${{ matrix.target }}
+          name: live-join-${{ matrix.target }}-${{ matrix.scenario }}
           path: |
+            build/live-join-evidence/**
             ${{ matrix.target == 'fabric-1.20.1' && 'fabric' || 'forge' }}/run/live-join/client/logs
             ${{ matrix.target == 'fabric-1.20.1' && 'fabric' || 'forge' }}/run/live-join/server/logs
           if-no-files-found: ignore
+
+
+  required-live-join:
+    name: Required live verification
+    if: always()
+    needs: [select, live-join]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require selected checks
+        env:
+          SELECTION: ${{ needs.select.result }}
+          REQUIRED: ${{ needs.select.outputs.required }}
+          MATRIX_RESULT: ${{ needs.live-join.result }}
+        run: |
+          test "$SELECTION" = success
+          if [[ "$REQUIRED" == true ]]; then
+            test "$MATRIX_RESULT" = success
+          else
+            test "$REQUIRED" = false
+            test "$MATRIX_RESULT" = skipped
+          fi
+
+      - uses: actions/checkout@v4
+        if: needs.select.outputs.required == 'true'
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Download exact-head scenario receipts
+        if: needs.select.outputs.required == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: live-join-result-*
+          path: build/live-join-results
+          merge-multiple: true
+
+      - name: Require every scenario at the exact PR head
+        if: needs.select.outputs.required == 'true'
+        env:
+          EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 tools/live_join_test.py --verify-receipts build/live-join-results --head "$EXACT_HEAD"

@@ -1,6 +1,5 @@
 modLoader = "javafml"
 loaderVersion = "[47,)"
-#issueTrackerURL = "https://github.com/UpperMoon0/Endless/issues"
 license = "All Rights Reserved"
 
 [[mods]]
@@ -9,11 +8,11 @@ version = "${version}"
 displayName = "Endless"
 authors = "NsTut"
 description = '''
-A Minecraft mod that customizes the world build height range.
-Extends the vertical world height through simple configuration, within
-the packed block position envelope.
-Set minimum/maximum build heights in config/endless.json; worlds remember
-the range they were played with.
+Sparse practical infinite build height for Minecraft 1.20.1.
+Keeps a bounded vanilla-compatible dense core and stores high-Y construction
+in dedicated 512-block vertical pages up to Y +/-8,000,000.
+Includes server-authoritative page sync, high-Y persistence, heightmaps,
+block/fluid/block-entity routing, and page-aware lighting.
 '''
 logoFile = "assets/endless/icon.png"
 

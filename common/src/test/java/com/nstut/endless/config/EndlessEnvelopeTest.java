@@ -7,16 +7,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Pins the config envelope to vanilla's DimensionType guard band. Vanilla
- * reserves one 16-block section at each packed-Y edge so that neighboring-block
- * operations (BlockPos.offset, light propagation) on the top or bottom block
- * cannot wrap into the opposite end of the 12-bit Y space.
- *
- * Separate from {@link EndlessConfigTest} because DimensionType's static
- * initialization requires vanilla registry bootstrap.
- */
+/** Pins the sparse logical envelope and vanilla-compatible dense core separately. */
 class EndlessEnvelopeTest {
 
     @BeforeAll
@@ -26,14 +19,28 @@ class EndlessEnvelopeTest {
     }
 
     @Test
-    void minMatchesDimensionTypeMinY() {
-        assertEquals(DimensionType.MIN_Y, EndlessConfig.MIN_BUILD_HEIGHT_MIN,
-            "minBuildHeight floor must equal DimensionType.MIN_Y");
+    void denseMinStillMatchesDimensionTypeGuardBand() {
+        assertEquals(DimensionType.MIN_Y, EndlessConfig.DENSE_MIN_BUILD_HEIGHT,
+            "dense min must remain on vanilla's guarded DimensionType envelope");
     }
 
     @Test
-    void maxMatchesDimensionTypeMaxYPlusOne() {
-        assertEquals(DimensionType.MAX_Y + 1, EndlessConfig.MAX_BUILD_HEIGHT_MAX,
-            "maxBuildHeight ceiling must equal DimensionType.MAX_Y + 1 (exclusive)");
+    void denseMaxStillMatchesDimensionTypeGuardBand() {
+        assertEquals(DimensionType.MAX_Y + 1, EndlessConfig.DENSE_MAX_BUILD_HEIGHT,
+            "dense max must remain on vanilla's guarded DimensionType envelope");
+    }
+
+    @Test
+    void logicalEnvelopeIsWiderThanDenseCore() {
+        assertEquals(-8_000_000, EndlessConfig.MIN_BUILD_HEIGHT_MIN);
+        assertEquals(8_000_000, EndlessConfig.MAX_BUILD_HEIGHT_MAX);
+        assertTrue(EndlessConfig.MIN_BUILD_HEIGHT_MIN < EndlessConfig.DENSE_MIN_BUILD_HEIGHT);
+        assertTrue(EndlessConfig.MAX_BUILD_HEIGHT_MAX > EndlessConfig.DENSE_MAX_BUILD_HEIGHT);
+    }
+
+    @Test
+    void denseCoreStillUsesAtMost254Sections() {
+        assertEquals(254,
+            (EndlessConfig.DENSE_MAX_BUILD_HEIGHT - EndlessConfig.DENSE_MIN_BUILD_HEIGHT) / 16);
     }
 }

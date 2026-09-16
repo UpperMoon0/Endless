@@ -1,27 +1,24 @@
 package com.nstut.endless.mixin;
 
 import com.nstut.endless.heights.EndlessHeights;
+import com.nstut.endless.heights.EndlessLogicalHeights;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelHeightAccessor;
+import net.minecraft.world.level.PathNavigationRegion;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
 
 @Mixin(LevelHeightAccessor.class)
 public interface LevelHeightAccessorMixin {
 
-    /**
-     * @author Endless
-     * @reason Use the effective (world-persisted or synced) min build height
-     */
+    /** @author Endless @reason Keep vanilla section-array origin on the persisted dense core. */
     @Overwrite
     default int getMinBuildHeight() {
-        return EndlessHeights.getMinBuildHeight();
+        return EndlessHeights.getDenseMinBuildHeight();
     }
 
-    /**
-     * @author Endless
-     * @reason Use effective height for section allocation and Y-range calculations
-     */
+    /** @author Endless @reason Keep vanilla section arrays bounded to the persisted dense core. */
     @Overwrite
     default int getHeight() {
         return EndlessHeights.getHeight();
@@ -29,17 +26,20 @@ public interface LevelHeightAccessorMixin {
 
     /**
      * @author Endless
-     * @reason Use effective build height bounds
+     * @reason Real worlds expose the user-configured logical build limit, while
+     * dense generation/chunk accessors must retain the persisted dense guard
+     * before indexing their bounded section arrays.
      */
     @Overwrite
     default boolean isOutsideBuildHeight(int y) {
-        return EndlessHeights.isOutsideBuildHeight(y);
+        if (EndlessLogicalHeights.isActive()
+            && ((Object) this instanceof Level || (Object) this instanceof PathNavigationRegion)) {
+            return EndlessHeights.isOutsideBuildHeight(y);
+        }
+        return EndlessHeights.isOutsideDenseBuildHeight(y);
     }
 
-    /**
-     * @author Endless
-     * @reason Use effective build height bounds for block positions
-     */
+    /** @author Endless @reason Apply the accessor-appropriate buildability test to positions. */
     @Overwrite
     default boolean isOutsideBuildHeight(BlockPos blockPos) {
         return isOutsideBuildHeight(blockPos.getY());

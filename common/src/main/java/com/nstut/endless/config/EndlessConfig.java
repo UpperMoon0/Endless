@@ -18,18 +18,29 @@ public class EndlessConfig {
     private static final String CONFIG_FILENAME = "endless.json";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-    /** Guard-banded packed-BlockPos range used by vanilla DimensionType. */
-    public static final int MIN_BUILD_HEIGHT_MIN = -2032;
-    public static final int MAX_BUILD_HEIGHT_MAX = 2032;
-    public static final int MAX_SECTIONS = 254;
+    /** v0.5 logical/sparse build envelope, kept inside Endless' signed-section representation. */
+    public static final int MIN_BUILD_HEIGHT_MIN = -8_000_000;
+    public static final int MAX_BUILD_HEIGHT_MAX = 8_000_000;
+
+    /**
+     * Vanilla-compatible dense Anvil envelope retained for terrain/chunk arrays and v0.4 migration.
+     * This is deliberately much smaller than the user-configurable logical range.
+     */
+    public static final int DENSE_MIN_BUILD_HEIGHT = -2032;
+    public static final int DENSE_MAX_BUILD_HEIGHT = 2032;
+    public static final int MAX_DENSE_SECTIONS = 254;
+
+    /** @deprecated Use {@link #MAX_DENSE_SECTIONS}; logical height is no longer section-array-sized. */
+    @Deprecated
+    public static final int MAX_SECTIONS = MAX_DENSE_SECTIONS;
 
     private static EndlessConfig instance;
     private BuildHeightConfig buildHeight = new BuildHeightConfig();
 
     // Migration bookkeeping is deliberately transient. rawLoadedBuildHeight
-    // preserves the exact pre-clamp evidence from disk until a pre-v0.4 world
-    // has been classified. normalizationWriteAllowed keeps the older safety
-    // guarantee that a malformed original is never overwritten when its
+    // preserves the exact pre-normalization evidence from disk until a pre-v0.4
+    // world has been classified. normalizationWriteAllowed keeps the older
+    // safety guarantee that a malformed original is never overwritten when its
     // backup could not be created.
     private transient BuildHeightConfig rawLoadedBuildHeight;
     private transient boolean normalizationPending;
@@ -146,7 +157,7 @@ public class EndlessConfig {
         return buildHeight;
     }
 
-    /** Exact values parsed from disk before v0.4 clamping/alignment. */
+    /** Exact values parsed from disk before v0.5 envelope/alignment normalization. */
     public BuildHeightConfig getRawLoadedBuildHeight() {
         return rawLoadedBuildHeight == null ? null : rawLoadedBuildHeight.copy();
     }
@@ -171,10 +182,10 @@ public class EndlessConfig {
         }
 
         public void clamp() {
-            minBuildHeight = Math.max(minBuildHeight, MIN_BUILD_HEIGHT_MIN);
-            maxBuildHeight = Math.min(maxBuildHeight, MAX_BUILD_HEIGHT_MAX);
-            long min = (long) minBuildHeight & ~15L;
-            long max = ((long) maxBuildHeight + 15L) & ~15L;
+            long min = Math.max((long) minBuildHeight, MIN_BUILD_HEIGHT_MIN);
+            long max = Math.min((long) maxBuildHeight, MAX_BUILD_HEIGHT_MAX);
+            min &= ~15L;
+            max = (max + 15L) & ~15L;
             minBuildHeight = (int) Math.max(min, MIN_BUILD_HEIGHT_MIN);
             maxBuildHeight = (int) Math.min(max, MAX_BUILD_HEIGHT_MAX);
             if (minBuildHeight >= maxBuildHeight) {

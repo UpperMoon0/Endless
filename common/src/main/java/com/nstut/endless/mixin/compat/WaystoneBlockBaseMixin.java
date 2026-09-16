@@ -13,16 +13,22 @@ public abstract class WaystoneBlockBaseMixin {
 
     /**
      * @author Endless
-     * @reason Waystones uses level.getHeight() which returns dimension height (384).
-     * With expanded build limits, this prevents placement above the vanilla max.
-     * Replace with the effective build range's max: the world-persisted,
-     * possibly server-authoritative range, not the live file config (which
-     * may have been shrunk after the world was created).
+     * @reason Waystones 1.20.1 uses Level#getHeight() as though it were an
+     * absolute top Y while checking the two-block-tall placement. Endless keeps
+     * that vanilla accessor bounded to the dense core, so Waystones must use the
+     * configured logical max instead. The external Waystones method selector is
+     * intentionally not remapped; the vanilla Level invocation is explicitly
+     * remapped so the hook also resolves in production jars.
      */
     @Redirect(
         method = "getStateForPlacement",
-        at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getHeight()I"),
-        require = 0
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/world/level/Level;getHeight()I",
+            remap = true
+        ),
+        require = 1,
+        remap = false
     )
     private int redirectGetHeight(Level level) {
         return EndlessHeights.getMaxBuildHeight();

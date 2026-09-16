@@ -21,26 +21,28 @@ class EndlessConfigTest {
     }
 
     @Test
-    void clampsMinBuildHeight_toPackedBlockPosEnvelope() {
+    void millionScaleRangeSurvivesNormalization() {
         EndlessConfig.BuildHeightConfig config = new EndlessConfig.BuildHeightConfig();
-        config.setMinBuildHeight(-5000000);
+        config.setMinBuildHeight(-5_000_000);
+        config.setMaxBuildHeight(5_000_000);
         config.clamp();
-        assertEquals(-2032, config.getMinBuildHeight(),
-            "minBuildHeight below the guarded packed Y envelope must clamp to -2032");
+        assertEquals(-5_000_000, config.getMinBuildHeight());
+        assertEquals(5_000_000, config.getMaxBuildHeight());
     }
 
     @Test
-    void clampsMaxBuildHeight_toPackedBlockPosEnvelope() {
+    void clampsOnlyAtSparseRepresentationEnvelope() {
         EndlessConfig.BuildHeightConfig config = new EndlessConfig.BuildHeightConfig();
-        config.setMaxBuildHeight(5000000);
+        config.setMinBuildHeight(-9_000_000);
+        config.setMaxBuildHeight(9_000_000);
         config.clamp();
-        assertEquals(2032, config.getMaxBuildHeight(),
-            "maxBuildHeight above the guarded packed Y envelope must clamp to 2032");
+        assertEquals(-8_000_000, config.getMinBuildHeight());
+        assertEquals(8_000_000, config.getMaxBuildHeight());
     }
 
     @Test
-    void maxIsExclusiveSoEnvelopeTopIsY2031() {
-        assertEquals(2031, EndlessConfig.MAX_BUILD_HEIGHT_MAX - 1);
+    void maxIsExclusiveSoEnvelopeTopIsY7999999() {
+        assertEquals(7_999_999, EndlessConfig.MAX_BUILD_HEIGHT_MAX - 1);
     }
 
     @Test
@@ -58,30 +60,31 @@ class EndlessConfigTest {
     @Test
     void normalizesToSectionBoundaries() {
         EndlessConfig.BuildHeightConfig config = new EndlessConfig.BuildHeightConfig();
-        config.setMinBuildHeight(-128);
+        config.setMinBuildHeight(-129);
         config.setMaxBuildHeight(620);
         config.clamp();
-        assertEquals(-128, config.getMinBuildHeight());
+        assertEquals(-144, config.getMinBuildHeight(),
+            "minBuildHeight should snap down to a 16-block section boundary");
         assertEquals(624, config.getMaxBuildHeight(),
             "maxBuildHeight should snap up to a 16-block section boundary");
     }
 
     @Test
-    void clampSurvivesIntegerMaxValue() {
+    void clampSurvivesIntegerExtremes() {
         EndlessConfig.BuildHeightConfig config = new EndlessConfig.BuildHeightConfig();
         config.setMinBuildHeight(Integer.MIN_VALUE);
         config.setMaxBuildHeight(Integer.MAX_VALUE);
         config.clamp();
-        assertEquals(-2032, config.getMinBuildHeight());
-        assertEquals(2032, config.getMaxBuildHeight(),
-            "maxBuildHeight must clamp to the envelope, not reset via overflow");
+        assertEquals(-8_000_000, config.getMinBuildHeight());
+        assertEquals(8_000_000, config.getMaxBuildHeight(),
+            "maxBuildHeight must clamp to the sparse envelope, not reset via overflow");
     }
 
     @Test
-    void sectionCapCoversFullEnvelope() {
-        int envelopeSpan = EndlessConfig.MAX_BUILD_HEIGHT_MAX - EndlessConfig.MIN_BUILD_HEIGHT_MIN;
-        assertEquals(EndlessConfig.MAX_SECTIONS * 16, envelopeSpan,
-            "getHeight() caps at MAX_SECTIONS*16, so the cap must cover the whole envelope");
+    void denseCapRemainsIndependentOfLogicalEnvelope() {
+        int denseSpan = EndlessConfig.DENSE_MAX_BUILD_HEIGHT - EndlessConfig.DENSE_MIN_BUILD_HEIGHT;
+        assertEquals(EndlessConfig.MAX_DENSE_SECTIONS * 16, denseSpan);
+        assertTrue(EndlessConfig.MAX_BUILD_HEIGHT_MAX - EndlessConfig.MIN_BUILD_HEIGHT_MIN > denseSpan);
     }
 
     @Test
@@ -120,15 +123,30 @@ class EndlessConfigTest {
         EndlessConfig config = new EndlessConfig();
         config.load(tempDir);
 
-        // Runtime access is safe immediately, but the disk evidence remains
-        // untouched until EndlessHeights has classified the world.
-        assertEquals(-2032, config.getBuildHeight().getMinBuildHeight());
-        assertEquals(2032, config.getBuildHeight().getMaxBuildHeight());
+        // v0.5 no longer clamps logical user intent to the old dense envelope.
+        // Migration separately projects/inspects this range before using it as
+        // the world's persistent vanilla dense core.
+        assertEquals(-2048, config.getBuildHeight().getMinBuildHeight());
+        assertEquals(2048, config.getBuildHeight().getMaxBuildHeight());
         assertEquals(legacyJson, Files.readString(configFile));
 
         EndlessConfig.BuildHeightConfig raw = config.getRawLoadedBuildHeight();
         assertNotNull(raw);
         assertEquals(-2048, raw.getMinBuildHeight());
         assertEquals(2048, raw.getMaxBuildHeight());
+    }
+
+    @Test
+    void loadPreservesConfiguredMillionScaleRange(@TempDir Path tempDir) throws IOException {
+        Path configFile = tempDir.resolve("endless.json");
+        Files.writeString(configFile, "{\"buildHeight\":{\"minBuildHeight\":-1000000,\"maxBuildHeight\":1000000}}");
+
+        EndlessConfig config = new EndlessConfig();
+        config.load(tempDir);
+
+        assertEquals(-1_000_000, config.getBuildHeight().getMinBuildHeight());
+        assertEquals(1_000_000, config.getBuildHeight().getMaxBuildHeight());
+        assertTrue(Files.readString(configFile).contains("1000000"),
+            "launch-time normalization must not rewrite a valid million-scale config to defaults/dense limits");
     }
 }

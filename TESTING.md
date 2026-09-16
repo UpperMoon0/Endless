@@ -14,9 +14,10 @@ test alone does not certify real player interaction at large heights.
 | Million gameplay | The same complete gameplay assertions in `[-1,048,576, 1,048,576)` | Reuses the extended scenario; bounded X/Z and vertical windows |
 | Representation envelope | Sparse access, POIs and page packet/storage round trips near ±8,000,000 | Lightweight smoke, no full-height scans |
 | Cold restart | Blocks, fluids, block entities, redstone, light and POIs near ±8,000,000 after a fresh server JVM | Two launches reuse only that scenario's saved world |
+| Same-JVM rejoin | Automated million-height edit on a migrated legacy `[-2032,2032)` dense layout, save/close/reopen in one client JVM, 254-section dense-array preservation, generated-terrain canary equality, sparse resync and dense render traversal | One integrated-client lifecycle per loader; no manual navigation |
 | Compatibility baselines | Vanilla-range Endless server and genuine vanilla server, including stale client range reset | No gameplay compatibility dependencies |
 
-Every live scenario runs on Fabric and Forge: **16 required cells**. The same-jvm-rejoin cell is fully automated: it creates/opens the singleplayer world, performs the million-height sparse edit, saves, shuts down the integrated server, reopens the same save in the same client JVM, returns to dense terrain, and verifies persistence/render state without manual menu navigation or clicks. The
+Every live scenario runs on Fabric and Forge: **16 required cells**. The same-jvm-rejoin cell is fully automated: it creates/opens the singleplayer world, migrates the save to the legacy `[-2032,2032)` dense layout, verifies the resulting 254-section dense array, snapshots normal generated terrain as a dense canary, performs the million-height sparse edit, saves, shuts down the integrated server, reopens the same save in the same client JVM, returns to dense terrain, and proves both the sparse edit and the original dense terrain survived unchanged and traversed the renderer again without manual menu navigation or clicks. The
 scenario list in `tools/live_join_test.py` generates both the CI matrix and the
 receipt requirements, preventing the gate from silently omitting a new scenario.
 Missing, extra and stale receipts fail verification. CI cancels superseded PR

@@ -5,6 +5,7 @@ Endless 0.5
 - Preserved valid million-scale configuration values across launch instead of clamping them to the old ±2032 dense envelope.
 - Kept fresh v0.5 worlds on a vanilla `[-64,320)` dense chunk core regardless of logical range, so widening the config does not widen `LevelChunkSection[]`.
 - Preserved wider historical dense cores for upgraded worlds only when required for legacy Anvil safety; that internal range never widens the current configured build limit.
+- Fixed same-JVM high-Y save/rejoin corruption so legacy/wide dense chunks and normal generated terrain remain intact when sparse million-height data is saved, the world is closed, and the same save is reopened.
 - Added dedicated compressed-NBT sparse page persistence outside vanilla Anvil section serialization.
 - Added an extended BlockPos network encoding for high-Y positions while preserving vanilla encoding in the normal range.
 - Added high-Y block, fluid and block-entity access through normal Level/LevelChunk APIs.

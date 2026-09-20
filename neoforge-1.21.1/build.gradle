@@ -43,7 +43,7 @@ repositories {
 }
 
 dependencies {
-    neoForge "net.neoforged:neoforge:$neoforge_version"
+    add("neoForge", "net.neoforged:neoforge:$neoforge_version")
     modImplementation "dev.architectury:architectury-neoforge:$architectury_api_version"
 
     implementation project(':common')

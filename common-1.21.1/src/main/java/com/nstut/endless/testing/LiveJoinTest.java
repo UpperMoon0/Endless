@@ -369,7 +369,7 @@ public final class LiveJoinTest {
 
     private static boolean waystoneStatus(Level level) {
         try {
-            Block waystone = BuiltInRegistries.BLOCK.get(new ResourceLocation("waystones", "waystone"));
+            Block waystone = BuiltInRegistries.BLOCK.get(ResourceLocation.fromNamespaceAndPath("waystones", "waystone"));
             BlockPos base = LiveHighYServerTest.upperWaystoneBasePos();
             BlockPos top = LiveHighYServerTest.upperWaystoneTopPos();
             return waystone != Blocks.AIR

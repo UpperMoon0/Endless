@@ -459,7 +459,7 @@ public final class LiveHighYServerTest {
         if (!Boolean.parseBoolean(System.getProperty(WAYSTONES_SYSTEM_PROPERTY, "false"))) return;
 
         Class.forName("net.blay09.mods.waystones.block.WaystoneBlockBase");
-        Item item = BuiltInRegistries.ITEM.get(new ResourceLocation("waystones", "waystone"));
+        Item item = BuiltInRegistries.ITEM.get(ResourceLocation.fromNamespaceAndPath("waystones", "waystone"));
         require(item instanceof BlockItem, "waystones:waystone item was not registered as a BlockItem");
         Block waystoneBlock = ((BlockItem) item).getBlock();
 

@@ -2,6 +2,7 @@ package com.nstut.endless.vertical;
 
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
@@ -44,7 +45,7 @@ public final class VerticalPageDiskStorage implements VerticalPagePersistence<Le
             return Optional.empty();
         }
 
-        CompoundTag rootTag = NbtIo.readCompressed(file.toFile());
+        CompoundTag rootTag = NbtIo.readCompressed(file, NbtAccounter.unlimitedHeap());
         int version = rootTag.getInt("FormatVersion");
         if (version != FORMAT_VERSION) {
             throw new IOException("Unsupported Endless vertical-page format " + version + " at " + file);
@@ -105,7 +106,7 @@ public final class VerticalPageDiskStorage implements VerticalPagePersistence<Le
         Path file = file(pos);
         Files.createDirectories(file.getParent());
         Path temp = file.resolveSibling(file.getFileName() + ".tmp");
-        NbtIo.writeCompressed(rootTag, temp.toFile());
+        NbtIo.writeCompressed(rootTag, temp);
         try {
             Files.move(temp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } catch (AtomicMoveNotSupportedException ignored) {

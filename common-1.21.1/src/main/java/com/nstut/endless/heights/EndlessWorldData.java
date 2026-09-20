@@ -1,6 +1,7 @@
 package com.nstut.endless.heights;
 
 import com.nstut.endless.config.EndlessConfig;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.saveddata.SavedData;
 
@@ -40,7 +41,7 @@ public class EndlessWorldData extends SavedData {
     }
 
     @Override
-    public CompoundTag save(CompoundTag tag) {
+    public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
         tag.putInt("MinBuildHeight", minBuildHeight);
         tag.putInt("MaxBuildHeight", maxBuildHeight);
         return tag;

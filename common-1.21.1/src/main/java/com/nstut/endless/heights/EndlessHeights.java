@@ -2,8 +2,10 @@ package com.nstut.endless.heights;
 
 import com.nstut.endless.config.EndlessConfig;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.IOException;
@@ -229,7 +231,14 @@ public final class EndlessHeights {
     /** Mirror the never-shrinking dense core into normal SavedData after levels exist. */
     public static void syncWorldData(MinecraftServer server) {
         EndlessWorldData data = server.overworld().getDataStorage()
-            .computeIfAbsent(EndlessWorldData::load, EndlessWorldData::new, EndlessWorldData.DATA_NAME);
+            .computeIfAbsent(
+                new SavedData.Factory<>(
+                    EndlessWorldData::new,
+                    (tag, registries) -> EndlessWorldData.load(tag),
+                    null
+                ),
+                EndlessWorldData.DATA_NAME
+            );
         if (data.getMinBuildHeight() != getDenseMinBuildHeight()
             || data.getMaxBuildHeight() != getDenseMaxBuildHeight()) {
             data.set(getDenseMinBuildHeight(), getDenseMaxBuildHeight());
@@ -251,7 +260,7 @@ public final class EndlessHeights {
         }
 
         try {
-            CompoundTag root = NbtIo.readCompressed(file.toFile());
+            CompoundTag root = NbtIo.readCompressed(file, NbtAccounter.unlimitedHeap());
             CompoundTag data = root.getCompound("data");
             if (!data.contains("MinBuildHeight") || !data.contains("MaxBuildHeight")) {
                 throw new IOException("persisted dense range file is missing MinBuildHeight/MaxBuildHeight");

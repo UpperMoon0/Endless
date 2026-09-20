@@ -5,7 +5,9 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.storage.RegionFile;
+import net.minecraft.world.level.chunk.storage.RegionStorageInfo;
 
 import java.io.DataInputStream;
 import java.io.IOException;
@@ -21,6 +23,8 @@ final class LegacyRegionScanner {
     private static final Pattern REGION_FILE = Pattern.compile("r\\.(-?\\d+)\\.(-?\\d+)\\.mca");
     private static final int BOTTOM_EDGE_SECTION_Y = -128;
     private static final int TOP_EDGE_SECTION_Y = 127;
+    private static final RegionStorageInfo LEGACY_SCAN_INFO =
+        new RegionStorageInfo("endless_legacy_scan", Level.OVERWORLD, "region");
 
     private LegacyRegionScanner() {
     }
@@ -84,7 +88,7 @@ final class LegacyRegionScanner {
                 throw new IOException("Invalid region filename: " + regionPath, e);
             }
 
-            try (RegionFile region = new RegionFile(regionPath, regionPath.getParent(), false)) {
+            try (RegionFile region = new RegionFile(LEGACY_SCAN_INFO, regionPath, regionPath.getParent(), false)) {
                 for (int localX = 0; localX < 32; localX++) {
                     for (int localZ = 0; localZ < 32; localZ++) {
                         ChunkPos pos = new ChunkPos((regionX << 5) + localX, (regionZ << 5) + localZ);
@@ -132,7 +136,7 @@ final class LegacyRegionScanner {
                 throw new IOException("Invalid region filename: " + regionPath, e);
             }
 
-            try (RegionFile region = new RegionFile(regionPath, regionPath.getParent(), false)) {
+            try (RegionFile region = new RegionFile(LEGACY_SCAN_INFO, regionPath, regionPath.getParent(), false)) {
                 for (int localX = 0; localX < 32; localX++) {
                     for (int localZ = 0; localZ < 32; localZ++) {
                         ChunkPos pos = new ChunkPos((regionX << 5) + localX, (regionZ << 5) + localZ);

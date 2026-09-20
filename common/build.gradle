@@ -1,16 +1,21 @@
-architectury {
-    common rootProject.enabled_platforms.split(',')
+plugins {
+    id 'java-library'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+    withSourcesJar()
+}
+
+base {
+    archivesName = "$rootProject.archives_name-common"
 }
 
 dependencies {
-    // We depend on Fabric Loader here to use the Fabric @Environment annotations,
-    // which get remapped to the correct annotations on each platform.
-    // Do NOT use other classes from Fabric Loader.
-    modImplementation "net.fabricmc:fabric-loader:$rootProject.fabric_loader_version"
-
-    modImplementation "dev.architectury:architectury:$rootProject.architectury_api_version"
-
-    testImplementation "org.junit.jupiter:junit-jupiter:5.10.2"
+    implementation "com.google.code.gson:gson:2.10.1"
+    testImplementation platform("org.junit:junit-bom:5.11.4")
+    testImplementation "org.junit.jupiter:junit-jupiter"
     testRuntimeOnly "org.junit.platform:junit-platform-launcher"
 }
 
@@ -21,27 +26,6 @@ test {
     }
 }
 
-/*
- * The common module is shared source, not a runnable loader.
- *
- * Loom is intentionally applied to common because Architectury needs its
- * mapped/transformed configurations. Do not remove Loom to get rid of these
- * run tasks.
- *
- * If someone explicitly invokes :common:runClient/:common:runServer, fail
- * clearly instead of starting a misleading Fabric-like development runtime.
- */
-tasks.matching {
-    it.name == 'runClient' || it.name == 'runServer'
-}.configureEach {
-    group = null
-
-    doFirst {
-        throw new GradleException(
-            "The :common project is not runnable. " +
-            "Use :fabric:${name}, :forge:${name}, " +
-            "runFabric${name == 'runClient' ? 'Client' : 'Server'}, or " +
-            "runForge${name == 'runClient' ? 'Client' : 'Server'}."
-        )
-    }
+tasks.withType(JavaCompile).configureEach {
+    options.release = 17
 }

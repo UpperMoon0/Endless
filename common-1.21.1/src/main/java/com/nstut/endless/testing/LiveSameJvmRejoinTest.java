@@ -149,7 +149,8 @@ public final class LiveSameJvmRejoinTest {
             WORLD_ID,
             settings,
             new WorldOptions(0x5EEDL, true, false),
-            WorldPresets::createNormalWorldDimensions
+            WorldPresets::createNormalWorldDimensions,
+            mc.screen
         );
     }
 
@@ -199,7 +200,7 @@ public final class LiveSameJvmRejoinTest {
                 return;
             }
             bootstrapClearIssued = true;
-            mc.clearLevel();
+            mc.disconnect();
             return;
         }
         if (mc.level != null || mc.hasSingleplayerServer()) {
@@ -214,7 +215,7 @@ public final class LiveSameJvmRejoinTest {
             writeLegacyDenseRangeMetadata(mc);
             bootstrapReopenIssued = true;
             setStage(Stage.WAIT_FIRST_JOIN);
-            mc.createWorldOpenFlows().loadLevel(mc.screen, WORLD_ID);
+            mc.createWorldOpenFlows().openWorld(WORLD_ID, () -> {});
         }
     }
 
@@ -227,7 +228,7 @@ public final class LiveSameJvmRejoinTest {
             data.putInt("MaxBuildHeight", 2032);
             CompoundTag root = new CompoundTag();
             root.put("data", data);
-            NbtIo.writeCompressed(root, dataDir.resolve("endless_build_heights.dat").toFile());
+            NbtIo.writeCompressed(root, dataDir.resolve("endless_build_heights.dat"));
             System.out.println("ENDLESS_SAME_JVM_LEGACY_LAYOUT_FIXTURE denseMin=-2032 denseMax=2032");
         } catch (IOException e) {
             throw new IllegalStateException("could not write legacy dense-range fixture", e);
@@ -383,7 +384,7 @@ public final class LiveSameJvmRejoinTest {
                 return;
             }
             clearIssued = true;
-            mc.clearLevel();
+            mc.disconnect();
             return;
         }
         if (mc.level != null || mc.hasSingleplayerServer()) {
@@ -397,7 +398,7 @@ public final class LiveSameJvmRejoinTest {
             }
             reopenIssued = true;
             setStage(Stage.WAIT_SECOND_JOIN);
-            mc.createWorldOpenFlows().loadLevel(mc.screen, WORLD_ID);
+            mc.createWorldOpenFlows().openWorld(WORLD_ID, () -> {});
         }
     }
 

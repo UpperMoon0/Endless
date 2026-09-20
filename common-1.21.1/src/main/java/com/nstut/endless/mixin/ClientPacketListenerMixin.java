@@ -73,7 +73,7 @@ public class ClientPacketListenerMixin {
 
         CompoundTag tag = packet.getTag();
         if (tag != null) {
-            blockEntity.load(tag);
+            blockEntity.loadWithComponents(tag, level.registryAccess());
         }
         // A page rebuild may be queued before this later BE packet is handled.
         // Bypass ClientLevel#setBlocksDirty's state-difference filter so the

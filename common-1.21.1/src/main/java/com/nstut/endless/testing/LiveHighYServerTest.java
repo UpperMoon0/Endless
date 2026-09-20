@@ -4,6 +4,7 @@ import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.vertical.EndlessVerticalEngine;
 import com.nstut.endless.vertical.ExtendedPoiStorage;
 import com.nstut.endless.vertical.MinecraftVerticalWorld;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -44,6 +45,7 @@ import net.minecraft.world.phys.Vec3;
 import java.lang.reflect.Method;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** Real-server sparse-boundary integration coverage used only by the live-join harness. */
 public final class LiveHighYServerTest {
@@ -307,7 +309,11 @@ public final class LiveHighYServerTest {
     }
 
     private static int runCommand(MinecraftServer server, String command) {
-        return server.getCommands().performPrefixedCommand(server.createCommandSourceStack(), command);
+        AtomicInteger result = new AtomicInteger();
+        CommandSourceStack source = server.createCommandSourceStack().withCallback(
+            (success, value) -> result.set(success ? value : 0));
+        server.getCommands().performPrefixedCommand(source, command);
+        return result.get();
     }
 
     private static void prepareBoundary(ServerLevel level, ServerPlayer player, boolean upper) {

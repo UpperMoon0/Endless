@@ -31,9 +31,13 @@ public abstract class ViewAreaMixin {
     @Shadow protected int sectionGridSizeY;
     @Shadow protected int sectionGridSizeZ;
     @Shadow public SectionRenderDispatcher.RenderSection[] sections;
-    @Shadow protected abstract int getChunkIndex(int x, int y, int z);
 
     @Unique private int endless$windowBaseSection = UNINITIALIZED;
+
+    @Unique
+    private int endless$sectionIndex(int x, int y, int z) {
+        return (z * this.sectionGridSizeY + y) * this.sectionGridSizeX + x;
+    }
 
     @Redirect(
         method = "setViewDistance",
@@ -101,7 +105,7 @@ public abstract class ViewAreaMixin {
         int xSection = Mth.positiveModulo(Math.floorDiv(pos.getX(), 16), sectionGridSizeX);
         int zSection = Mth.positiveModulo(Math.floorDiv(pos.getZ(), 16), sectionGridSizeZ);
         SectionRenderDispatcher.RenderSection renderSection =
-            this.sections[this.getChunkIndex(xSection, ySection, zSection)];
+            this.sections[this.endless$sectionIndex(xSection, ySection, zSection)];
         LiveRenderProbe.recordViewArea(pos);
         cir.setReturnValue(renderSection);
     }
@@ -118,6 +122,6 @@ public abstract class ViewAreaMixin {
         }
         int xSection = Math.floorMod(x, sectionGridSizeX);
         int zSection = Math.floorMod(z, sectionGridSizeZ);
-        this.sections[this.getChunkIndex(xSection, ySection, zSection)].setDirty(dirty);
+        this.sections[this.endless$sectionIndex(xSection, ySection, zSection)].setDirty(dirty);
     }
 }

@@ -13,6 +13,7 @@ import net.minecraft.world.level.PathNavigationRegion;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.pathfinder.PathType;
 import net.minecraft.world.level.pathfinder.Path;
+import net.minecraft.world.level.pathfinder.PathfindingContext;
 import net.minecraft.world.level.pathfinder.WalkNodeEvaluator;
 
 import java.util.LinkedHashSet;
@@ -52,8 +53,6 @@ public final class LivePathfindingTest {
         BlockPos target = new BlockPos(7, floor + 1, 12);
         PathNavigationRegion region = new PathNavigationRegion(level, start.offset(-8, -8, -8), target.offset(8, 8, 8));
         require(region.getBlockState(start.below()).is(Blocks.STONE), "region lost floor at " + start);
-        require(WalkNodeEvaluator.getBlockPathTypeStatic(region, start.mutable()) == PathType.WALKABLE,
-            "region did not classify supported air as WALKABLE at " + start);
         require(region.isOutsideBuildHeight(EndlessHeights.getMinBuildHeight() - 1)
             && region.isOutsideBuildHeight(EndlessHeights.getMaxBuildHeight()), "region lost logical bounds");
 
@@ -61,6 +60,9 @@ public final class LivePathfindingTest {
         Parrot flyer = EntityType.PARROT.create(level);
         require(walker != null && flyer != null, "could not create pathfinder mobs");
         try {
+            PathfindingContext pathContext = new PathfindingContext(region, walker);
+            require(WalkNodeEvaluator.getPathTypeStatic(pathContext, start.mutable()) == PathType.WALKABLE,
+                "region did not classify supported air as WALKABLE at " + start);
             walker.setPos(0.5D, floor + 1.0D, 12.5D);
             walker.setNoAi(true);
             require(walker.getNavigation() instanceof GroundPathNavigation, "wrong walking navigator");

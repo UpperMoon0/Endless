@@ -9,6 +9,7 @@ import com.nstut.endless.vertical.ExtendedSectionStorageAccess;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.SectionPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
@@ -210,7 +211,7 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
         Path file = endless$file(chunkX, chunkZ);
         if (Files.isRegularFile(file)) {
             try {
-                CompoundTag root = NbtIo.readCompressed(file.toFile());
+                CompoundTag root = NbtIo.readCompressed(file, NbtAccounter.unlimitedHeap());
                 if (root.getInt("FormatVersion") != ENDLESS_POI_FORMAT
                     || root.getInt("ChunkX") != chunkX || root.getInt("ChunkZ") != chunkZ) {
                     throw new IOException("Invalid Endless POI sidecar header at " + file);
@@ -283,7 +284,7 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
             root.put("Sections", sections);
             Files.createDirectories(file.getParent());
             Path temp = file.resolveSibling(file.getFileName() + ".tmp");
-            NbtIo.writeCompressed(root, temp.toFile());
+            NbtIo.writeCompressed(root, temp);
             try {
                 Files.move(temp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             } catch (AtomicMoveNotSupportedException ignored) {

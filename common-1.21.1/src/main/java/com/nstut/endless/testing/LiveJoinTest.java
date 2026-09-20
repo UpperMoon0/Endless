@@ -6,6 +6,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.chunk.RenderChunkRegion;
 import net.minecraft.client.renderer.chunk.RenderRegionCache;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
@@ -384,7 +385,7 @@ public final class LiveJoinTest {
 
     private static boolean canRender(Level level, BlockPos pos) {
         try {
-            RenderChunkRegion region = new RenderRegionCache().createRegion(level, pos, pos, 1);
+            RenderChunkRegion region = new RenderRegionCache().createRegion(level, SectionPos.of(pos));
             return region != null && region.getBlockState(pos).is(Blocks.GLOWSTONE);
         } catch (Throwable t) {
             System.out.println("ENDLESS_EXTREME_RENDER_FAIL pos=" + pos + " error=" + t);

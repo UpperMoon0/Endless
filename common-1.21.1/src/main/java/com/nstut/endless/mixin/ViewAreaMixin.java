@@ -5,7 +5,7 @@ import com.nstut.endless.testing.LiveRenderProbe;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ViewArea;
-import net.minecraft.client.renderer.chunk.ChunkRenderDispatcher;
+import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
@@ -27,10 +27,10 @@ public abstract class ViewAreaMixin {
     @Unique private static final int UNINITIALIZED = Integer.MIN_VALUE;
 
     @Shadow @Final protected Level level;
-    @Shadow protected int chunkGridSizeX;
-    @Shadow protected int chunkGridSizeY;
-    @Shadow protected int chunkGridSizeZ;
-    @Shadow @Final public ChunkRenderDispatcher.RenderChunk[] chunks;
+    @Shadow protected int sectionGridSizeX;
+    @Shadow protected int sectionGridSizeY;
+    @Shadow protected int sectionGridSizeZ;
+    @Shadow public SectionRenderDispatcher.RenderSection[] sections;
     @Shadow protected abstract int getChunkIndex(int x, int y, int z);
 
     @Unique private int endless$windowBaseSection = UNINITIALIZED;
@@ -57,21 +57,21 @@ public abstract class ViewAreaMixin {
             : this.level.getMaxSection();
         int available = maxSectionExclusive - minSection;
 
-        if (available <= chunkGridSizeY) {
+        if (available <= sectionGridSizeY) {
             endless$windowBaseSection = minSection;
             return;
         }
 
         if (endless$windowBaseSection != UNINITIALIZED) {
-            int center = endless$windowBaseSection + (chunkGridSizeY / 2);
+            int center = endless$windowBaseSection + (sectionGridSizeY / 2);
             if (Math.abs(cameraSection - center) <= REBASE_HYSTERESIS_SECTIONS) {
                 return;
             }
         }
 
         endless$windowBaseSection = Math.max(minSection, Math.min(
-            cameraSection - (chunkGridSizeY / 2),
-            maxSectionExclusive - chunkGridSizeY));
+            cameraSection - (sectionGridSizeY / 2),
+            maxSectionExclusive - sectionGridSizeY));
     }
 
     @Redirect(
@@ -85,21 +85,25 @@ public abstract class ViewAreaMixin {
         return endless$windowBaseSection << 4;
     }
 
-    @Inject(method = "getRenderChunkAt", at = @At("HEAD"), cancellable = true)
-    private void endless$getRenderChunkAt(BlockPos pos, CallbackInfoReturnable<ChunkRenderDispatcher.RenderChunk> cir) {
+    @Inject(method = "getRenderSectionAt", at = @At("HEAD"), cancellable = true)
+    private void endless$getRenderSectionAt(
+        BlockPos pos,
+        CallbackInfoReturnable<SectionRenderDispatcher.RenderSection> cir
+    ) {
         if (endless$windowBaseSection == UNINITIALIZED) {
             return;
         }
         int ySection = Math.floorDiv(pos.getY(), 16) - endless$windowBaseSection;
-        if (ySection < 0 || ySection >= chunkGridSizeY) {
+        if (ySection < 0 || ySection >= sectionGridSizeY) {
             cir.setReturnValue(null);
             return;
         }
-        int xSection = Mth.positiveModulo(Math.floorDiv(pos.getX(), 16), chunkGridSizeX);
-        int zSection = Mth.positiveModulo(Math.floorDiv(pos.getZ(), 16), chunkGridSizeZ);
-        ChunkRenderDispatcher.RenderChunk renderChunk = this.chunks[this.getChunkIndex(xSection, ySection, zSection)];
+        int xSection = Mth.positiveModulo(Math.floorDiv(pos.getX(), 16), sectionGridSizeX);
+        int zSection = Mth.positiveModulo(Math.floorDiv(pos.getZ(), 16), sectionGridSizeZ);
+        SectionRenderDispatcher.RenderSection renderSection =
+            this.sections[this.getChunkIndex(xSection, ySection, zSection)];
         LiveRenderProbe.recordViewArea(pos);
-        cir.setReturnValue(renderChunk);
+        cir.setReturnValue(renderSection);
     }
 
     @Inject(method = "setDirty", at = @At("HEAD"), cancellable = true)
@@ -109,11 +113,11 @@ public abstract class ViewAreaMixin {
         }
         ci.cancel();
         int ySection = y - endless$windowBaseSection;
-        if (ySection < 0 || ySection >= chunkGridSizeY) {
+        if (ySection < 0 || ySection >= sectionGridSizeY) {
             return;
         }
-        int xSection = Math.floorMod(x, chunkGridSizeX);
-        int zSection = Math.floorMod(z, chunkGridSizeZ);
-        this.chunks[this.getChunkIndex(xSection, ySection, zSection)].setDirty(dirty);
+        int xSection = Math.floorMod(x, sectionGridSizeX);
+        int zSection = Math.floorMod(z, sectionGridSizeZ);
+        this.sections[this.getChunkIndex(xSection, ySection, zSection)].setDirty(dirty);
     }
 }

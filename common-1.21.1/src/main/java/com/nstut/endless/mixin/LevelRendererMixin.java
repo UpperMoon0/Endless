@@ -5,7 +5,7 @@ import com.nstut.endless.heights.EndlessLogicalHeights;
 import com.nstut.endless.testing.LiveRenderProbe;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
-import net.minecraft.client.renderer.chunk.ChunkRenderDispatcher;
+import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import org.spongepowered.asm.mixin.Mixin;
@@ -36,11 +36,11 @@ public abstract class LevelRendererMixin {
     @Inject(method = "getRelativeFrom", at = @At("RETURN"))
     private void endless$recordSparseGraphTraversal(
         BlockPos cameraOrigin,
-        ChunkRenderDispatcher.RenderChunk source,
+        SectionRenderDispatcher.RenderSection source,
         Direction direction,
-        CallbackInfoReturnable<ChunkRenderDispatcher.RenderChunk> cir
+        CallbackInfoReturnable<SectionRenderDispatcher.RenderSection> cir
     ) {
-        ChunkRenderDispatcher.RenderChunk result = cir.getReturnValue();
+        SectionRenderDispatcher.RenderSection result = cir.getReturnValue();
         if (EndlessLogicalHeights.isActive() && result != null) {
             LiveRenderProbe.recordRenderGraph(result.getOrigin());
         }

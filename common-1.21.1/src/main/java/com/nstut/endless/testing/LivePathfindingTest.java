@@ -11,7 +11,7 @@ import net.minecraft.world.entity.animal.Parrot;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.level.PathNavigationRegion;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.pathfinder.BlockPathTypes;
+import net.minecraft.world.level.pathfinder.PathType;
 import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.level.pathfinder.WalkNodeEvaluator;
 
@@ -52,7 +52,7 @@ public final class LivePathfindingTest {
         BlockPos target = new BlockPos(7, floor + 1, 12);
         PathNavigationRegion region = new PathNavigationRegion(level, start.offset(-8, -8, -8), target.offset(8, 8, 8));
         require(region.getBlockState(start.below()).is(Blocks.STONE), "region lost floor at " + start);
-        require(WalkNodeEvaluator.getBlockPathTypeStatic(region, start.mutable()) == BlockPathTypes.WALKABLE,
+        require(WalkNodeEvaluator.getBlockPathTypeStatic(region, start.mutable()) == PathType.WALKABLE,
             "region did not classify supported air as WALKABLE at " + start);
         require(region.isOutsideBuildHeight(EndlessHeights.getMinBuildHeight() - 1)
             && region.isOutsideBuildHeight(EndlessHeights.getMaxBuildHeight()), "region lost logical bounds");

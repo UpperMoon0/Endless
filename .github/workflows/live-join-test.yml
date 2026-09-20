@@ -130,8 +130,8 @@ jobs:
           name: live-join-${{ matrix.target }}-${{ matrix.scenario }}
           path: |
             build/live-join-evidence/**
-            ${{ matrix.target == 'fabric-1.20.1' && 'fabric' || 'forge' }}/run/live-join/client/logs
-            ${{ matrix.target == 'fabric-1.20.1' && 'fabric' || 'forge' }}/run/live-join/server/logs
+            ${{ matrix.target == 'fabric-1.20.1' && 'fabric-1.20.1' || 'forge-1.20.1' }}/run/live-join/client/logs
+            ${{ matrix.target == 'fabric-1.20.1' && 'fabric-1.20.1' || 'forge-1.20.1' }}/run/live-join/server/logs
           if-no-files-found: ignore
 
 

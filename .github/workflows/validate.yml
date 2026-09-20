@@ -30,10 +30,15 @@ jobs:
             caches/fabric-loom
       - run: rm -rf "$GRADLE_USER_HOME/caches/fabric-loom"
       - run: chmod +x gradlew
-      - name: Shared tests and legacy builds
-        run: ./gradlew :common:test :common-1.20.1:test :fabric-1.20.1:build :forge-1.20.1:build --stacktrace --no-daemon
+
       - name: Compile Minecraft 1.21.1 common implementation
-        run: ./gradlew :common-1.21.1:compileJava --stacktrace --no-daemon
+        run: ./gradlew :common:test :common-1.21.1:compileJava --stacktrace --no-daemon
+
+      - name: Compile Minecraft 1.21.1 loaders
+        run: ./gradlew :fabric-1.21.1:compileJava :neoforge-1.21.1:compileJava --stacktrace --no-daemon
+
+      - name: Verify legacy Minecraft 1.20.1 line
+        run: ./gradlew :common-1.20.1:test :fabric-1.20.1:build :forge-1.20.1:build --stacktrace --no-daemon
 
   harness:
     name: Harness tests

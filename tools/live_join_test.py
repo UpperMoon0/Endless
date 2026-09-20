@@ -83,8 +83,8 @@ VANILLA_BUILD_HEIGHT = {"minBuildHeight": -64, "maxBuildHeight": 320}
 MC_VERSION = "1.20.1"
 
 TARGETS = {
-    "fabric-1.20.1": "fabric",
-    "forge-1.20.1": "forge",
+    "fabric-1.20.1": "fabric-1.20.1",
+    "forge-1.20.1": "forge-1.20.1",
 }
 
 

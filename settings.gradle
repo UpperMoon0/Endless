@@ -14,17 +14,54 @@ plugins {
 
 rootProject.name = 'endless'
 
-include 'common'
+def allProjects = [
+    'common',
+    'common-1.20.1', 'fabric-1.20.1', 'forge-1.20.1',
+    'common-1.21.1', 'fabric-1.21.1', 'neoforge-1.21.1',
+    'neoforge-26.1.2'
+] as Set
 
-include 'common-1.20.1'
-include 'fabric-1.20.1'
-include 'forge-1.20.1'
+def requestedTasks = gradle.startParameter.taskNames
+def targetedProjects = requestedTasks
+    .findAll { it.startsWith(':') }
+    .collect { it.split(':')[1] }
+    .findAll { it in allProjects } as Set
 
-include 'common-1.21.1'
-include 'fabric-1.21.1'
-include 'neoforge-1.21.1'
+def wholeWorkspaceTasks = ['buildAll', 'testAllVersions'] as Set
+def needsWholeWorkspace = requestedTasks.isEmpty() || requestedTasks.any { taskName ->
+    taskName in wholeWorkspaceTasks || !taskName.startsWith(':')
+}
 
-include 'neoforge-26.1.2'
+def selected = ['common'] as Set
+if (needsWholeWorkspace || targetedProjects.isEmpty()) {
+    selected.addAll(allProjects)
+} else {
+    targetedProjects.each { projectName ->
+        switch (projectName) {
+            case 'common':
+                break
+            case 'common-1.20.1':
+                selected.add('common-1.20.1')
+                break
+            case 'fabric-1.20.1':
+            case 'forge-1.20.1':
+                selected.addAll(['common-1.20.1', projectName])
+                break
+            case 'common-1.21.1':
+                selected.add('common-1.21.1')
+                break
+            case 'fabric-1.21.1':
+            case 'neoforge-1.21.1':
+                selected.addAll(['common-1.21.1', projectName])
+                break
+            case 'neoforge-26.1.2':
+                selected.add('neoforge-26.1.2')
+                break
+        }
+    }
+}
+
+selected.each { include it }
 
 gradle.ext.mcVersionMapping = [
     ':common': 'shared',

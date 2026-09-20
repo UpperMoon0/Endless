@@ -1,51 +1,90 @@
-Endless v0.5 adds sparse practical infinite build height for Minecraft 1.20.1: configure build limits anywhere from Y=-8,000,000 through Y=7,999,999 without allocating millions of empty chunk sections.
+![](https://media.forgecdn.net/attachments/description/null/description_44f011ce-3daa-4641-85fa-ee4abac4d7dc.png)
 
-## What changed in v0.5
+![](https://media.forgecdn.net/attachments/description/null/description_7a3dcf6f-3695-46ef-9696-746d08598dc7.png)
 
-- **Configurable Logical Build Range** — `config/endless.json` now controls the actual player/command build limits anywhere inside `[-8000000, 8000000)`.
-- **Sparse Vertical Pages** — Extended space is stored in 512-block pages and allocated only where blocks exist.
-- **Vanilla-Sized Fresh Dense Core** — New v0.5 worlds keep normal `[-64,320)` dense chunk arrays even when the configured build range is thousands or millions of blocks tall.
-- **Dedicated High-Y Persistence** — Sparse pages use compressed NBT outside vanilla Anvil section serialization, avoiding signed-byte section-Y truncation.
-- **Extended Position Protocol** — High-Y block positions use an Endless client/server encoding while normal positions keep vanilla's packed format.
-- **Forge + Fabric** — The same sparse engine and login/page protocol are implemented on both loaders.
-- **High-Y Blocks, Fluids and Block Entities** — Normal Level access and block lifecycle callbacks work outside the dense core.
-- **Sparse Heightmaps and Lighting** — Supported height queries include sparse pages and block light propagates without packed-Y wrapping.
-- **Sparse POIs** — High-Y POIs use dedicated sparse persistence/search instead of widening vanilla SectionStorage loops.
-- **Strict Command/Placement Bounds** — The configured min/max, not the ±8M representation ceiling, decides whether a position is legal.
-- **Waystones 1.20.1 Compatibility** — Waystone placement uses the configured logical ceiling and its high-Y block entity/position path is covered by real client/server CI.
-- **Camera-Following Rendering** — The client renders a 512-block vertical window around the camera instead of allocating render chunks for the whole logical range.
-- **Bounded Runtime Memory** — Sparse columns flush and unload with their horizontal chunks.
-- **Old-World Safety Preserved** — v0.4's fail-closed dense-world migration gate remains in place.
+Endless lets you build higher and dig deeper than ever before. In v0.5, you can configure your world's build range anywhere from Y=-8,000,000 through Y=7,999,999 without turning every chunk into a millions-of-block-tall section array.
+
+## Features
+
+* **Practical Infinite Build Height** — Choose any section-aligned build range inside Y=-8,000,000 to Y=7,999,999.
+* **Sparse Vertical Storage** — Fresh worlds keep Minecraft's normal `[-64,320)` dense chunk core. Extended construction is stored in 512-block vertical pages that are allocated only where data exists.
+* **All Dimensions Supported** — Works in the Overworld, Nether, End, and other normal dimensions.
+* **Compatible with Existing Worlds** — v0.5 preserves the fail-closed migration safeguards from v0.4 so old extended sections are not silently discarded. Back up important worlds before upgrading.
+* **Forge and Fabric** — The same sparse engine and multiplayer protocol are implemented on both loaders for Minecraft 1.20.1.
+* **Persistent High-Y Blocks** — Sparse pages use dedicated compressed storage outside vanilla Anvil section serialization, so blocks far above or below vanilla limits survive save and reload.
+* **Blocks, Fluids and Block Entities** — Normal block access, fluids, block entities, scheduled ticks and block updates work throughout the configured range.
+* **Heightmaps, Lighting and POIs** — Sparse blocks participate in supported height queries, block/sky lighting, and point-of-interest storage without widening vanilla section arrays.
+* **Server-Authoritative Multiplayer** — Servers synchronize the configured logical range and dense layout before sparse world data is used. Extended worlds require Endless v0.5-compatible clients.
+* **Waystones Compatible** — Waystones 1.20.1 placement and high-Y block entity state are explicitly supported and covered by live client/server tests.
+* **Camera-Following Rendering** — The client renders a 512-block vertical window around the camera instead of allocating render chunks for the entire logical build range.
+* **Void Damage at the Boundary** — The below-world kill plane follows your configured minimum and triggers 64 blocks below it.
 
 ## Configuration
 
-`config/endless.json` defines the logical build limit:
+After launching the game once with Endless installed, a config file is created at `config/endless.json`. Open it with any text editor to customize the logical build range:
 
 ```json
 {
   "buildHeight": {
-    "minBuildHeight": -1024,
-    "maxBuildHeight": 1024
+    "minBuildHeight": -64,
+    "maxBuildHeight": 320
   }
 }
 ```
 
-`minBuildHeight` is inclusive and `maxBuildHeight` is exclusive. Values are section-aligned and clamped only to the supported `[-8000000, 8000000)` representation envelope. Valid million-scale values survive restart instead of being forced back to the old ±2032 range.
+* **minBuildHeight** — Lowest legal Y-level. It is inclusive. Default: `-64`. Minimum supported value: `-8000000`.
+* **maxBuildHeight** — Upper build boundary. It is exclusive, so `320` means Y=319 is the highest legal block. Default: `320`. Maximum supported value: `8000000`.
+* Values are normalized to 16-block section boundaries.
+* Restart the game or server after changing the file. In multiplayer, the server's configured range is authoritative.
 
-Fresh v0.5 worlds keep a vanilla `[-64,320)` dense core internally. Worlds upgraded from older Endless releases may retain a wider historical dense core, up to the legacy-safe `[-2032,2032)` envelope, only to prevent old Anvil sections from being dropped. That internal compatibility range never widens the configured build limit.
+### Example: Full Height
 
-## Multiplayer
+To unlock the complete v0.5 representation envelope:
 
-Sparse v0.5 worlds require Endless v0.5-compatible clients. The server synchronizes its configured logical range and internal dense layout during login and sends sparse pages near each player's current vertical window.
+```json
+{
+  "buildHeight": {
+    "minBuildHeight": -8000000,
+    "maxBuildHeight": 8000000
+  }
+}
+```
 
-## Existing worlds
+This allows building from Y=-8,000,000 through Y=7,999,999.
 
-Played pre-v0.4 worlds are still inspected before chunks load. Endless refuses ambiguous or unsafe historical layouts instead of letting vanilla silently discard sections. Back up important worlds before upgrading.
+### Example: Extended Range
 
-## Compatibility notes
+For a large but easier-to-navigate range:
 
-Mods using normal Level/LevelChunk/BlockPos, block entity, POI, tick, heightmap and brightness APIs can work through Endless' routing. Mods that directly call `BlockPos.asLong()` on high-Y positions, assume `chunk.getSections()` contains every Y, or inspect vanilla light storage internals can retain vanilla representation limits inside their own code.
+```json
+{
+  "buildHeight": {
+    "minBuildHeight": -4096,
+    "maxBuildHeight": 4096
+  }
+}
+```
 
-## World generation
+Because v0.5 uses sparse storage, simply widening the configured range no longer allocates a dense section array for every possible Y-level. Memory and storage grow primarily with the extended pages that actually contain data.
 
-Natural terrain remains in the generator's normal range. The sparse space is additional buildable volume; Endless does not generate terrain millions of blocks high by default.
+## Existing Worlds
+
+Fresh v0.5 worlds always keep a vanilla-sized `[-64,320)` dense core internally, even when the configured logical range is millions of blocks tall.
+
+Worlds upgraded from older Endless versions may retain a wider historical dense core, up to the legacy-safe `[-2032,2032)` envelope, when required to preserve old Anvil data. That internal compatibility range does not widen your configured build limit.
+
+Played pre-v0.4 worlds are inspected before chunks load. If Endless cannot prove that an old layout can be migrated safely, startup fails closed instead of allowing Minecraft to silently discard sections. Back up important worlds before upgrading.
+
+## Limitations
+
+* **World generation** — Natural terrain still uses the generator's normal vertical range. Endless adds buildable space; it does not generate terrain millions of blocks high or deep by default.
+* **Rendering distance vertically** — The client keeps a 512-block vertical render window around the camera. Far-away sparse pages remain saved and active server-side but are rendered when the camera approaches them.
+* **Representation envelope** — v0.5 is practically unbounded, not mathematically infinite. The supported logical range is `[-8000000, 8000000)`.
+* **Mod compatibility** — Mods using normal `Level`, `LevelChunk`, `BlockPos`, block entity, tick, POI, heightmap and brightness APIs can work through Endless' routing. Mods that directly pack high-Y positions with `BlockPos.asLong()`, assume `chunk.getSections()` contains every possible Y, or inspect vanilla light storage internals may retain vanilla limits in their own code.
+* **Multiplayer clients** — Sparse v0.5 worlds require Endless v0.5-compatible clients; vanilla clients cannot join an extended-range Endless server.
+
+### Suggestions & Bug Reports
+
+Discord: [Join the community](https://discord.gg/4vD9WuT2As)
+
+Github Issues: [Report issues](https://github.com/UpperMoon0/Endless/issues)

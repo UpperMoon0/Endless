@@ -38,7 +38,7 @@ public final class LiveColdRestartServerTest {
                 if (ticks == 10) prepare(level);
                 if (ticks < 18) return;
                 verify(level);
-                ExtendedPoiStorage.flush(level, new ChunkPos(poiPos()));
+                ExtendedPoiStorage.flush(level, ChunkPos.containing(poiPos()));
                 EndlessVerticalEngine.world(level).flushDirty();
                 require(server.saveEverything(true, true, true), "dedicated server saveEverything reported failure");
                 done = true;

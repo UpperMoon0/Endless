@@ -25,7 +25,7 @@ public abstract class SectionOcclusionGraphMixin {
     ) {
         SectionRenderDispatcher.RenderSection result = cir.getReturnValue();
         if (EndlessLogicalHeights.isActive() && result != null) {
-            LiveRenderProbe.recordRenderGraph(result.getOrigin());
+            LiveRenderProbe.recordRenderGraph(result.getRenderOrigin());
         }
     }
 }

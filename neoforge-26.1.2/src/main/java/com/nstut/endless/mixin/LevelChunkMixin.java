@@ -3,7 +3,9 @@ package com.nstut.endless.mixin;
 import com.nstut.endless.vertical.EndlessVerticalEngine;
 import com.nstut.endless.vertical.MinecraftVerticalWorld;
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BaseRailBlock;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -52,7 +54,7 @@ public abstract class LevelChunkMixin {
     private void endless$setBlockState(
         BlockPos pos,
         BlockState state,
-        boolean moved,
+        int flags,
         CallbackInfoReturnable<BlockState> cir
     ) {
         LevelChunk self = (LevelChunk) (Object) this;
@@ -68,37 +70,50 @@ public abstract class LevelChunkMixin {
             return;
         }
 
-        if (!level.isClientSide) {
-            oldState.onRemove(level, pos, state, moved);
-        }
+        boolean blockChanged = !oldState.is(state.getBlock());
+        boolean movedByPiston = (flags & 0x40) != 0;
+        boolean sideEffects = (flags & 0x100) == 0;
 
-        if (oldState.getBlock() instanceof EntityBlock
-            && oldState.getBlock() != state.getBlock()) {
+        if (blockChanged && oldState.hasBlockEntity()
+            && !state.shouldChangedStateKeepBlockEntity(oldState)) {
+            if (!level.isClientSide() && sideEffects) {
+                BlockEntity oldBlockEntity = self.getBlockEntity(pos);
+                if (oldBlockEntity != null) {
+                    oldBlockEntity.preRemoveSideEffects(pos, oldState);
+                }
+            }
             self.removeBlockEntity(pos);
         }
 
-        if (!level.isClientSide) {
-            state.onPlace(level, pos, oldState, moved);
+        if ((blockChanged || state.getBlock() instanceof BaseRailBlock)
+            && level instanceof ServerLevel serverLevel
+            && ((flags & 1) != 0 || movedByPiston)) {
+            oldState.affectNeighborsAfterRemoval(serverLevel, pos, movedByPiston);
         }
 
-        if (state.getBlock() instanceof EntityBlock entityBlock) {
+        if (!level.isClientSide() && (flags & 0x200) == 0) {
+            state.onPlace(level, pos, oldState, movedByPiston);
+        }
+
+        if (state.hasBlockEntity()) {
             BlockEntity blockEntity = self.getBlockEntity(pos);
+            if (blockEntity != null && !blockEntity.isValidBlockState(state)) {
+                self.removeBlockEntity(pos);
+                blockEntity = null;
+            }
             if (blockEntity == null) {
-                blockEntity = entityBlock.newBlockEntity(pos, state);
+                blockEntity = ((EntityBlock) state.getBlock()).newBlockEntity(pos, state);
                 if (blockEntity != null) {
-                    // Match vanilla LevelChunk#setBlockState: this installs the
-                    // map entry, ticker, and server game-event listener.
                     self.addAndRegisterBlockEntity(blockEntity);
                 }
             } else {
                 blockEntity.setBlockState(state);
-                // Match vanilla's existing-BE branch without re-registering a
-                // duplicate game-event listener.
                 endless$updateBlockEntityTicker(blockEntity);
             }
         }
 
-        self.setUnsaved(true);
+        self.markUnsaved();
         cir.setReturnValue(oldState);
     }
+
 }

@@ -20,7 +20,7 @@ public abstract class FlyNodeEvaluatorMixin {
     )
     private int endless$logicalMinBuildHeight(CollisionGetter level) {
         return EndlessLogicalHeights.isActive()
-            ? EndlessHeights.getMinY()
+            ? EndlessHeights.getMinBuildHeight()
             : level.getMinY();
     }
 }

@@ -3,6 +3,7 @@ package com.nstut.endless.testing;
 import com.nstut.endless.heights.EndlessHeights;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ai.navigation.FlyingPathNavigation;
 import net.minecraft.world.entity.ai.navigation.GroundPathNavigation;
@@ -56,8 +57,8 @@ public final class LivePathfindingTest {
         require(region.isOutsideBuildHeight(EndlessHeights.getMinBuildHeight() - 1)
             && region.isOutsideBuildHeight(EndlessHeights.getMaxBuildHeight()), "region lost logical bounds");
 
-        Zombie walker = EntityType.ZOMBIE.create(level);
-        Parrot flyer = EntityType.PARROT.create(level);
+        Zombie walker = EntityType.ZOMBIE.create(level, EntitySpawnReason.COMMAND);
+        Parrot flyer = EntityType.PARROT.create(level, EntitySpawnReason.COMMAND);
         require(walker != null && flyer != null, "could not create pathfinder mobs");
         try {
             PathfindingContext pathContext = new PathfindingContext(region, walker);

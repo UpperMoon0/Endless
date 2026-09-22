@@ -10,10 +10,12 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundLoginPacket;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.storage.TagValueInput;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -73,7 +75,8 @@ public class ClientPacketListenerMixin {
 
         CompoundTag tag = packet.getTag();
         if (tag != null) {
-            blockEntity.loadWithComponents(tag, level.registryAccess());
+            blockEntity.loadWithComponents(TagValueInput.create(
+                ProblemReporter.DISCARDING, level.registryAccess(), tag));
         }
         // A page rebuild may be queued before this later BE packet is handled.
         // Bypass ClientLevel#setBlocksDirty's state-difference filter so the

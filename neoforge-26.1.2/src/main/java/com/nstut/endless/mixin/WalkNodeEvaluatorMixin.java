@@ -41,7 +41,7 @@ public abstract class WalkNodeEvaluatorMixin {
     )
     private int endless$logicalStartMin(CollisionGetter level) {
         return EndlessLogicalHeights.isActive()
-            ? EndlessHeights.getMinY()
+            ? EndlessHeights.getMinBuildHeight()
             : level.getMinY();
     }
 
@@ -54,7 +54,7 @@ public abstract class WalkNodeEvaluatorMixin {
     )
     private int endless$logicalSearchMin(Level level) {
         return EndlessLogicalHeights.isActive()
-            ? EndlessHeights.getMinY()
+            ? EndlessHeights.getMinBuildHeight()
             : level.getMinY();
     }
 
@@ -67,7 +67,7 @@ public abstract class WalkNodeEvaluatorMixin {
     )
     private static int endless$classificationMin(CollisionGetter level) {
         return EndlessLogicalHeights.isActive()
-            ? EndlessHeights.getMinY()
+            ? EndlessHeights.getMinBuildHeight()
             : level.getMinY();
     }
 }

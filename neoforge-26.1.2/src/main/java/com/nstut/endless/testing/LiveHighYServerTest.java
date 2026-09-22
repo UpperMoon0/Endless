@@ -251,7 +251,7 @@ public final class LiveHighYServerTest {
         // a random spawn outside simulation distance correctly leaves vanilla
         // scheduled ticks queued and turns this into a chunk-ticket test.
         level.setChunkForced(0, 0, true);
-        require(level.getForcedChunks().contains(mechanicsChunkKey()),
+        require(level.getForceLoadedChunks().contains(mechanicsChunkKey()),
             "could not force-load scheduled-tick fixture chunk 0,0");
 
         verifySetBlockCommandBounds(level, player);
@@ -278,10 +278,10 @@ public final class LiveHighYServerTest {
         // connected player's current chunk so this test measures height semantics,
         // not whether a fixed spawn-adjacent chunk happened to be loaded.
         ChunkPos commandChunk = player.chunkPosition();
-        require(level.getChunkSource().getChunkNow(commandChunk.x, commandChunk.z) != null,
+        require(level.getChunkSource().getChunkNow(commandChunk.x(), commandChunk.z()) != null,
             "player chunk is not loaded for command-boundary test: " + commandChunk);
-        int baseX = (commandChunk.x << 4) + 4;
-        int z = (commandChunk.z << 4) + 4;
+        int baseX = (commandChunk.x() << 4) + 4;
+        int z = (commandChunk.z() << 4) + 4;
 
         BlockPos lowerInsidePos = new BlockPos(baseX, min, z);
         BlockPos upperInsidePos = new BlockPos(baseX + 1, max - 1, z);
@@ -422,7 +422,7 @@ public final class LiveHighYServerTest {
      * precipitation is cold enough.</p>
      */
     private static void verifySparseBiomeSemantics(ServerLevel level) {
-        Biome coldBiome = level.registryAccess().registryOrThrow(Registries.BIOME).get(Biomes.FROZEN_OCEAN);
+        Biome coldBiome = level.registryAccess().lookupOrThrow(Registries.BIOME).getOrThrow(Biomes.FROZEN_OCEAN).value();
         require(coldBiome != null, "minecraft:frozen_ocean biome is missing from the server registry");
         verifySparseBiomeEdge(level, coldBiome, false);
         verifySparseBiomeEdge(level, coldBiome, true);
@@ -436,7 +436,7 @@ public final class LiveHighYServerTest {
             edge + " sparse biome water setup failed");
         require(level.getBrightness(LightLayer.BLOCK, freezePos) < 10,
             edge + " sparse biome freeze probe unexpectedly has high block light");
-        require(!coldBiome.warmEnoughToRain(freezePos),
+        require(!coldBiome.warmEnoughToRain(freezePos, level.getSeaLevel()),
             edge + " sparse biome probe landed in a warm frozen-ocean noise cell");
         require(coldBiome.shouldFreeze(level, freezePos, false),
             edge + " sparse Biome#shouldFreeze fell back to dense build bounds");
@@ -450,7 +450,7 @@ public final class LiveHighYServerTest {
             edge + " sparse biome snow probe must start as air");
         require(level.getBrightness(LightLayer.BLOCK, snowPos) < 10,
             edge + " sparse biome snow probe unexpectedly has high block light");
-        require(!coldBiome.warmEnoughToRain(snowPos),
+        require(!coldBiome.warmEnoughToRain(snowPos, level.getSeaLevel()),
             edge + " sparse biome snow probe unexpectedly became warm");
         require(coldBiome.shouldSnow(level, snowPos),
             edge + " sparse Biome#shouldSnow fell back to dense build bounds");
@@ -465,7 +465,8 @@ public final class LiveHighYServerTest {
         if (!Boolean.parseBoolean(System.getProperty(WAYSTONES_SYSTEM_PROPERTY, "false"))) return;
 
         Class.forName("net.blay09.mods.waystones.block.WaystoneBlockBase");
-        Item item = BuiltInRegistries.ITEM.get(Identifier.fromNamespaceAndPath("waystones", "waystone"));
+        Item item = BuiltInRegistries.ITEM.get(Identifier.fromNamespaceAndPath("waystones", "waystone"))
+            .map(holder -> holder.value()).orElse(null);
         require(item instanceof BlockItem, "waystones:waystone item was not registered as a BlockItem");
         Block waystoneBlock = ((BlockItem) item).getBlock();
 
@@ -565,7 +566,7 @@ public final class LiveHighYServerTest {
             + " entitiesLoaded=" + level.areEntitiesLoaded(chunkKey)
             + " positionTicking=" + level.getChunkSource().isPositionTicking(chunkKey)
             + " shouldTickBlocks=" + level.shouldTickBlocksAt(chunkKey)
-            + " forced=" + level.getForcedChunks().contains(chunkKey);
+            + " forced=" + level.getForceLoadedChunks().contains(chunkKey);
     }
 
     private static boolean delayedMechanicsSettled(ServerLevel level) {
@@ -591,7 +592,7 @@ public final class LiveHighYServerTest {
         MinecraftVerticalWorld vertical = EndlessVerticalEngine.world(level);
         vertical.flushDirty();
 
-        ChunkPos poiChunk = new ChunkPos(lowerPoiPos());
+        ChunkPos poiChunk = ChunkPos.containing(lowerPoiPos());
         ExtendedPoiStorage.flush(level, poiChunk);
         ExtendedPoiStorage.unload(level, poiChunk);
         EndlessVerticalEngine.close(level);

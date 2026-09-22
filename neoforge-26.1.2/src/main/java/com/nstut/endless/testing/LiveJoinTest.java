@@ -3,6 +3,7 @@ package com.nstut.endless.testing;
 import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.chunk.RenderSectionRegion;
 import net.minecraft.client.renderer.chunk.RenderRegionCache;
 import net.minecraft.core.BlockPos;
@@ -124,7 +125,7 @@ public final class LiveJoinTest {
         ticksWithLevel++;
 
         Level level = mc.level;
-        int levelMin = level.getMinBuildHeight();
+        int levelMin = level.getMinY();
         int levelHeight = level.getHeight();
         int endlessMin = EndlessHeights.getMinBuildHeight();
         int endlessMax = EndlessHeights.getMaxBuildHeight();
@@ -370,7 +371,8 @@ public final class LiveJoinTest {
 
     private static boolean waystoneStatus(Level level) {
         try {
-            Block waystone = BuiltInRegistries.BLOCK.get(Identifier.fromNamespaceAndPath("waystones", "waystone"));
+            Block waystone = BuiltInRegistries.BLOCK.get(Identifier.fromNamespaceAndPath("waystones", "waystone"))
+                .map(holder -> holder.value()).orElse(Blocks.AIR);
             BlockPos base = LiveHighYServerTest.upperWaystoneBasePos();
             BlockPos top = LiveHighYServerTest.upperWaystoneTopPos();
             return waystone != Blocks.AIR
@@ -385,7 +387,8 @@ public final class LiveJoinTest {
 
     private static boolean canRender(Level level, BlockPos pos) {
         try {
-            RenderSectionRegion region = new RenderRegionCache().createRegion(level, SectionPos.of(pos));
+            if (!(level instanceof ClientLevel clientLevel)) return false;
+            RenderSectionRegion region = new RenderRegionCache().createRegion(clientLevel, SectionPos.asLong(pos));
             return region != null && region.getBlockState(pos).is(Blocks.GLOWSTONE);
         } catch (Throwable t) {
             System.out.println("ENDLESS_EXTREME_RENDER_FAIL pos=" + pos + " error=" + t);

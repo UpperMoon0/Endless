@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 /** A navigation region has an X/Z chunk array, never a dense vertical section array. */
 @Mixin(PathNavigationRegion.class)
 public abstract class PathNavigationRegionMixin {
-    @Inject(method = "getMinBuildHeight", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "getMinY", at = @At("HEAD"), cancellable = true)
     private void endless$logicalMin(CallbackInfoReturnable<Integer> cir) {
         if (EndlessLogicalHeights.isActive()) cir.setReturnValue(EndlessHeights.getMinBuildHeight());
     }

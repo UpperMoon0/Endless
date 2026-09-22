@@ -189,10 +189,7 @@ public final class EndlessNeoForge {
         }
 
         static void handle(VerticalPagePayload payload, IPayloadContext context) {
-            context.enqueueWork(() ->
-                net.neoforged.fml.DistExecutor.unsafeRunWhenOn(
-                    net.neoforged.api.distmarker.Dist.CLIENT,
-                    () -> () -> EndlessNeoForgeClient.applyVerticalPage(payload.snapshot)));
+            context.enqueueWork(() -> EndlessNeoForgeClient.applyVerticalPage(payload.snapshot));
         }
     }
 }

@@ -2,11 +2,10 @@ package com.nstut.endless.mixin;
 
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import com.nstut.endless.testing.LiveRenderProbe;
-import net.minecraft.client.Camera;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ViewArea;
 import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import org.spongepowered.asm.mixin.Final;
@@ -50,15 +49,14 @@ public abstract class ViewAreaMixin {
     }
 
     @Inject(method = "repositionCamera", at = @At("HEAD"))
-    private void endless$trackCameraSection(double x, double z, CallbackInfo ci) {
-        Camera camera = Minecraft.getInstance().gameRenderer.getMainCamera();
-        int cameraSection = Math.floorDiv(camera.getBlockPosition().getY(), 16);
+    private void endless$trackCameraSection(SectionPos cameraSectionPos, CallbackInfo ci) {
+        int cameraSection = cameraSectionPos.y();
         int minSection = EndlessLogicalHeights.isActive()
             ? EndlessLogicalHeights.minSection()
-            : this.level.getMinSection();
+            : this.level.getMinSectionY();
         int maxSectionExclusive = EndlessLogicalHeights.isActive()
             ? EndlessLogicalHeights.maxSectionExclusive()
-            : this.level.getMaxSection();
+            : this.level.getMaxSectionY() + 1;
         int available = maxSectionExclusive - minSection;
 
         if (available <= sectionGridSizeY) {
@@ -80,13 +78,13 @@ public abstract class ViewAreaMixin {
 
     @Redirect(
         method = "repositionCamera",
-        at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getMinBuildHeight()I")
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getMinSectionY()I")
     )
     private int endless$shiftGridBase(Level level) {
         if (endless$windowBaseSection == UNINITIALIZED) {
-            endless$windowBaseSection = level.getMinSection();
+            endless$windowBaseSection = level.getMinSectionY();
         }
-        return endless$windowBaseSection << 4;
+        return endless$windowBaseSection;
     }
 
     @Inject(method = "getRenderSectionAt", at = @At("HEAD"), cancellable = true)

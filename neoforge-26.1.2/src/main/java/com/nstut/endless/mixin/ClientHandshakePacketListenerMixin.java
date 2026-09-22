@@ -5,7 +5,9 @@ import com.nstut.endless.heights.EndlessLogicalHeights;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ClientHandshakePacketListenerImpl;
+import net.minecraft.client.multiplayer.LevelLoadTracker;
 import net.minecraft.client.multiplayer.ServerData;
+import net.minecraft.client.multiplayer.TransferState;
 import net.minecraft.network.Connection;
 import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Mixin;
@@ -28,6 +30,8 @@ public class ClientHandshakePacketListenerMixin {
         boolean transferring,
         Duration worldLoadDuration,
         Consumer<Component> statusConsumer,
+        LevelLoadTracker levelLoadTracker,
+        TransferState transferState,
         CallbackInfo ci
     ) {
         // The listener is constructed before Connection has necessarily installed its

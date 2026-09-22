@@ -36,6 +36,7 @@
     "GroundPathNavigationMixin",
     "WalkNodeEvaluatorMixin",
     "FlyNodeEvaluatorMixin",
+    "accessor.WalkNodeEvaluatorAccessor",
     "accessor.MinecraftVerticalWorldAccessor",
     "compat.WaystoneBlockBaseMixin"
   ],

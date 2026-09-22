@@ -1,6 +1,5 @@
 package com.nstut.endless.mixin;
 
-import com.mojang.datafixers.DataFixer;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
@@ -14,7 +13,6 @@ import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.RegistryOps;
-import net.minecraft.util.datafix.DataFixTypes;
 import net.minecraft.world.entity.ai.village.poi.PoiManager;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.LevelHeightAccessor;
@@ -39,16 +37,19 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.BiFunction;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
 /** Sparse persistence extension for high-Y POI sections. */
 @Mixin(SectionStorage.class)
-public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAccess {
+public abstract class SectionStorageMixin<R, P> implements ExtendedSectionStorageAccess {
     @Unique private static final int ENDLESS_POI_FORMAT = 1;
 
     @Shadow @Final private Long2ObjectMap<Optional<R>> storage;
-    @Shadow @Final private Function<Runnable, Codec<R>> codec;
+    @Shadow @Final private Codec<P> codec;
+    @Shadow @Final private Function<R, P> packer;
+    @Shadow @Final private BiFunction<P, Runnable, R> unpacker;
     @Shadow @Final private RegistryAccess registryAccess;
     @Shadow @Final protected LevelHeightAccessor levelHeightAccessor;
     @Shadow protected abstract void onSectionLoad(long sectionKey);
@@ -57,21 +58,9 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
     @Unique private final Set<Long> endless$loadedColumns = new HashSet<>();
     @Unique private final Set<Long> endless$dirtyColumns = new HashSet<>();
 
-    @Inject(method = "<init>", at = @At("TAIL"))
-    private void endless$init(
-        Path path,
-        Function<Runnable, Codec<R>> codec,
-        Function<Runnable, R> factory,
-        DataFixer fixerUpper,
-        DataFixTypes type,
-        boolean sync,
-        RegistryAccess registryAccess,
-        LevelHeightAccessor levelHeightAccessor,
-        CallbackInfo ci
-    ) {
-        if ((Object) this instanceof PoiManager) {
-            endless$poiRoot = path.resolve("endless");
-        }
+    @Override
+    public void endless$setPoiRoot(Path root) {
+        endless$poiRoot = root;
     }
 
     /**
@@ -229,13 +218,13 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
                     if (!endless$isExtendedPoiSection(sectionKey)) {
                         throw new IOException("Out-of-range Endless POI section " + sectionY + " at " + file);
                     }
-                    DataResult<R> decoded = codec.apply(() -> endless$dirtyColumns.add(columnKey))
-                        .parse(ops, sections.get(name));
-                    Optional<R> value = decoded.result();
-                    if (value.isEmpty()) {
+                    DataResult<P> decoded = codec.parse(ops, sections.get(name));
+                    Optional<P> packed = decoded.result();
+                    if (packed.isEmpty()) {
                         throw new IOException("Could not decode Endless POI section " + sectionY + " at " + file);
                     }
-                    storage.put(sectionKey, value);
+                    R value = unpacker.apply(packed.get(), () -> endless$dirtyColumns.add(columnKey));
+                    storage.put(sectionKey, Optional.of(value));
                     onSectionLoad(sectionKey);
                 }
             } catch (IOException | RuntimeException e) {
@@ -260,8 +249,8 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
                     continue;
                 }
                 int sectionY = SectionPos.y(sectionKey);
-                DataResult<Tag> encoded = codec.apply(() -> endless$dirtyColumns.add(columnKey))
-                    .encodeStart(ops, entry.getValue().get());
+                P packed = packer.apply(entry.getValue().get());
+                DataResult<Tag> encoded = codec.encodeStart(ops, packed);
                 Optional<Tag> tag = encoded.result();
                 if (tag.isEmpty()) {
                     throw new IOException("Could not encode Endless POI section " + sectionY);

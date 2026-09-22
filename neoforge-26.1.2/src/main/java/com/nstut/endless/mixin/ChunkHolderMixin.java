@@ -17,7 +17,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.List;
 
@@ -41,7 +41,7 @@ public abstract class ChunkHolderMixin {
     public abstract LevelChunk getTickingChunk();
 
     @Inject(method = "blockChanged", at = @At("HEAD"), cancellable = true)
-    private void endless$blockChanged(BlockPos pos, CallbackInfo ci) {
+    private void endless$blockChanged(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
         LevelChunk chunk = this.getTickingChunk();
         if (chunk == null) {
             return;
@@ -53,7 +53,9 @@ public abstract class ChunkHolderMixin {
         }
 
         // Never let a sparse section index reach vanilla's dense ShortSet[].
-        ci.cancel();
+        // 26.1 returns whether the holder needs scheduling for a later dense
+        // broadcast. Sparse changes are sent immediately below, so return false.
+        cir.setReturnValue(false);
 
         List<ServerPlayer> players = this.playerProvider.getPlayers(chunk.getPos(), false);
         if (players.isEmpty()) {

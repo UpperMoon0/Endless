@@ -1,6 +1,5 @@
 package com.nstut.endless.mixin;
 
-import com.mojang.datafixers.DataFixer;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
@@ -14,7 +13,6 @@ import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.RegistryOps;
-import net.minecraft.util.datafix.DataFixTypes;
 import net.minecraft.world.entity.ai.village.poi.PoiManager;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.LevelHeightAccessor;
@@ -57,21 +55,9 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
     @Unique private final Set<Long> endless$loadedColumns = new HashSet<>();
     @Unique private final Set<Long> endless$dirtyColumns = new HashSet<>();
 
-    @Inject(method = "<init>", at = @At("TAIL"))
-    private void endless$init(
-        Path path,
-        Function<Runnable, Codec<R>> codec,
-        Function<Runnable, R> factory,
-        DataFixer fixerUpper,
-        DataFixTypes type,
-        boolean sync,
-        RegistryAccess registryAccess,
-        LevelHeightAccessor levelHeightAccessor,
-        CallbackInfo ci
-    ) {
-        if ((Object) this instanceof PoiManager) {
-            endless$poiRoot = path.resolve("endless");
-        }
+    @Override
+    public void endless$setPoiRoot(Path root) {
+        endless$poiRoot = root;
     }
 
     /**

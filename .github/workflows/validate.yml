@@ -37,11 +37,26 @@ jobs:
       - name: Compile Minecraft 1.21.1 loaders
         run: ./gradlew :fabric-1.21.1:compileJava :neoforge-1.21.1:compileJava --stacktrace --no-daemon
 
-      - name: Compile Minecraft 26.1.2 NeoForge
-        run: ./gradlew :neoforge-26.1.2:compileJava --stacktrace --no-daemon
-
       - name: Verify legacy Minecraft 1.20.1 line
         run: ./gradlew :common-1.20.1:test :fabric-1.20.1:build :forge-1.20.1:build --stacktrace --no-daemon
+
+
+  compile-26:
+    name: Compile NeoForge 26.1.2
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x gradlew
+      - run: ./gradlew :neoforge-26.1.2:compileJava --stacktrace --no-daemon
+
 
   harness:
     name: Harness tests

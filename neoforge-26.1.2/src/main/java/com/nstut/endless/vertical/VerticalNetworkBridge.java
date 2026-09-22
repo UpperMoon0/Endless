@@ -64,7 +64,7 @@ public final class VerticalNetworkBridge {
 
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             int pageY = VerticalPageLayout.pageYForBlockY(player.getBlockY());
-            String dimension = player.level().dimension().location().toString();
+            String dimension = player.level().dimension().identifier().toString();
             PlayerWindow previous = PLAYER_WINDOWS.put(player.getUUID(), new PlayerWindow(dimension, pageY));
             if (previous != null && previous.pageY == pageY && previous.dimension.equals(dimension)) {
                 continue;

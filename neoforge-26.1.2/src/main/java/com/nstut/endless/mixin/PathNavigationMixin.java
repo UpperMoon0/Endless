@@ -31,10 +31,10 @@ public abstract class PathNavigationMixin {
 
     @Redirect(
         method = "createPath(Ljava/util/Set;IZIF)Lnet/minecraft/world/level/pathfinder/Path;",
-        at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getMinBuildHeight()I"))
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getMinY()I"))
     private int endless$logicalMinBuildHeight(Level level) {
         return EndlessLogicalHeights.isActive()
             ? EndlessHeights.getMinBuildHeight()
-            : level.getMinBuildHeight();
+            : level.getMinY();
     }
 }

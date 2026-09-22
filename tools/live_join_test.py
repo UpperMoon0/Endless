@@ -379,6 +379,10 @@ def wait_for_live_join_outcome(
                 f"{label}: server exited before the client reported an outcome"
             )
         if client_output.exhausted():
+            if not any("ENDLESS_" in line for line in client_output.history):
+                raise TransientPreLoginFailure(
+                    f"{label}: client exited before Endless login verification began"
+                )
             return None
 
         time.sleep(0.1)
@@ -530,7 +534,7 @@ def prepare_client_dir(client_dir: Path, module: str, config: dict) -> None:
         encoding="utf-8",
     )
     write_endless_config(client_dir / "config", config)
-    if module == "forge":
+    if module.startswith("forge-"):
         # Forge's early-display window creates its own GL context before the
         # game launches and only reaches GL 4.6/4.5 core profiles; on the CI
         # runner's virtual display it times out ("Timed out trying to setup

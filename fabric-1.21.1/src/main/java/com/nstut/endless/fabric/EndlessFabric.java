@@ -15,6 +15,7 @@ import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerConfigurationConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerConfigurationNetworking;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -65,7 +66,7 @@ public final class EndlessFabric implements ModInitializer {
     ) implements CustomPacketPayload {
         public static final Type<HeightSyncPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(Endless.MOD_ID, "height_sync"));
-        public static final StreamCodec<RegistryFriendlyByteBuf, HeightSyncPayload> CODEC =
+        public static final StreamCodec<FriendlyByteBuf, HeightSyncPayload> CODEC =
             StreamCodec.of((buf, payload) -> payload.write(buf), HeightSyncPayload::read);
 
         static HeightSyncPayload current() {
@@ -75,13 +76,13 @@ public final class EndlessFabric implements ModInitializer {
                 EndlessLogicalHeights.MIN_BUILD_HEIGHT, EndlessLogicalHeights.MAX_BUILD_HEIGHT);
         }
 
-        static HeightSyncPayload read(RegistryFriendlyByteBuf buf) {
+        static HeightSyncPayload read(FriendlyByteBuf buf) {
             return new HeightSyncPayload(
                 buf.readVarInt(), buf.readVarInt(), buf.readVarInt(),
                 buf.readVarInt(), buf.readVarInt(), buf.readVarInt());
         }
 
-        void write(RegistryFriendlyByteBuf buf) {
+        void write(FriendlyByteBuf buf) {
             buf.writeVarInt(logicalMin);
             buf.writeVarInt(logicalMax);
             buf.writeVarInt(denseMin);

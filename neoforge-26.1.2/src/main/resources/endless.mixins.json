@@ -32,6 +32,7 @@
     "BiomeMixin",
     "PathNavigationMixin",
     "PathNavigationRegionMixin",
+    "PathTypeCacheMixin",
     "GroundPathNavigationMixin",
     "WalkNodeEvaluatorMixin",
     "FlyNodeEvaluatorMixin",

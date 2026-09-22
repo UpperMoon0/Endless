@@ -15,12 +15,12 @@ public abstract class FlyNodeEvaluatorMixin {
         method = "getPathType",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/world/level/CollisionGetter;getMinBuildHeight()I"
+            target = "Lnet/minecraft/world/level/CollisionGetter;getMinY()I"
         )
     )
     private int endless$logicalMinBuildHeight(CollisionGetter level) {
         return EndlessLogicalHeights.isActive()
-            ? EndlessHeights.getMinBuildHeight()
-            : level.getMinBuildHeight();
+            ? EndlessHeights.getMinY()
+            : level.getMinY();
     }
 }

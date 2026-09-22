@@ -43,7 +43,7 @@ public abstract class BiomeMixin {
             return;
         }
         Biome self = (Biome) (Object) this;
-        if (self.warmEnoughToRain(pos) || level.getBrightness(LightLayer.BLOCK, pos) >= 10) {
+        if (self.warmEnoughToRain(pos, level.getSeaLevel()) || level.getBrightness(LightLayer.BLOCK, pos) >= 10) {
             cir.setReturnValue(false);
             return;
         }
@@ -76,7 +76,7 @@ public abstract class BiomeMixin {
             return;
         }
         Biome self = (Biome) (Object) this;
-        if (self.warmEnoughToRain(pos) || level.getBrightness(LightLayer.BLOCK, pos) >= 10) {
+        if (self.warmEnoughToRain(pos, level.getSeaLevel()) || level.getBrightness(LightLayer.BLOCK, pos) >= 10) {
             cir.setReturnValue(false);
             return;
         }

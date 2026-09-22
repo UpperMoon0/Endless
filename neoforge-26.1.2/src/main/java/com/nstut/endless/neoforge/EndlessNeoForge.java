@@ -11,7 +11,7 @@ import java.util.function.Consumer;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.network.ConfigurationTask;
 import net.minecraft.server.level.ServerLevel;
 import net.neoforged.bus.api.IEventBus;
@@ -75,10 +75,10 @@ public final class EndlessNeoForge {
 
     private void chunkUnload(ChunkEvent.Unload event) {
         if (event.getLevel() instanceof ServerLevel level) {
-            EndlessVerticalEngine.unloadColumn(level, event.getChunk().getPos().x, event.getChunk().getPos().z);
+            EndlessVerticalEngine.unloadColumn(level, event.getChunk().getPos().x(), event.getChunk().getPos().z());
             ExtendedPoiStorage.unload(level, event.getChunk().getPos());
         } else if (event.getLevel() instanceof net.minecraft.world.level.Level level) {
-            EndlessVerticalEngine.unloadColumn(level, event.getChunk().getPos().x, event.getChunk().getPos().z);
+            EndlessVerticalEngine.unloadColumn(level, event.getChunk().getPos().x(), event.getChunk().getPos().z());
         }
     }
 
@@ -107,7 +107,7 @@ public final class EndlessNeoForge {
         int envelopeMin, int envelopeMax, int protocol
     ) implements CustomPacketPayload {
         public static final Type<HeightSyncPayload> TYPE =
-            new Type<>(ResourceLocation.fromNamespaceAndPath(Endless.MOD_ID, "height_sync"));
+            new Type<>(Identifier.fromNamespaceAndPath(Endless.MOD_ID, "height_sync"));
         public static final StreamCodec<FriendlyByteBuf, HeightSyncPayload> CODEC =
             StreamCodec.of((buf, payload) -> payload.write(buf), HeightSyncPayload::read);
 
@@ -156,7 +156,7 @@ public final class EndlessNeoForge {
 
     public record HeightAckPayload(int protocol) implements CustomPacketPayload {
         public static final Type<HeightAckPayload> TYPE =
-            new Type<>(ResourceLocation.fromNamespaceAndPath(Endless.MOD_ID, "height_ack"));
+            new Type<>(Identifier.fromNamespaceAndPath(Endless.MOD_ID, "height_ack"));
         public static final StreamCodec<FriendlyByteBuf, HeightAckPayload> CODEC =
             StreamCodec.of((buf, payload) -> buf.writeVarInt(payload.protocol),
                 buf -> new HeightAckPayload(buf.readVarInt()));
@@ -178,7 +178,7 @@ public final class EndlessNeoForge {
 
     public record VerticalPagePayload(VerticalPageSnapshot snapshot) implements CustomPacketPayload {
         public static final Type<VerticalPagePayload> TYPE =
-            new Type<>(ResourceLocation.fromNamespaceAndPath(Endless.MOD_ID, "vertical_page"));
+            new Type<>(Identifier.fromNamespaceAndPath(Endless.MOD_ID, "vertical_page"));
         public static final StreamCodec<FriendlyByteBuf, VerticalPagePayload> CODEC =
             StreamCodec.of((buf, payload) -> payload.snapshot.write(buf),
                 buf -> new VerticalPagePayload(VerticalPageSnapshot.read(buf)));

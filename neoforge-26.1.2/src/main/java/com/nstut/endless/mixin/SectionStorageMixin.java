@@ -91,7 +91,7 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
         if (!endless$isExtendedPoiSection(sectionKey)) {
             return;
         }
-        long columnKey = ChunkPos.asLong(SectionPos.x(sectionKey), SectionPos.z(sectionKey));
+        long columnKey = ChunkPos.pack(SectionPos.x(sectionKey), SectionPos.z(sectionKey));
         endless$loadColumn(columnKey);
         Optional<R> value = storage.get(sectionKey);
         if (value == null) {
@@ -109,7 +109,7 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
         ci.cancel();
         Optional<R> value = storage.get(sectionKey);
         if (value != null && value.isPresent()) {
-            endless$dirtyColumns.add(ChunkPos.asLong(SectionPos.x(sectionKey), SectionPos.z(sectionKey)));
+            endless$dirtyColumns.add(ChunkPos.pack(SectionPos.x(sectionKey), SectionPos.z(sectionKey)));
         }
     }
 
@@ -143,12 +143,12 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
         if (!endless$isPoiStorage() || !EndlessLogicalHeights.isActive()) {
             return List.of();
         }
-        long columnKey = chunkPos.toLong();
+        long columnKey = chunkPos.pack();
         endless$loadColumn(columnKey);
         ArrayList<R> result = new ArrayList<>();
         for (Long2ObjectMap.Entry<Optional<R>> entry : storage.long2ObjectEntrySet()) {
             long sectionKey = entry.getLongKey();
-            if (SectionPos.x(sectionKey) == chunkPos.x && SectionPos.z(sectionKey) == chunkPos.z
+            if (SectionPos.x(sectionKey) == chunkPos.x() && SectionPos.z(sectionKey) == chunkPos.z()
                 && endless$isExtendedPoiSection(sectionKey)) {
                 entry.getValue().ifPresent(result::add);
             }
@@ -161,7 +161,7 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
         if (!endless$isPoiStorage()) {
             return;
         }
-        long columnKey = chunkPos.toLong();
+        long columnKey = chunkPos.pack();
         if (endless$dirtyColumns.contains(columnKey)) {
             endless$saveColumn(columnKey);
         }
@@ -172,14 +172,14 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
         if (!endless$isPoiStorage()) {
             return;
         }
-        long columnKey = chunkPos.toLong();
+        long columnKey = chunkPos.pack();
         if (endless$dirtyColumns.contains(columnKey)) {
             endless$saveColumn(columnKey);
         }
         Iterator<Long2ObjectMap.Entry<Optional<R>>> iterator = storage.long2ObjectEntrySet().iterator();
         while (iterator.hasNext()) {
             long sectionKey = iterator.next().getLongKey();
-            if (SectionPos.x(sectionKey) == chunkPos.x && SectionPos.z(sectionKey) == chunkPos.z
+            if (SectionPos.x(sectionKey) == chunkPos.x() && SectionPos.z(sectionKey) == chunkPos.z()
                 && endless$isExtendedPoiSection(sectionKey)) {
                 iterator.remove();
             }

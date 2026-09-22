@@ -36,38 +36,38 @@ public abstract class WalkNodeEvaluatorMixin {
         method = "getStart",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/world/level/CollisionGetter;getMinBuildHeight()I"
+            target = "Lnet/minecraft/world/level/CollisionGetter;getMinY()I"
         )
     )
     private int endless$logicalStartMin(CollisionGetter level) {
         return EndlessLogicalHeights.isActive()
-            ? EndlessHeights.getMinBuildHeight()
-            : level.getMinBuildHeight();
+            ? EndlessHeights.getMinY()
+            : level.getMinY();
     }
 
     @Redirect(
         method = {"tryFindFirstNonWaterBelow", "tryFindFirstGroundNodeBelow"},
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/world/level/Level;getMinBuildHeight()I"
+            target = "Lnet/minecraft/world/level/Level;getMinY()I"
         )
     )
     private int endless$logicalSearchMin(Level level) {
         return EndlessLogicalHeights.isActive()
-            ? EndlessHeights.getMinBuildHeight()
-            : level.getMinBuildHeight();
+            ? EndlessHeights.getMinY()
+            : level.getMinY();
     }
 
     @Redirect(
         method = "getPathTypeStatic(Lnet/minecraft/world/level/pathfinder/PathfindingContext;Lnet/minecraft/core/BlockPos$MutableBlockPos;)Lnet/minecraft/world/level/pathfinder/PathType;",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/world/level/CollisionGetter;getMinBuildHeight()I"
+            target = "Lnet/minecraft/world/level/CollisionGetter;getMinY()I"
         )
     )
     private static int endless$classificationMin(CollisionGetter level) {
         return EndlessLogicalHeights.isActive()
-            ? EndlessHeights.getMinBuildHeight()
-            : level.getMinBuildHeight();
+            ? EndlessHeights.getMinY()
+            : level.getMinY();
     }
 }

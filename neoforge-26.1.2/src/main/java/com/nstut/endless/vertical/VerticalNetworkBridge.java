@@ -70,11 +70,11 @@ public final class VerticalNetworkBridge {
                 continue;
             }
 
-            ServerLevel level = player.serverLevel();
+            ServerLevel level = player.level();
             ChunkPos center = player.chunkPosition();
             for (int dz = -viewDistance; dz <= viewDistance; dz++) {
                 for (int dx = -viewDistance; dx <= viewDistance; dx++) {
-                    LevelChunk chunk = level.getChunkSource().getChunkNow(center.x + dx, center.z + dz);
+                    LevelChunk chunk = level.getChunkSource().getChunkNow(center.x() + dx, center.z() + dz);
                     if (chunk != null) {
                         sendVisiblePagesForChunk(player, chunk);
                     }
@@ -105,24 +105,24 @@ public final class VerticalNetworkBridge {
         int denseMax = EndlessHeights.getDenseMaxBuildHeight();
         int expectedHeight = denseMax - denseMin;
         int expectedMinSection = Math.floorDiv(denseMin, 16);
-        int expectedMaxSection = Math.floorDiv(denseMax - 1, 16) + 1;
+        int expectedMaxSection = Math.floorDiv(denseMax - 1, 16);
 
-        if (level.getMinBuildHeight() != denseMin
+        if (level.getMinY() != denseMin
             || level.getHeight() != expectedHeight
-            || level.getMinSection() != expectedMinSection
-            || level.getMaxSection() != expectedMaxSection) {
+            || level.getMinSectionY() != expectedMinSection
+            || level.getMaxSectionY() != expectedMaxSection) {
             throw new IllegalStateException(
                 "Logical range shifted vanilla dense section geometry: logical=["
                     + EndlessHeights.getMinBuildHeight() + "," + EndlessHeights.getMaxBuildHeight()
                     + ") dense=[" + denseMin + "," + denseMax + ") accessorMin="
-                    + level.getMinBuildHeight() + " accessorHeight=" + level.getHeight()
-                    + " sections=[" + level.getMinSection() + "," + level.getMaxSection() + ")");
+                    + level.getMinY() + " accessorHeight=" + level.getHeight()
+                    + " sections=[" + level.getMinSectionY() + "," + level.getMaxSectionY() + ")");
         }
         denseInvariantChecked = true;
     }
 
     private static void sendPage(ServerPlayer player, LevelChunk chunk, int pageY) {
-        VerticalPagePos pos = new VerticalPagePos(chunk.getPos().x, pageY, chunk.getPos().z);
+        VerticalPagePos pos = new VerticalPagePos(chunk.getPos().x(), pageY, chunk.getPos().z());
         MinecraftVerticalWorld world = EndlessVerticalEngine.world(player.level());
         if (!world.pageExists(pos)) {
             return;

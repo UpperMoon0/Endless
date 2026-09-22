@@ -105,7 +105,7 @@ public final class MinecraftVerticalWorld {
         VerticalPagePos pagePos = VerticalPagePos.fromChunkAndSection(chunkX, sectionY, chunkZ);
 
         if (section.hasOnlyAir()) {
-            long columnKey = ChunkPos.asLong(chunkX, chunkZ);
+            long columnKey = ChunkPos.pack(chunkX, chunkZ);
             SparseVerticalColumn<LevelChunkSection> column = columns.get(columnKey);
             if (column != null) {
                 column.removeSection(sectionY);
@@ -125,7 +125,7 @@ public final class MinecraftVerticalWorld {
         int chunkX = blockX >> 4;
         int chunkZ = blockZ >> 4;
         HeightKey key = new HeightKey(
-            ChunkPos.asLong(chunkX, chunkZ),
+            ChunkPos.pack(chunkX, chunkZ),
             (blockX & 15) | ((blockZ & 15) << 4),
             type);
         Integer cached = heightCache.get(key);
@@ -175,7 +175,7 @@ public final class MinecraftVerticalWorld {
         }
 
         VerticalPage<LevelChunkSection> decoded = snapshot.decode(level);
-        long key = ChunkPos.asLong(pos.chunkX(), pos.chunkZ());
+        long key = ChunkPos.pack(pos.chunkX(), pos.chunkZ());
         SparseVerticalColumn<LevelChunkSection> targetColumn =
             columns.computeIfAbsent(key, ignored -> new SparseVerticalColumn<>());
         targetColumn.removePage(pos.pageY());
@@ -191,12 +191,12 @@ public final class MinecraftVerticalWorld {
     }
 
     public synchronized List<Integer> loadedPageYs(int chunkX, int chunkZ) {
-        SparseVerticalColumn<LevelChunkSection> column = columns.get(ChunkPos.asLong(chunkX, chunkZ));
+        SparseVerticalColumn<LevelChunkSection> column = columns.get(ChunkPos.pack(chunkX, chunkZ));
         return column == null ? List.of() : column.pageYs();
     }
 
     public synchronized boolean pageExists(VerticalPagePos pos) {
-        SparseVerticalColumn<LevelChunkSection> column = columns.get(ChunkPos.asLong(pos.chunkX(), pos.chunkZ()));
+        SparseVerticalColumn<LevelChunkSection> column = columns.get(ChunkPos.pack(pos.chunkX(), pos.chunkZ()));
         if (column != null && column.getPage(pos.pageY()) != null) {
             return true;
         }
@@ -213,7 +213,7 @@ public final class MinecraftVerticalWorld {
     }
 
     public synchronized void unloadColumn(int chunkX, int chunkZ) {
-        long key = ChunkPos.asLong(chunkX, chunkZ);
+        long key = ChunkPos.pack(chunkX, chunkZ);
         if (disk != null) {
             for (VerticalPagePos pos : new ArrayList<>(dirtyPages)) {
                 if (pos.chunkX() == chunkX && pos.chunkZ() == chunkZ) {
@@ -282,7 +282,7 @@ public final class MinecraftVerticalWorld {
 
     private List<Integer> allPageYs(int chunkX, int chunkZ) {
         HashSet<Integer> result = new HashSet<>();
-        SparseVerticalColumn<LevelChunkSection> column = columns.get(ChunkPos.asLong(chunkX, chunkZ));
+        SparseVerticalColumn<LevelChunkSection> column = columns.get(ChunkPos.pack(chunkX, chunkZ));
         if (column != null) {
             result.addAll(column.pageYs());
         }
@@ -446,7 +446,7 @@ public final class MinecraftVerticalWorld {
     }
 
     private VerticalPage<LevelChunkSection> getPage(VerticalPagePos pos, boolean create, boolean loadFromDisk) {
-        long key = ChunkPos.asLong(pos.chunkX(), pos.chunkZ());
+        long key = ChunkPos.pack(pos.chunkX(), pos.chunkZ());
         SparseVerticalColumn<LevelChunkSection> existingColumn = columns.get(key);
         VerticalPage<LevelChunkSection> existingPage =
             existingColumn == null ? null : existingColumn.getPage(pos.pageY());
@@ -486,7 +486,7 @@ public final class MinecraftVerticalWorld {
     }
 
     private void invalidateForBlockChange(BlockPos pos) {
-        long key = ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4);
+        long key = ChunkPos.pack(pos.getX() >> 4, pos.getZ() >> 4);
         int local = (pos.getX() & 15) | ((pos.getZ() & 15) << 4);
         heightCache.keySet().removeIf(heightKey -> heightKey.chunkKey == key && heightKey.localColumn == local);
         invalidateBlockLightAround(pos);
@@ -506,7 +506,7 @@ public final class MinecraftVerticalWorld {
             for (int dy = -remainingX; dy <= remainingX; dy++) {
                 int remaining = remainingX - Math.abs(dy);
                 for (int dz = -remaining; dz <= remaining; dz++) {
-                    blockLight.remove(new BlockKey(center.x + dx, center.y + dy, center.z + dz));
+                    blockLight.remove(new BlockKey(center.x() + dx, center.y + dy, center.z() + dz));
                 }
             }
         }

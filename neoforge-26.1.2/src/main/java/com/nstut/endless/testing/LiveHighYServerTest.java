@@ -10,7 +10,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -134,7 +134,7 @@ public final class LiveHighYServerTest {
         if (server.getPlayerList().getPlayers().isEmpty()) return;
         ticksWithPlayer++;
         ServerPlayer player = server.getPlayerList().getPlayers().get(0);
-        ServerLevel level = player.serverLevel();
+        ServerLevel level = player.level();
 
         try {
             if (!prepared) {
@@ -465,7 +465,7 @@ public final class LiveHighYServerTest {
         if (!Boolean.parseBoolean(System.getProperty(WAYSTONES_SYSTEM_PROPERTY, "false"))) return;
 
         Class.forName("net.blay09.mods.waystones.block.WaystoneBlockBase");
-        Item item = BuiltInRegistries.ITEM.get(ResourceLocation.fromNamespaceAndPath("waystones", "waystone"));
+        Item item = BuiltInRegistries.ITEM.get(Identifier.fromNamespaceAndPath("waystones", "waystone"));
         require(item instanceof BlockItem, "waystones:waystone item was not registered as a BlockItem");
         Block waystoneBlock = ((BlockItem) item).getBlock();
 
@@ -550,7 +550,7 @@ public final class LiveHighYServerTest {
     }
 
     private static long mechanicsChunkKey() {
-        return ChunkPos.asLong(0, 0);
+        return ChunkPos.pack(0, 0);
     }
 
     private static boolean mechanicsChunkTickEligible(ServerLevel level) {

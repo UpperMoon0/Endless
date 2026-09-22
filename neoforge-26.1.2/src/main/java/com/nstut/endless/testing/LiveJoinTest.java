@@ -3,12 +3,12 @@ package com.nstut.endless.testing;
 import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.chunk.RenderChunkRegion;
+import net.minecraft.client.renderer.chunk.RenderSectionRegion;
 import net.minecraft.client.renderer.chunk.RenderRegionCache;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.core.Direction;
@@ -370,7 +370,7 @@ public final class LiveJoinTest {
 
     private static boolean waystoneStatus(Level level) {
         try {
-            Block waystone = BuiltInRegistries.BLOCK.get(ResourceLocation.fromNamespaceAndPath("waystones", "waystone"));
+            Block waystone = BuiltInRegistries.BLOCK.get(Identifier.fromNamespaceAndPath("waystones", "waystone"));
             BlockPos base = LiveHighYServerTest.upperWaystoneBasePos();
             BlockPos top = LiveHighYServerTest.upperWaystoneTopPos();
             return waystone != Blocks.AIR
@@ -385,7 +385,7 @@ public final class LiveJoinTest {
 
     private static boolean canRender(Level level, BlockPos pos) {
         try {
-            RenderChunkRegion region = new RenderRegionCache().createRegion(level, SectionPos.of(pos));
+            RenderSectionRegion region = new RenderRegionCache().createRegion(level, SectionPos.of(pos));
             return region != null && region.getBlockState(pos).is(Blocks.GLOWSTONE);
         } catch (Throwable t) {
             System.out.println("ENDLESS_EXTREME_RENDER_FAIL pos=" + pos + " error=" + t);

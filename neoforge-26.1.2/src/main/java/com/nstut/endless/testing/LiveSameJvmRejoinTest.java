@@ -10,7 +10,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.level.GameRules;
+import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.WorldDataConfiguration;
@@ -170,7 +170,7 @@ public final class LiveSameJvmRejoinTest {
             bootstrapSaveQueued = true;
             serverTask(server, "bootstrapSave", () -> {
                 ServerPlayer player = requirePlayer(server, playerUuid);
-                ServerLevel level = player.serverLevel();
+                ServerLevel level = player.level();
                 // Force the target horizontal chunk to be real generated terrain before
                 // converting the save metadata to a legacy wide dense layout.
                 level.getChunk(0, 0);
@@ -254,7 +254,7 @@ public final class LiveSameJvmRejoinTest {
             fixtureTaskQueued = true;
             serverTask(server, "prepareFixture", () -> {
                 ServerPlayer player = requirePlayer(server, playerUuid);
-                ServerLevel level = player.serverLevel();
+                ServerLevel level = player.level();
                 require(!level.isOutsideBuildHeight(TARGET_Y), "target is outside logical build range");
                 require(level.getSectionsCount() == 254,
                     "migrated legacy dense core did not load as 254 sections: " + level.getSectionsCount());
@@ -303,11 +303,11 @@ public final class LiveSameJvmRejoinTest {
             placementCheckQueued = true;
             serverTask(server, "applySparseEdit", () -> {
                 ServerPlayer player = requirePlayer(server, playerUuid);
-                require(player.serverLevel().setBlock(TARGET, Blocks.STONE.defaultBlockState(), 3),
+                require(player.level().setBlock(TARGET, Blocks.STONE.defaultBlockState(), 3),
                     "server could not apply sparse million-height edit");
-                require(player.serverLevel().getBlockState(TARGET).is(Blocks.STONE),
+                require(player.level().getBlockState(TARGET).is(Blocks.STONE),
                     "server sparse edit did not settle");
-                verifyDenseCanary(player.serverLevel(), "after sparse edit");
+                verifyDenseCanary(player.level(), "after sparse edit");
                 serverSawPlacement = true;
             });
         }
@@ -338,7 +338,7 @@ public final class LiveSameJvmRejoinTest {
             saveTaskQueued = true;
             serverTask(server, "saveWorld", () -> {
                 ServerPlayer player = requirePlayer(server, playerUuid);
-                require(player.serverLevel().getBlockState(TARGET).is(Blocks.STONE),
+                require(player.level().getBlockState(TARGET).is(Blocks.STONE),
                     "sparse block vanished before save");
                 server.saveEverything(false, true, true);
                 saveComplete = true;
@@ -415,9 +415,9 @@ public final class LiveSameJvmRejoinTest {
             rejoinCheckQueued = true;
             serverTask(server, "verifyReopenedServerState", () -> {
                 ServerPlayer player = requirePlayer(server, playerUuid);
-                require(player.serverLevel().getBlockState(TARGET).is(Blocks.STONE),
+                require(player.level().getBlockState(TARGET).is(Blocks.STONE),
                     "saved sparse block is missing on reopened integrated server");
-                verifyDenseCanary(player.serverLevel(), "server reopen");
+                verifyDenseCanary(player.level(), "server reopen");
                 require(Math.abs(player.getY() - (TARGET_Y + 2.0D)) < 32.0D,
                     "reopened player did not retain million-height position: y=" + player.getY());
                 player.setNoGravity(true);
@@ -456,7 +456,7 @@ public final class LiveSameJvmRejoinTest {
             groundTeleportQueued = true;
             serverTask(server, "groundReturn", () -> {
                 ServerPlayer player = requirePlayer(server, playerUuid);
-                verifyDenseCanary(player.serverLevel(), "server before ground return");
+                verifyDenseCanary(player.level(), "server before ground return");
                 player.teleportTo(0.5D, GROUND_RETURN_Y, 0.5D);
                 player.setNoGravity(true);
                 groundTeleportServerDone = true;

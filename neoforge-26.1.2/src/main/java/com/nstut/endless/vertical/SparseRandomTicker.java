@@ -27,7 +27,7 @@ public final class SparseRandomTicker {
             Map<Long, SparseVerticalColumn<LevelChunkSection>> columns =
                 ((MinecraftVerticalWorldAccessor) (Object) world).endless$getColumns();
             SparseVerticalColumn<LevelChunkSection> column =
-                columns.get(ChunkPos.asLong(chunk.getPos().x, chunk.getPos().z));
+                columns.get(ChunkPos.pack(chunk.getPos().x(), chunk.getPos().z()));
             if (column == null || column.isEmpty()) {
                 return;
             }
@@ -65,11 +65,11 @@ public final class SparseRandomTicker {
                 pos.getY() - baseY,
                 pos.getZ() - baseZ);
             if (state.isRandomlyTicking()) {
-                state.randomTick(level, pos, level.random);
+                state.randomTick(level, pos, level.getRandom());
             }
             FluidState fluid = state.getFluidState();
             if (fluid.isRandomlyTicking()) {
-                fluid.randomTick(level, pos, level.random);
+                fluid.randomTick(level, pos, level.getRandom());
             }
         }
     }

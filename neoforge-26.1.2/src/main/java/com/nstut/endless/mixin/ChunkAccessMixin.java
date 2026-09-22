@@ -62,8 +62,8 @@ public abstract class ChunkAccessMixin {
             return;
         }
 
-        int denseMin = chunk.getMinBuildHeight();
-        int denseMax = chunk.getMaxBuildHeight() - 1;
+        int denseMin = chunk.getMinY();
+        int denseMax = chunk.getMaxY();
         int denseFrom = Math.max(minY, denseMin);
         int denseTo = Math.min(maxY, denseMax);
         if (denseFrom <= denseTo) {
@@ -106,7 +106,7 @@ public abstract class ChunkAccessMixin {
         int lastPage = VerticalPageLayout.pageYForBlockY(boundedTo);
         for (int pageY = firstPage; pageY <= lastPage; pageY++) {
             if (sparse.pageExists(new VerticalPagePos(
-                chunk.getPos().x, pageY, chunk.getPos().z))) {
+                chunk.getPos().x(), pageY, chunk.getPos().z()))) {
                 return true;
             }
         }

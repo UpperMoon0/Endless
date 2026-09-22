@@ -8,6 +8,7 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.navigation.GroundPathNavigation;
 import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.LevelChunk;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -28,20 +29,21 @@ public abstract class GroundPathNavigationMixin extends PathNavigation {
         }
     }
 
-    @Redirect(method = "createPath(Lnet/minecraft/core/BlockPos;I)Lnet/minecraft/world/level/pathfinder/Path;",
-        at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getMinBuildHeight()I"))
-    private int endless$targetMin(Level level, BlockPos target, int accuracy) {
-        if (!EndlessLogicalHeights.isActive()) return level.getMinBuildHeight();
+    @Redirect(method = "findSurfacePosition",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getMinY()I"))
+    private int endless$targetMin(Level level, LevelChunk chunk, BlockPos target, int reachRange) {
+        if (!EndlessLogicalHeights.isActive()) return level.getMinY();
         // Match the navigator's local search radius, including its eight-block margin.
         int radius = (int) Math.ceil(mob.getAttributeValue(Attributes.FOLLOW_RANGE)) + 8;
         return Math.max(EndlessHeights.getMinBuildHeight(), target.getY() - radius);
     }
 
-    @Redirect(method = "createPath(Lnet/minecraft/core/BlockPos;I)Lnet/minecraft/world/level/pathfinder/Path;",
-        at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getMaxBuildHeight()I"))
-    private int endless$targetMax(Level level, BlockPos target, int accuracy) {
-        if (!EndlessLogicalHeights.isActive()) return level.getMaxBuildHeight();
+    @Redirect(method = "findSurfacePosition",
+        at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getMaxY()I"))
+    private int endless$targetMax(Level level, LevelChunk chunk, BlockPos target, int reachRange) {
+        if (!EndlessLogicalHeights.isActive()) return level.getMaxY();
         int radius = (int) Math.ceil(mob.getAttributeValue(Attributes.FOLLOW_RANGE)) + 8;
-        return Math.min(EndlessHeights.getMaxBuildHeight(), target.getY() + radius);
+        // Minecraft 26.1's getMaxY is inclusive; Endless' configured max remains exclusive.
+        return Math.min(EndlessHeights.getMaxBuildHeight() - 1, target.getY() + radius);
     }
 }

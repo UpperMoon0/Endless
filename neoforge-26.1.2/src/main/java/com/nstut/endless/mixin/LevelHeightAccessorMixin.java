@@ -14,7 +14,7 @@ public interface LevelHeightAccessorMixin {
 
     /** @author Endless @reason Keep vanilla section-array origin on the persisted dense core. */
     @Overwrite
-    default int getMinBuildHeight() {
+    default int getMinY() {
         return EndlessHeights.getDenseMinBuildHeight();
     }
 

@@ -1,8 +1,10 @@
 package com.nstut.endless.mixin;
 
-import com.nstut.endless.vertical.EndlessVerticalEngine;
 import com.nstut.endless.testing.LiveRenderProbe;
+import com.nstut.endless.vertical.EndlessVerticalEngine;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.LevelHeightAccessor;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import org.spongepowered.asm.mixin.Final;
@@ -13,21 +15,28 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * Makes Minecraft's immutable render-chunk facade read sparse states at high Y.
- *
- * <p>Vanilla RenderChunk snapshots only {@code LevelChunkSection[]} and therefore
- * cannot contain Endless pages. The target class is package-private, so this
- * mixin uses a string target while shadowing its wrapped LevelChunk.</p>
+ * Minecraft 26.1 replaced RenderChunk with an immutable per-section SectionCopy.
+ * Sparse sections have no dense PalettedContainer snapshot, so route their
+ * reads back through Endless' sparse world instead.
  */
-@Mixin(targets = "net.minecraft.client.renderer.chunk.RenderChunk")
+@Mixin(targets = "net.minecraft.client.renderer.chunk.SectionCopy")
 public abstract class RenderChunkMixin {
-    @Shadow @Final private LevelChunk wrapped;
+    @Shadow @Final private LevelHeightAccessor levelHeightAccessor;
 
     @Inject(method = "getBlockState", at = @At("HEAD"), cancellable = true)
     private void endless$getBlockState(BlockPos pos, CallbackInfoReturnable<BlockState> cir) {
-        if (EndlessVerticalEngine.isExtendedY(wrapped.getLevel(), pos.getY())) {
+        if (this.levelHeightAccessor instanceof LevelChunk chunk
+            && EndlessVerticalEngine.isExtendedY(chunk.getLevel(), pos.getY())) {
             LiveRenderProbe.recordRenderChunk(pos);
-            cir.setReturnValue(EndlessVerticalEngine.world(wrapped.getLevel()).getBlockState(pos));
+            cir.setReturnValue(EndlessVerticalEngine.world(chunk.getLevel()).getBlockState(pos));
+        }
+    }
+
+    @Inject(method = "getBlockEntity", at = @At("HEAD"), cancellable = true)
+    private void endless$getBlockEntity(BlockPos pos, CallbackInfoReturnable<BlockEntity> cir) {
+        if (this.levelHeightAccessor instanceof LevelChunk chunk
+            && EndlessVerticalEngine.isExtendedY(chunk.getLevel(), pos.getY())) {
+            cir.setReturnValue(chunk.getBlockEntity(pos));
         }
     }
 }

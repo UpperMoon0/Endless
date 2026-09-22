@@ -52,6 +52,22 @@ public abstract class ChunkAccessMixin {
      * never hide real sparse blocks and avoids scanning/decoding an entire page
      * merely for an emptiness preflight.</p>
      */
+    @Inject(method = "isSectionEmpty", at = @At("HEAD"), cancellable = true)
+    private void endless$isSectionEmpty(int sectionY, CallbackInfoReturnable<Boolean> cir) {
+        if (!EndlessLogicalHeights.isActive() || !((Object) this instanceof LevelChunk chunk)) {
+            return;
+        }
+        int index = chunk.getSectionIndexFromSectionY(sectionY);
+        if (index >= 0 && index < chunk.getSections().length) {
+            return;
+        }
+
+        int minY = sectionY * 16;
+        int maxY = minY + 15;
+        MinecraftVerticalWorld sparse = EndlessVerticalEngine.world(chunk.getLevel());
+        cir.setReturnValue(!endless$hasSparsePage(chunk, sparse, minY, maxY));
+    }
+
     @Inject(method = "isYSpaceEmpty", at = @At("HEAD"), cancellable = true)
     private void endless$isYSpaceEmpty(int minY, int maxY, CallbackInfoReturnable<Boolean> cir) {
         if (!EndlessLogicalHeights.isActive() || !((Object) this instanceof LevelChunk chunk)) {

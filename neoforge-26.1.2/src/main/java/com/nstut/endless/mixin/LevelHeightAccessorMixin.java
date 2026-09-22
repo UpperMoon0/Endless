@@ -26,6 +26,26 @@ public interface LevelHeightAccessorMixin {
 
     /**
      * @author Endless
+     * @reason Minecraft 26.1 world-bound checks use isInsideBuildHeight directly.
+     * Keep real worlds logical while dense section-array owners remain bounded.
+     */
+    @Overwrite
+    default boolean isInsideBuildHeight(int y) {
+        if (EndlessLogicalHeights.isActive()
+            && ((Object) this instanceof Level || (Object) this instanceof PathNavigationRegion)) {
+            return !EndlessHeights.isOutsideBuildHeight(y);
+        }
+        return !EndlessHeights.isOutsideDenseBuildHeight(y);
+    }
+
+    /** @author Endless @reason Apply the accessor-appropriate buildability test to positions. */
+    @Overwrite
+    default boolean isInsideBuildHeight(BlockPos blockPos) {
+        return isInsideBuildHeight(blockPos.getY());
+    }
+
+    /**
+     * @author Endless
      * @reason Real worlds expose the user-configured logical build limit, while
      * dense generation/chunk accessors must retain the persisted dense guard
      * before indexing their bounded section arrays.

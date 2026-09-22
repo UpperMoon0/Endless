@@ -29,3 +29,6 @@ side = "BOTH"
 
 [[mixins]]
 config = "endless.mixins.json"
+
+[[mixins]]
+config = "endless-neoforge.mixins.json"

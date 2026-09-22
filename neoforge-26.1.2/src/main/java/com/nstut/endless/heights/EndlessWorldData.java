@@ -1,24 +1,21 @@
 package com.nstut.endless.heights;
 
 import com.nstut.endless.config.EndlessConfig;
-import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.world.level.saveddata.SavedData;
 
 /**
- * World-persisted vanilla dense-core range.
+ * Version-neutral representation of Endless' persisted dense-core range.
  *
- * <p>This is intentionally not the user-configured logical build limit. The
- * dense range survives config shrink so vanilla Anvil sections are never
- * dropped merely because the current sparse build envelope is narrower.</p>
+ * <p>Minecraft 26.1 namespaces SavedData files by identifier. Endless keeps its
+ * historical data/endless_build_heights.dat path instead so the same world can
+ * move between supported Minecraft lines without losing the dense-core record.</p>
  */
-public class EndlessWorldData extends SavedData {
+public final class EndlessWorldData {
     public static final String DATA_NAME = "endless_build_heights";
 
     private int minBuildHeight;
     private int maxBuildHeight;
 
-    /** Fresh v0.5 data starts with the vanilla-sized dense compatibility core. */
     public EndlessWorldData() {
         minBuildHeight = EndlessHeights.VANILLA_MIN_BUILD_HEIGHT;
         maxBuildHeight = EndlessHeights.VANILLA_MAX_BUILD_HEIGHT;
@@ -26,8 +23,11 @@ public class EndlessWorldData extends SavedData {
 
     public static EndlessWorldData load(CompoundTag tag) {
         EndlessWorldData data = new EndlessWorldData();
-        int min = tag.getInt("MinBuildHeight");
-        int max = tag.getInt("MaxBuildHeight");
+        if (!tag.contains("MinBuildHeight") || !tag.contains("MaxBuildHeight")) {
+            throw new IllegalArgumentException("Persisted Endless dense range is missing bounds");
+        }
+        int min = tag.getIntOr("MinBuildHeight", Integer.MIN_VALUE);
+        int max = tag.getIntOr("MaxBuildHeight", Integer.MAX_VALUE);
         if (min < EndlessConfig.DENSE_MIN_BUILD_HEIGHT
             || max > EndlessConfig.DENSE_MAX_BUILD_HEIGHT
             || min >= max
@@ -40,8 +40,8 @@ public class EndlessWorldData extends SavedData {
         return data;
     }
 
-    @Override
-    public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
+    public CompoundTag save() {
+        CompoundTag tag = new CompoundTag();
         tag.putInt("MinBuildHeight", minBuildHeight);
         tag.putInt("MaxBuildHeight", maxBuildHeight);
         return tag;

@@ -3,7 +3,6 @@ package com.nstut.endless.heights;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtIo;
-import net.minecraft.nbt.Tag;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.storage.RegionFile;
@@ -170,10 +169,10 @@ final class LegacyRegionScanner {
         boolean bottom = false;
         boolean top = false;
 
-        ListTag sections = chunk.getList("sections", Tag.TAG_COMPOUND);
+        ListTag sections = chunk.getListOrEmpty("sections");
         for (int i = 0; i < sections.size(); i++) {
-            CompoundTag section = sections.getCompound(i);
-            int sectionY = section.getByte("Y");
+            CompoundTag section = sections.getCompound(i).orElseThrow(() -> new IllegalArgumentException("Malformed section entry"));
+            int sectionY = section.getByte("Y").orElseThrow(() -> new IllegalArgumentException("Section is missing Y"));
             boolean requestedBottom = inspectBottom && sectionY == BOTTOM_EDGE_SECTION_Y;
             boolean requestedTop = inspectTop && sectionY == TOP_EDGE_SECTION_Y;
             if ((!requestedBottom && !requestedTop) || !hasMeaningfulBlockStates(section)) {
@@ -183,10 +182,10 @@ final class LegacyRegionScanner {
             top |= requestedTop;
         }
 
-        ListTag blockEntities = chunk.getList("block_entities", Tag.TAG_COMPOUND);
+        ListTag blockEntities = chunk.getListOrEmpty("block_entities");
         for (int i = 0; i < blockEntities.size(); i++) {
-            CompoundTag blockEntity = blockEntities.getCompound(i);
-            int sectionY = Math.floorDiv(blockEntity.getInt("y"), 16);
+            CompoundTag blockEntity = blockEntities.getCompound(i).orElseThrow(() -> new IllegalArgumentException("Malformed block entity entry"));
+            int sectionY = Math.floorDiv(blockEntity.getInt("y").orElseThrow(() -> new IllegalArgumentException("Block entity is missing y")), 16);
             if (inspectBottom && sectionY == BOTTOM_EDGE_SECTION_Y) {
                 bottom = true;
             }
@@ -216,10 +215,10 @@ final class LegacyRegionScanner {
         int maxSectionExclusive = Math.floorDiv(candidateMax, 16);
         int expectedHeightmapLongs = heightmapStorageLongs(legacyMax - legacyMin);
 
-        ListTag sections = chunk.getList("sections", Tag.TAG_COMPOUND);
+        ListTag sections = chunk.getListOrEmpty("sections");
         for (int i = 0; i < sections.size(); i++) {
-            CompoundTag section = sections.getCompound(i);
-            int sectionY = section.getByte("Y");
+            CompoundTag section = sections.getCompound(i).orElseThrow(() -> new IllegalArgumentException("Malformed section entry"));
+            int sectionY = section.getByte("Y").orElseThrow(() -> new IllegalArgumentException("Section is missing Y"));
             if (sectionY >= minSection && sectionY < maxSectionExclusive) {
                 continue;
             }
@@ -240,29 +239,33 @@ final class LegacyRegionScanner {
             // ChunkSerializer writes both of these for every real section in
             // the current array. Their presence outside the candidate proves
             // the global config no longer describes this world's saved layout.
-            if (section.contains("block_states", Tag.TAG_COMPOUND)
-                || section.contains("biomes", Tag.TAG_COMPOUND)
+            if (section.contains("block_states")
+                || section.contains("biomes")
                 || hasMeaningfulBlockStates(section)) {
                 return new WorldEvidence(true, sectionY, false, -1, expectedHeightmapLongs);
             }
         }
 
-        ListTag blockEntities = chunk.getList("block_entities", Tag.TAG_COMPOUND);
+        ListTag blockEntities = chunk.getListOrEmpty("block_entities");
         for (int i = 0; i < blockEntities.size(); i++) {
-            CompoundTag blockEntity = blockEntities.getCompound(i);
-            int sectionY = Math.floorDiv(blockEntity.getInt("y"), 16);
+            CompoundTag blockEntity = blockEntities.getCompound(i).orElseThrow(() -> new IllegalArgumentException("Malformed block entity entry"));
+            int sectionY = Math.floorDiv(blockEntity.getInt("y").orElseThrow(() -> new IllegalArgumentException("Block entity is missing y")), 16);
             if (sectionY < minSection || sectionY >= maxSectionExclusive) {
                 return new WorldEvidence(true, sectionY, false, -1, expectedHeightmapLongs);
             }
         }
 
-        if (chunk.contains("Heightmaps", Tag.TAG_COMPOUND)) {
-            CompoundTag heightmaps = chunk.getCompound("Heightmaps");
-            for (String key : heightmaps.getAllKeys()) {
-                if (!heightmaps.contains(key, Tag.TAG_LONG_ARRAY)) {
+        if (chunk.contains("Heightmaps")) {
+            CompoundTag heightmaps = chunk.getCompound("Heightmaps").orElseThrow(() -> new IllegalArgumentException("Malformed Heightmaps compound"));
+            for (String key : heightmaps.keySet()) {
+                if (!heightmaps.contains(key)) {
                     return new WorldEvidence(false, -1, true, -1, expectedHeightmapLongs);
                 }
-                int savedLongs = heightmaps.getLongArray(key).length;
+                long[] saved = heightmaps.getLongArray(key).orElse(null);
+                if (saved == null) {
+                    return new WorldEvidence(false, -1, true, -1, expectedHeightmapLongs);
+                }
+                int savedLongs = saved.length;
                 if (savedLongs != expectedHeightmapLongs) {
                     return new WorldEvidence(false, -1, true, savedLongs, expectedHeightmapLongs);
                 }
@@ -282,26 +285,26 @@ final class LegacyRegionScanner {
     }
 
     private static boolean hasMeaningfulBlockStates(CompoundTag section) {
-        if (!section.contains("block_states", Tag.TAG_COMPOUND)) {
+        if (!section.contains("block_states")) {
             return false;
         }
 
-        CompoundTag blockStates = section.getCompound("block_states");
-        if (!blockStates.contains("palette", Tag.TAG_LIST)) {
+        CompoundTag blockStates = section.getCompound("block_states").orElse(null);
+        if (blockStates == null || !blockStates.contains("palette")) {
             return true;
         }
 
-        ListTag palette = blockStates.getList("palette", Tag.TAG_COMPOUND);
-        if (palette.isEmpty()) {
+        ListTag palette = blockStates.getList("palette").orElse(null);
+        if (palette == null || palette.isEmpty()) {
             return true;
         }
 
         for (int i = 0; i < palette.size(); i++) {
-            CompoundTag state = palette.getCompound(i);
-            if (!state.contains("Name", Tag.TAG_STRING)) {
+            CompoundTag state = palette.getCompound(i).orElse(null);
+            if (state == null || !state.contains("Name")) {
                 return true;
             }
-            String name = state.getString("Name");
+            String name = state.getStringOr("Name", "");
             if (!"minecraft:air".equals(name)
                 && !"minecraft:cave_air".equals(name)
                 && !"minecraft:void_air".equals(name)) {

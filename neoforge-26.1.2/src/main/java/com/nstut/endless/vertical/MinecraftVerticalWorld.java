@@ -3,7 +3,6 @@ package com.nstut.endless.vertical;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
@@ -359,7 +358,7 @@ public final class MinecraftVerticalWorld {
                 }
                 BlockPos nextPos = next.toBlockPos();
                 BlockState nextState = level.getBlockState(nextPos);
-                int attenuation = Math.max(1, nextState.getLightBlock(level, nextPos));
+                int attenuation = Math.max(1, nextState.getLightDampening());
                 int propagated = node.light - attenuation;
                 if (propagated <= 0 || lightFacesOcclude(currentState, currentPos, nextState, nextPos, direction)) {
                     continue;
@@ -392,7 +391,7 @@ public final class MinecraftVerticalWorld {
         if (!state.canOcclude() || !state.useShapeForLightOcclusion()) {
             return Shapes.empty();
         }
-        return state.getFaceOcclusionShape(level, pos, direction);
+        return state.getFaceOcclusionShape(direction);
     }
 
     private int computeSkyLight(BlockPos pos) {
@@ -410,7 +409,7 @@ public final class MinecraftVerticalWorld {
                     break;
                 }
                 BlockState state = level.getBlockState(cursor);
-                cost += Math.max(1, state.getLightBlock(level, cursor));
+                cost += Math.max(1, state.getLightDampening());
                 if (cost >= 15) {
                     break;
                 }
@@ -439,7 +438,7 @@ public final class MinecraftVerticalWorld {
         }
         LevelChunkSection section = page.getSection(sectionY);
         if (section == null && create) {
-            section = new LevelChunkSection(level.registryAccess().registryOrThrow(Registries.BIOME));
+            section = new LevelChunkSection(level.palettedContainerFactory());
             page.putSection(sectionY, section);
         }
         return section;

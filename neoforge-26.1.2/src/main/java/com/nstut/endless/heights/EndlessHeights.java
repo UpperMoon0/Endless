@@ -4,13 +4,15 @@ import com.nstut.endless.config.EndlessConfig;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
+import net.minecraft.nbt.NbtUtils;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 
 /**
  * Runtime holder for the logical build range and the separately bounded dense core.
@@ -228,22 +230,34 @@ public final class EndlessHeights {
         return cause == null ? new IllegalStateException(message) : new IllegalStateException(message, cause);
     }
 
-    /** Mirror the never-shrinking dense core into normal SavedData after levels exist. */
+    /**
+     * Persist the never-shrinking dense core at Endless' historical file path.
+     *
+     * <p>Minecraft 26.1 namespaces SavedData by Identifier. Using that API here
+     * would move the file and make a world appear to lose its dense-core record
+     * when opened on another supported Minecraft line, so this tiny compatibility
+     * record remains explicit compressed NBT.</p>
+     */
     public static void syncWorldData(MinecraftServer server) {
-        EndlessWorldData data = server.overworld().getDataStorage()
-            .computeIfAbsent(
-                new SavedData.Factory<>(
-                    EndlessWorldData::new,
-                    (tag, registries) -> EndlessWorldData.load(tag),
-                    null
-                ),
-                EndlessWorldData.DATA_NAME
-            );
-        if (data.getMinBuildHeight() != getDenseMinBuildHeight()
-            || data.getMaxBuildHeight() != getDenseMaxBuildHeight()) {
-            data.set(getDenseMinBuildHeight(), getDenseMaxBuildHeight());
+        Path file = denseRangeFile(server);
+        CompoundTag root = new CompoundTag();
+        EndlessWorldData data = new EndlessWorldData();
+        data.set(getDenseMinBuildHeight(), getDenseMaxBuildHeight());
+        root.put("data", data.save());
+        NbtUtils.addCurrentDataVersion(root);
+
+        try {
+            Files.createDirectories(file.getParent());
+            Path temp = file.resolveSibling(file.getFileName() + ".tmp");
+            NbtIo.writeCompressed(root, temp);
+            try {
+                Files.move(temp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException ignored) {
+                Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException e) {
+            throw migrationFailure("could not persist dense build range at " + file + ": " + e.getMessage(), e);
         }
-        data.setDirty();
     }
 
     /**
@@ -252,27 +266,31 @@ public final class EndlessHeights {
      * a replacement layout from the current logical config.
      */
     private static int[] readSavedRange(MinecraftServer server) {
-        Path file = server.getWorldPath(LevelResource.ROOT)
-            .resolve("data")
-            .resolve(EndlessWorldData.DATA_NAME + ".dat");
+        Path file = denseRangeFile(server);
         if (!Files.isRegularFile(file)) {
             return null;
         }
 
         try {
             CompoundTag root = NbtIo.readCompressed(file, NbtAccounter.unlimitedHeap());
-            CompoundTag data = root.getCompound("data");
+            CompoundTag data = root.getCompound("data").orElseThrow(() -> new IOException("persisted dense range file has no data compound"));
             if (!data.contains("MinBuildHeight") || !data.contains("MaxBuildHeight")) {
                 throw new IOException("persisted dense range file is missing MinBuildHeight/MaxBuildHeight");
             }
 
-            int savedMin = data.getInt("MinBuildHeight");
-            int savedMax = data.getInt("MaxBuildHeight");
+            int savedMin = data.getIntOr("MinBuildHeight", Integer.MIN_VALUE);
+            int savedMax = data.getIntOr("MaxBuildHeight", Integer.MAX_VALUE);
             validateDenseRange(savedMin, savedMax);
             return new int[]{savedMin, savedMax};
         } catch (IOException | RuntimeException e) {
             throw migrationFailure("could not trust persisted dense build range at " + file + ": " + e.getMessage(), e);
         }
+    }
+
+    private static Path denseRangeFile(MinecraftServer server) {
+        return server.getWorldPath(LevelResource.ROOT)
+            .resolve("data")
+            .resolve(EndlessWorldData.DATA_NAME + ".dat");
     }
 
     private static void validateDenseRange(int min, int max) {

@@ -1,11 +1,8 @@
 package com.nstut.endless.vertical;
 
 import io.netty.buffer.Unpooled;
-import net.minecraft.core.Registry;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 
 /** Binary codec shared by disk persistence and page networking. */
@@ -26,8 +23,7 @@ public final class VerticalPageCodec {
     }
 
     public static LevelChunkSection decodeSection(Level level, byte[] data) {
-        Registry<Biome> biomes = level.registryAccess().registryOrThrow(Registries.BIOME);
-        LevelChunkSection section = new LevelChunkSection(biomes);
+        LevelChunkSection section = new LevelChunkSection(level.palettedContainerFactory());
         FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.wrappedBuffer(data));
         try {
             section.read(buf);

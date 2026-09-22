@@ -4,7 +4,6 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
-import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.dimension.DimensionType;
@@ -46,23 +45,23 @@ public final class VerticalPageDiskStorage implements VerticalPagePersistence<Le
         }
 
         CompoundTag rootTag = NbtIo.readCompressed(file, NbtAccounter.unlimitedHeap());
-        int version = rootTag.getInt("FormatVersion");
+        int version = rootTag.getIntOr("FormatVersion", Integer.MIN_VALUE);
         if (version != FORMAT_VERSION) {
             throw new IOException("Unsupported Endless vertical-page format " + version + " at " + file);
         }
-        if (rootTag.getInt("ChunkX") != pos.chunkX()
-            || rootTag.getInt("ChunkZ") != pos.chunkZ()
-            || rootTag.getInt("PageY") != pos.pageY()) {
+        if (rootTag.getIntOr("ChunkX", Integer.MIN_VALUE) != pos.chunkX()
+            || rootTag.getIntOr("ChunkZ", Integer.MIN_VALUE) != pos.chunkZ()
+            || rootTag.getIntOr("PageY", Integer.MIN_VALUE) != pos.pageY()) {
             throw new IOException("Vertical page coordinate mismatch at " + file);
         }
 
         VerticalPage<LevelChunkSection> page = new VerticalPage<>(pos.pageY());
-        ListTag sections = rootTag.getList("Sections", Tag.TAG_COMPOUND);
+        ListTag sections = rootTag.getListOrEmpty("Sections");
         for (int i = 0; i < sections.size(); i++) {
-            CompoundTag sectionTag = sections.getCompound(i);
-            int localY = sectionTag.getInt("LocalY");
+            CompoundTag sectionTag = sections.getCompound(i).orElseThrow(() -> new IOException("Malformed section entry at " + file));
+            int localY = sectionTag.getInt("LocalY").orElseThrow(() -> new IOException("Section is missing LocalY at " + file));
             VerticalPageLayout.checkLocalSectionY(localY);
-            byte[] payload = sectionTag.getByteArray("Data");
+            byte[] payload = sectionTag.getByteArray("Data").orElseThrow(() -> new IOException("Section is missing Data at " + file));
             if (payload.length == 0) {
                 throw new IOException("Empty section payload for local Y " + localY + " at " + file);
             }

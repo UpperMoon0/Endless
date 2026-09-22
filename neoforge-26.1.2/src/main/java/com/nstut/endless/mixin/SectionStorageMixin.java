@@ -212,13 +212,13 @@ public abstract class SectionStorageMixin<R> implements ExtendedSectionStorageAc
         if (Files.isRegularFile(file)) {
             try {
                 CompoundTag root = NbtIo.readCompressed(file, NbtAccounter.unlimitedHeap());
-                if (root.getInt("FormatVersion") != ENDLESS_POI_FORMAT
-                    || root.getInt("ChunkX") != chunkX || root.getInt("ChunkZ") != chunkZ) {
+                if (root.getIntOr("FormatVersion", Integer.MIN_VALUE) != ENDLESS_POI_FORMAT
+                    || root.getIntOr("ChunkX", Integer.MIN_VALUE) != chunkX || root.getIntOr("ChunkZ", Integer.MIN_VALUE) != chunkZ) {
                     throw new IOException("Invalid Endless POI sidecar header at " + file);
                 }
                 RegistryOps<Tag> ops = RegistryOps.create(NbtOps.INSTANCE, registryAccess);
-                CompoundTag sections = root.getCompound("Sections");
-                for (String name : sections.getAllKeys()) {
+                CompoundTag sections = root.getCompound("Sections").orElseThrow(() -> new IOException("Malformed Endless POI Sections compound at " + file));
+                for (String name : sections.keySet()) {
                     final int sectionY;
                     try {
                         sectionY = Integer.parseInt(name);

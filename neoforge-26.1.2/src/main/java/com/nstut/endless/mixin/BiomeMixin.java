@@ -20,13 +20,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(Biome.class)
 public abstract class BiomeMixin {
     @Invoker("getHeightAdjustedTemperature")
-    protected abstract float endless$getHeightAdjustedTemperature(BlockPos pos);
+    protected abstract float endless$getHeightAdjustedTemperature(BlockPos pos, int seaLevel);
 
     /** BlockPos.asLong aliases above vanilla's 12-bit Y range; bypass that cache there. */
     @Inject(method = "getTemperature", at = @At("HEAD"), cancellable = true)
-    private void endless$getTemperature(BlockPos pos, CallbackInfoReturnable<Float> cir) {
+    private void endless$getTemperature(BlockPos pos, int seaLevel, CallbackInfoReturnable<Float> cir) {
         if (EndlessLogicalHeights.needsExtendedBlockPosEncoding(pos.getY())) {
-            cir.setReturnValue(endless$getHeightAdjustedTemperature(pos));
+            cir.setReturnValue(endless$getHeightAdjustedTemperature(pos, seaLevel));
         }
     }
 

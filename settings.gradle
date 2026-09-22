@@ -3,8 +3,10 @@ pluginManagement {
         maven { url "https://maven.fabricmc.net/" }
         maven { url "https://maven.architectury.dev/" }
         maven { url "https://maven.neoforged.net/releases" }
-        maven { url "https://files.minecraftforge.net/maven/" }
+        // Resolve generic Gradle plugins before touching Forge's repository:
+        // a Forge Maven timeout must not block artifacts hosted on Plugin Portal.
         gradlePluginPortal()
+        maven { url "https://files.minecraftforge.net/maven/" }
     }
 }
 

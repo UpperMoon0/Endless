@@ -10,8 +10,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.level.gamerules.GameRules;
-import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.WorldDataConfiguration;
@@ -139,10 +137,8 @@ public final class LiveSameJvmRejoinTest {
         LevelSettings settings = new LevelSettings(
             "Endless Same-JVM Rejoin",
             GameType.CREATIVE,
-            false,
-            Difficulty.NORMAL,
+            new LevelSettings.DifficultySettings(Difficulty.NORMAL, false, false),
             true,
-            new GameRules(FeatureFlags.DEFAULT_FLAGS),
             WorldDataConfiguration.DEFAULT
         );
         setStage(Stage.WAIT_BOOTSTRAP_JOIN);

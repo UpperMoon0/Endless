@@ -1,0 +1,93 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'net.neoforged.moddev' version '2.0.141'
+    id 'idea'
+}
+
+version = rootProject.mod_version
+group = rootProject.maven_group
+
+base {
+    archivesName = "${rootProject.archives_name}-neoforge-${rootProject.minecraft_version_26_1_2}"
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(25)
+    withSourcesJar()
+}
+
+sourceSets.main.java.srcDir rootProject.file('common/src/main/java')
+
+neoForge {
+    version = rootProject.neoforge_version_26_1_2
+
+    runs {
+        client { client() }
+        server {
+            server()
+            programArgument '--nogui'
+        }
+        liveJoinTestClient {
+            client()
+            gameDirectory = project.file('run/live-join/client')
+            systemProperty 'endless.liveJoinTest', 'true'
+            systemProperty 'endless.liveJoinTest.expectedMin', System.getenv('ENDLESS_TEST_EXPECTED_MIN') ?: '-4096'
+            systemProperty 'endless.liveJoinTest.expectedMax', System.getenv('ENDLESS_TEST_EXPECTED_MAX') ?: '4096'
+            systemProperty 'endless.liveJoinTest.preseedStaleRange', System.getenv('ENDLESS_TEST_PRESEED_STALE') ?: 'false'
+            systemProperty 'endless.liveJoinTest.expectLogical', (System.getenv('ENDLESS_TEST_PRESEED_STALE') == 'true') ? 'false' : 'true'
+            systemProperty 'endless.liveJoinTest.highY', System.getenv('ENDLESS_TEST_EXTREME') ?: 'false'
+            systemProperty 'endless.liveJoinFarEnvelopeTest', System.getenv('ENDLESS_TEST_FAR') ?: 'false'
+            systemProperty 'endless.liveJoinColdRestartPhase', System.getenv('ENDLESS_TEST_COLD_RESTART_PHASE') ?: ''
+            programArguments.addAll '--quickPlayMultiplayer', "127.0.0.1:${System.getenv('ENDLESS_TEST_PORT') ?: '25575'}"
+        }
+        sameJvmRejoinTestClient {
+            client()
+            gameDirectory = project.file('run/live-rejoin/client')
+            systemProperty 'endless.sameJvmRejoinTest', 'true'
+            systemProperty 'endless.sameJvmRejoinTest.expectedMin', System.getenv('ENDLESS_TEST_EXPECTED_MIN') ?: '-1048576'
+            systemProperty 'endless.sameJvmRejoinTest.expectedMax', System.getenv('ENDLESS_TEST_EXPECTED_MAX') ?: '1048576'
+        }
+        liveJoinTestServer {
+            server()
+            gameDirectory = project.file('run/live-join/server')
+            systemProperty 'endless.liveJoinHighYTest', System.getenv('ENDLESS_TEST_EXTREME') ?: 'false'
+            systemProperty 'endless.liveJoinFarEnvelopeTest', System.getenv('ENDLESS_TEST_FAR') ?: 'false'
+            systemProperty 'endless.liveJoinColdRestartPhase', System.getenv('ENDLESS_TEST_COLD_RESTART_PHASE') ?: ''
+            programArgument '--nogui'
+        }
+        configureEach { logLevel = org.slf4j.event.Level.INFO }
+    }
+
+    mods {
+        "${rootProject.mod_id}" {
+            sourceSet(sourceSets.main)
+        }
+    }
+}
+
+dependencies {
+    implementation "com.google.code.gson:gson:2.10.1"
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('META-INF/neoforge.mods.toml') {
+        expand version: project.version
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+    options.encoding = 'UTF-8'
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifactId = base.archivesName.get()
+        }
+    }
+}

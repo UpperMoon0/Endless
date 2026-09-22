@@ -23,7 +23,8 @@ class VerificationPolicyTest(unittest.TestCase):
 
     def test_unique_matrix(self):
         self.assertEqual(len(live.SCENARIOS), len({s.id for s in live.SCENARIOS}))
-        self.assertEqual(16, len(live.SCENARIOS) * len(live.TARGETS))
+        self.assertEqual(19, len(live.LIVE_CASES))
+        self.assertEqual(len(live.LIVE_CASES), len(set(live.LIVE_CASES)))
 
     def test_million_gameplay_cannot_degrade_to_join_only(self):
         scenario = next(s for s in live.SCENARIOS if s.id == "million-gameplay")
@@ -46,6 +47,17 @@ class VerificationPolicyTest(unittest.TestCase):
         for edge in ["lower", "upper"]:
             self.assertIn(f"ENDLESS_RENDER_PATH_PASS edge={edge}", scenario.required_client_markers)
 
+    def test_new_versions_have_real_runtime_gate_without_legacy_waystones(self):
+        scenario = next(s for s in live.SCENARIOS if s.id == "port-runtime")
+        self.assertTrue(scenario.gameplay)
+        self.assertFalse(scenario.waystones)
+        self.assertNotIn("ENDLESS_WAYSTONES_SPARSE_PASS", scenario.required_server_markers)
+        for marker in ["ENDLESS_PATHFINDING_PASS", "ENDLESS_CLIENT_INTERACTION_SERVER_PASS",
+                       "ENDLESS_CLIENT_PLACEMENT_PERSISTENCE_PASS", "ENDLESS_HIGH_Y_SERVER_PASS"]:
+            self.assertIn(marker, scenario.required_server_markers)
+        for target in live.PORT_TARGETS:
+            self.assertIn((target, "port-runtime"), live.LIVE_CASES)
+
     def test_same_jvm_rejoin_is_exact_integrated_lifecycle_gate(self):
         scenario = next(s for s in live.SCENARIOS if s.id == "same-jvm-rejoin")
         self.assertTrue(scenario.integrated_rejoin)
@@ -59,7 +71,7 @@ class VerificationPolicyTest(unittest.TestCase):
             for s in live.SCENARIOS:
                 env = live.scenario_env(s)
                 self.assertEqual(str(s.gameplay).lower(), env["ENDLESS_TEST_EXTREME"])
-                self.assertEqual(str(s.gameplay).lower(), env["ENDLESS_TEST_WAYSTONES"])
+                self.assertEqual(str(s.waystones).lower(), env["ENDLESS_TEST_WAYSTONES"])
                 self.assertEqual(str(s.id == "far-envelope").lower(), env["ENDLESS_TEST_FAR"])
                 self.assertEqual("", env["ENDLESS_TEST_COLD_RESTART_PHASE"])
                 self.assertEqual(str(s.integrated_rejoin).lower(), env["ENDLESS_TEST_SAME_JVM_REJOIN"])
@@ -71,9 +83,8 @@ class VerificationPolicyTest(unittest.TestCase):
     def test_receipts_require_complete_exact_head(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
-            for target in live.TARGETS:
-                for scenario in live.SCENARIOS:
-                    (directory / f"{target}--{scenario.id}.pass").write_text("abc123\n")
+            for target, scenario_id in live.LIVE_CASES:
+                (directory / f"{target}--{scenario_id}.pass").write_text("abc123\n")
             live.verify_receipts(directory, "abc123")
             receipt = next(directory.glob("*.pass"))
             receipt.write_text("old-head\n")

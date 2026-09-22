@@ -12,12 +12,26 @@ loom {
         liveJoinTestClient {
             client()
             runDir("run/live-join/client")
+            vmArg "-Xmx2G"
             property "endless.liveJoinTest", "true"
-            programArgs "--quickPlayMultiplayer", "127.0.0.1:25575"
+            property "endless.liveJoinTest.expectedMin", System.getenv('ENDLESS_TEST_EXPECTED_MIN') ?: '-4096'
+            property "endless.liveJoinTest.expectedMax", System.getenv('ENDLESS_TEST_EXPECTED_MAX') ?: '4096'
+            property "endless.liveJoinTest.preseedStaleRange", System.getenv('ENDLESS_TEST_PRESEED_STALE') ?: 'false'
+            property "endless.liveJoinTest.expectLogical", (System.getenv('ENDLESS_TEST_PRESEED_STALE') == 'true') ? 'false' : 'true'
+            property "endless.liveJoinTest.highY", System.getenv('ENDLESS_TEST_EXTREME') ?: 'false'
+            property "endless.liveJoinWaystonesTest", System.getenv('ENDLESS_TEST_WAYSTONES') ?: 'false'
+            property "endless.liveJoinFarEnvelopeTest", System.getenv('ENDLESS_TEST_FAR') ?: 'false'
+            property "endless.liveJoinColdRestartPhase", System.getenv('ENDLESS_TEST_COLD_RESTART_PHASE') ?: ''
+            programArgs "--quickPlayMultiplayer", "127.0.0.1:${System.getenv('ENDLESS_TEST_PORT') ?: '25575'}"
         }
         liveJoinTestServer {
             server()
             runDir("run/live-join/server")
+            vmArg "-Xmx1536m"
+            property "endless.liveJoinHighYTest", System.getenv('ENDLESS_TEST_EXTREME') ?: 'false'
+            property "endless.liveJoinWaystonesTest", System.getenv('ENDLESS_TEST_WAYSTONES') ?: 'false'
+            property "endless.liveJoinFarEnvelopeTest", System.getenv('ENDLESS_TEST_FAR') ?: 'false'
+            property "endless.liveJoinColdRestartPhase", System.getenv('ENDLESS_TEST_COLD_RESTART_PHASE') ?: ''
             programArg "nogui"
         }
     }

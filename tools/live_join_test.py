@@ -85,6 +85,9 @@ MC_VERSION = "1.20.1"
 TARGETS = {
     "fabric-1.20.1": "fabric-1.20.1",
     "forge-1.20.1": "forge-1.20.1",
+    "fabric-1.21.1": "fabric-1.21.1",
+    "neoforge-1.21.1": "neoforge-1.21.1",
+    "neoforge-26.1.2": "neoforge-26.1.2",
 }
 
 
@@ -103,6 +106,7 @@ class Scenario:
     required_client_markers: tuple[str, ...] = ()
     cold_restart: bool = False
     gameplay: bool = False
+    waystones: bool = False
     integrated_rejoin: bool = False
 
 
@@ -116,6 +120,7 @@ SCENARIOS = [
         expected=EXTENDED_BUILD_HEIGHT,
         server_port=25575,
         gameplay=True,
+        waystones=True,
         required_server_markers=(
             "ENDLESS_COMMAND_BOUNDS_PASS",
             "ENDLESS_WAYSTONES_SPARSE_PASS",
@@ -185,6 +190,7 @@ SCENARIOS.append(Scenario(
     required_server_markers=SCENARIOS[0].required_server_markers,
     required_client_markers=SCENARIOS[0].required_client_markers,
     gameplay=True,
+    waystones=True,
 ))
 
 SCENARIOS.append(Scenario(
@@ -198,6 +204,7 @@ SCENARIOS.append(Scenario(
     required_server_markers=SCENARIOS[0].required_server_markers,
     required_client_markers=SCENARIOS[0].required_client_markers,
     gameplay=True,
+    waystones=True,
 ))
 
 SCENARIOS.append(Scenario(
@@ -211,6 +218,35 @@ SCENARIOS.append(Scenario(
     required_client_markers=(SAME_JVM_REJOIN_PASS_MARKER,),
     integrated_rejoin=True,
 ))
+
+# New-version runtime gate: exercise the actual sparse engine, network sync,
+# client prediction, rendering, pathfinding, scheduled mechanics and persistence
+# without imposing the 1.20.1-only Waystones compatibility fixture.
+SCENARIOS.append(Scenario(
+    id="port-runtime",
+    description="real sparse gameplay/runtime gate for newly ported loader versions",
+    server_kind="modded",
+    server_config=EXTENDED_BUILD_HEIGHT,
+    client_config=VANILLA_BUILD_HEIGHT,
+    expected=EXTENDED_BUILD_HEIGHT,
+    server_port=25581,
+    gameplay=True,
+    required_server_markers=tuple(
+        marker for marker in SCENARIOS[0].required_server_markers
+        if marker != "ENDLESS_WAYSTONES_SPARSE_PASS"
+    ),
+    required_client_markers=SCENARIOS[0].required_client_markers,
+))
+
+LEGACY_TARGETS = ("fabric-1.20.1", "forge-1.20.1")
+PORT_TARGETS = ("fabric-1.21.1", "neoforge-1.21.1", "neoforge-26.1.2")
+LIVE_CASES = tuple(
+    (target, scenario.id)
+    for target in LEGACY_TARGETS
+    for scenario in SCENARIOS
+    if scenario.id != "port-runtime"
+) + tuple((target, "port-runtime") for target in PORT_TARGETS)
+SCENARIO_BY_ID = {scenario.id: scenario for scenario in SCENARIOS}
 
 
 @contextmanager
@@ -242,7 +278,7 @@ def checkout_lock(root: Path):
 
 
 def verify_receipts(directory: Path, head: str) -> None:
-    expected = {f"{target}--{scenario.id}.pass" for target in TARGETS for scenario in SCENARIOS}
+    expected = {f"{target}--{scenario_id}.pass" for target, scenario_id in LIVE_CASES}
     actual = {p.name for p in directory.glob("*.pass")}
     if expected != actual:
         raise RuntimeError(f"scenario receipts differ: missing={sorted(expected-actual)} extra={sorted(actual-expected)}")
@@ -565,7 +601,7 @@ def scenario_env(scenario: Scenario, cold_phase: str = "") -> dict[str, str]:
     env["ENDLESS_TEST_PORT"] = str(scenario.server_port)
     env["ENDLESS_TEST_PRESEED_STALE"] = "true" if scenario.id == "baseline-no-endless" else "false"
     env["ENDLESS_TEST_EXTREME"] = "true" if scenario.gameplay else "false"
-    env["ENDLESS_TEST_WAYSTONES"] = "true" if scenario.gameplay else "false"
+    env["ENDLESS_TEST_WAYSTONES"] = "true" if scenario.waystones else "false"
     env["ENDLESS_TEST_FAR"] = "true" if scenario.id == "far-envelope" else "false"
     env["ENDLESS_TEST_COLD_RESTART_PHASE"] = cold_phase
     env["ENDLESS_TEST_SAME_JVM_REJOIN"] = "true" if scenario.integrated_rejoin else "false"
@@ -735,8 +771,9 @@ def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeo
 
 def run_target(root: Path, target: str, timeout: int) -> None:
     module = TARGETS[target]
-    for scenario in SCENARIOS:
-        run_scenario(root, target, module, scenario, timeout)
+    for case_target, scenario_id in LIVE_CASES:
+        if case_target == target:
+            run_scenario(root, target, module, SCENARIO_BY_ID[scenario_id], timeout)
 
 
 def main() -> int:
@@ -751,7 +788,12 @@ def main() -> int:
 
     root = Path(__file__).resolve().parents[1]
     if args.matrix:
-        print(json.dumps({"target": list(TARGETS), "scenario": [s.id for s in SCENARIOS]}))
+        print(json.dumps({
+            "include": [
+                {"target": target, "scenario": scenario_id}
+                for target, scenario_id in LIVE_CASES
+            ]
+        }))
         return 0
     if args.verify_receipts:
         if not args.head:
@@ -760,17 +802,25 @@ def main() -> int:
         return 0
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
-    targets = args.target or list(TARGETS)
-    scenarios = [s for s in SCENARIOS if args.scenario is None or s.id in args.scenario]
+    target_filter = set(args.target) if args.target else None
+    scenario_filter = set(args.scenario) if args.scenario else None
+    cases = [
+        (target, scenario_id)
+        for target, scenario_id in LIVE_CASES
+        if (target_filter is None or target in target_filter)
+        and (scenario_filter is None or scenario_id in scenario_filter)
+    ]
+    if not cases:
+        parser.error("requested target/scenario combination is not part of the canonical live matrix")
     failures = []
     with checkout_lock(root):
-        for target in targets:
-            for scenario in scenarios:
-                try:
-                    run_scenario(root, target, TARGETS[target], scenario, args.timeout)
-                except (RuntimeError, subprocess.SubprocessError, OSError) as exc:
-                    failures.append(f"{target}/{scenario.id}: {exc}")
-                    print(f"LIVE JOIN TEST FAILED: {failures[-1]}", file=sys.stderr)
+        for target, scenario_id in cases:
+            scenario = SCENARIO_BY_ID[scenario_id]
+            try:
+                run_scenario(root, target, TARGETS[target], scenario, args.timeout)
+            except (RuntimeError, subprocess.SubprocessError, OSError) as exc:
+                failures.append(f"{target}/{scenario.id}: {exc}")
+                print(f"LIVE JOIN TEST FAILED: {failures[-1]}", file=sys.stderr)
     return 1 if failures else 0
 
 

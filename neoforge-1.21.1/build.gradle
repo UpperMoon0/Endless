@@ -40,11 +40,23 @@ neoForge {
             client()
             gameDirectory = project.file('run/live-join/client')
             systemProperty 'endless.liveJoinTest', 'true'
-            programArguments.addAll '--quickPlayMultiplayer', '127.0.0.1:25575'
+            systemProperty 'endless.liveJoinTest.expectedMin', System.getenv('ENDLESS_TEST_EXPECTED_MIN') ?: '-4096'
+            systemProperty 'endless.liveJoinTest.expectedMax', System.getenv('ENDLESS_TEST_EXPECTED_MAX') ?: '4096'
+            systemProperty 'endless.liveJoinTest.preseedStaleRange', System.getenv('ENDLESS_TEST_PRESEED_STALE') ?: 'false'
+            systemProperty 'endless.liveJoinTest.expectLogical', (System.getenv('ENDLESS_TEST_PRESEED_STALE') == 'true') ? 'false' : 'true'
+            systemProperty 'endless.liveJoinTest.highY', System.getenv('ENDLESS_TEST_EXTREME') ?: 'false'
+            systemProperty 'endless.liveJoinWaystonesTest', System.getenv('ENDLESS_TEST_WAYSTONES') ?: 'false'
+            systemProperty 'endless.liveJoinFarEnvelopeTest', System.getenv('ENDLESS_TEST_FAR') ?: 'false'
+            systemProperty 'endless.liveJoinColdRestartPhase', System.getenv('ENDLESS_TEST_COLD_RESTART_PHASE') ?: ''
+            programArguments.addAll '--quickPlayMultiplayer', "127.0.0.1:${System.getenv('ENDLESS_TEST_PORT') ?: '25575'}"
         }
         liveJoinTestServer {
             server()
             gameDirectory = project.file('run/live-join/server')
+            systemProperty 'endless.liveJoinHighYTest', System.getenv('ENDLESS_TEST_EXTREME') ?: 'false'
+            systemProperty 'endless.liveJoinWaystonesTest', System.getenv('ENDLESS_TEST_WAYSTONES') ?: 'false'
+            systemProperty 'endless.liveJoinFarEnvelopeTest', System.getenv('ENDLESS_TEST_FAR') ?: 'false'
+            systemProperty 'endless.liveJoinColdRestartPhase', System.getenv('ENDLESS_TEST_COLD_RESTART_PHASE') ?: ''
             programArgument '--nogui'
         }
         configureEach {

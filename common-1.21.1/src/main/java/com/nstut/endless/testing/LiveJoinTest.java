@@ -11,6 +11,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.core.Direction;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -269,7 +270,19 @@ public final class LiveJoinTest {
                 return false;
             }
             BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(support), Direction.UP, support, false);
-            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+            InteractionResult result = mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+            System.out.println("ENDLESS_CLIENT_INTERACTION_DISPATCH edge=" + (upper ? "upper" : "lower")
+                + " result=" + result
+                + " target=" + target
+                + " localState=" + level.getBlockState(target)
+                + " inWorldBounds=" + level.isInWorldBounds(target));
+            if (!result.consumesAction()) {
+                fail("placementDispatchRejected", " target=" + target
+                    + " result=" + result
+                    + " localState=" + level.getBlockState(target));
+                mc.stop();
+                return false;
+            }
             if (upper) upperInteractionStage = 1; else lowerInteractionStage = 1;
             return false;
         }

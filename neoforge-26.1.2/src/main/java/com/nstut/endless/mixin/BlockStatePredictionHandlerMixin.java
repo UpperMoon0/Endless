@@ -46,6 +46,10 @@ public abstract class BlockStatePredictionHandlerMixin {
             return;
         }
         ci.cancel();
+        if (com.nstut.endless.testing.LiveJoinTest.isArmed()) {
+            System.out.println("ENDLESS_PREDICTION_RETAIN pos=" + pos
+                + " sequence=" + currentSequenceNr);
+        }
         BlockPos key = pos.immutable();
         ExtendedPredictedState previous = endless$extendedStates.get(key);
         if (previous != null) {
@@ -76,6 +80,10 @@ public abstract class BlockStatePredictionHandlerMixin {
 
     @Inject(method = "endPredictionsUpTo", at = @At("TAIL"))
     private void endless$endPredictionsUpTo(int sequence, ClientLevel level, CallbackInfo ci) {
+        if (com.nstut.endless.testing.LiveJoinTest.isArmed()) {
+            System.out.println("ENDLESS_PREDICTION_ACK sequence=" + sequence
+                + " extendedStates=" + endless$extendedStates.size());
+        }
         Iterator<Map.Entry<BlockPos, ExtendedPredictedState>> iterator =
             endless$extendedStates.entrySet().iterator();
         while (iterator.hasNext()) {

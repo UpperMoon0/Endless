@@ -201,7 +201,11 @@ public final class LiveHighYServerTest {
                 return;
             }
             require(movedUpper || ticksWithPlayer < lowerArrivalTick + 1200,
-                "client did not complete lower extended-Y placement/break interaction");
+                "client did not complete lower extended-Y placement/break interaction"
+                    + " placed=" + lowerClientPlaced
+                    + " broken=" + lowerClientBroken
+                    + " target=" + level.getBlockState(lowerInteractionTargetPos())
+                    + " alias=" + level.getBlockState(packedAliasPos(lowerInteractionTargetPos())));
 
             if (movedUpper && upperClientBroken && upperPersistentClientPlaced
                 && ticksWithPlayer >= lowerArrivalTick + 120) {

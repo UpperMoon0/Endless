@@ -29,6 +29,10 @@ public final class EndlessFabric implements ModInitializer {
 
         PayloadTypeRegistry.configurationS2C().register(HeightSyncPayload.TYPE, HeightSyncPayload.CODEC);
         PayloadTypeRegistry.playS2C().register(VerticalPagePayload.TYPE, VerticalPagePayload.CODEC);
+        PayloadTypeRegistry.playC2S().register(VerticalWindowRefreshPayload.TYPE, VerticalWindowRefreshPayload.CODEC);
+        ServerPlayNetworking.registerGlobalReceiver(VerticalWindowRefreshPayload.TYPE,
+            (payload, context) -> context.server().execute(() ->
+                VerticalNetworkBridge.refreshPlayerWindow(context.player())));
 
         ServerConfigurationConnectionEvents.CONFIGURE.register((handler, server) -> {
             if (!EndlessLogicalHeights.isActive()) {
@@ -90,6 +94,18 @@ public final class EndlessFabric implements ModInitializer {
             buf.writeVarInt(envelopeMin);
             buf.writeVarInt(envelopeMax);
         }
+
+        @Override
+        public Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    public record VerticalWindowRefreshPayload() implements CustomPacketPayload {
+        public static final Type<VerticalWindowRefreshPayload> TYPE =
+            new Type<>(ResourceLocation.fromNamespaceAndPath(Endless.MOD_ID, "vertical_window_refresh"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, VerticalWindowRefreshPayload> CODEC =
+            StreamCodec.of((buf, payload) -> {}, buf -> new VerticalWindowRefreshPayload());
 
         @Override
         public Type<? extends CustomPacketPayload> type() {

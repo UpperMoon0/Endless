@@ -44,6 +44,18 @@ public final class VerticalNetworkBridge {
         }
     }
 
+    /** Re-send the authoritative sparse window after the client confirms a page transition. */
+    public static void refreshPlayerWindow(ServerPlayer player) {
+        if (!EndlessLogicalHeights.isActive() || sender == null) {
+            return;
+        }
+        MinecraftServer server = player.getServer();
+        if (server == null) {
+            return;
+        }
+        sendVisibleWindow(player, server.getPlayerList().getViewDistance());
+    }
+
     public static void tickServer(MinecraftServer server) {
         if (!EndlessLogicalHeights.isActive()) {
             return;
@@ -70,14 +82,18 @@ public final class VerticalNetworkBridge {
                 continue;
             }
 
-            ServerLevel level = player.serverLevel();
-            ChunkPos center = player.chunkPosition();
-            for (int dz = -viewDistance; dz <= viewDistance; dz++) {
-                for (int dx = -viewDistance; dx <= viewDistance; dx++) {
-                    LevelChunk chunk = level.getChunkSource().getChunkNow(center.x + dx, center.z + dz);
-                    if (chunk != null) {
-                        sendVisiblePagesForChunk(player, chunk);
-                    }
+            sendVisibleWindow(player, viewDistance);
+        }
+    }
+
+    private static void sendVisibleWindow(ServerPlayer player, int viewDistance) {
+        ServerLevel level = player.serverLevel();
+        ChunkPos center = player.chunkPosition();
+        for (int dz = -viewDistance; dz <= viewDistance; dz++) {
+            for (int dx = -viewDistance; dx <= viewDistance; dx++) {
+                LevelChunk chunk = level.getChunkSource().getChunkNow(center.x + dx, center.z + dz);
+                if (chunk != null) {
+                    sendVisiblePagesForChunk(player, chunk);
                 }
             }
         }

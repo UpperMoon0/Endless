@@ -10,6 +10,7 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.material.FluidState;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -23,6 +24,7 @@ public final class SparseRandomTicker {
         }
 
         MinecraftVerticalWorld world = EndlessVerticalEngine.world(level);
+        List<TickSection> sections = new ArrayList<>();
         synchronized (world) {
             Map<Long, SparseVerticalColumn<LevelChunkSection>> columns =
                 ((MinecraftVerticalWorldAccessor) (Object) world).endless$getColumns();
@@ -32,8 +34,6 @@ public final class SparseRandomTicker {
                 return;
             }
 
-            int baseX = chunk.getPos().getMinBlockX();
-            int baseZ = chunk.getPos().getMinBlockZ();
             List<Integer> pageYs = column.pageYs();
             for (int pageY : pageYs) {
                 VerticalPage<LevelChunkSection> page = column.getPage(pageY);
@@ -41,8 +41,21 @@ public final class SparseRandomTicker {
                     continue;
                 }
                 page.forEachOccupiedSection((sectionY, section) ->
-                    tickSection(level, section, sectionY, baseX, baseZ, randomTickSpeed));
+                    sections.add(new TickSection(sectionY, section)));
             }
+
+            // Do not call vanilla block/fluid tick callbacks while holding the sparse-world
+            // monitor. A callback may synchronously load/generate a chunk while a worldgen
+            // worker calls back into Endless height queries, which also need this monitor.
+            if (sections.isEmpty()) {
+                return;
+            }
+        }
+
+        int baseX = chunk.getPos().getMinBlockX();
+        int baseZ = chunk.getPos().getMinBlockZ();
+        for (TickSection entry : sections) {
+            tickSection(level, entry.section(), entry.sectionY(), baseX, baseZ, randomTickSpeed);
         }
     }
 
@@ -73,4 +86,6 @@ public final class SparseRandomTicker {
             }
         }
     }
+    private record TickSection(int sectionY, LevelChunkSection section) {}
+
 }

@@ -294,13 +294,13 @@ public final class LiveJoinTest {
                 return false;
             }
             if (clientAliasVisible && !level.getBlockState(alias).is(Blocks.GOLD_BLOCK)) return false;
-            // Server switches the player to creative immediately before teleporting.
-            // Newer clients can receive the block/teleport before the game-mode update,
-            // so wait for instabuild instead of accidentally starting a survival break.
-            if (!mc.player.getAbilities().instabuild) return false;
+            // Do not depend on the server's game-mode update winning the race with
+            // teleport/block synchronization. Dispatch the ordinary destroy action in
+            // whatever local mode the client currently has; stage 2 will keep driving
+            // vanilla progressive mining if the client still believes it is survival.
             boolean started = mc.gameMode.startDestroyBlock(target, Direction.UP);
             System.out.println("ENDLESS_CLIENT_BREAK_DISPATCH edge=" + (upper ? "upper" : "lower")
-                + " started=" + started + " target=" + target);
+                + " started=" + started + " mode=" + mc.gameMode.getPlayerMode() + " target=" + target);
             if (!started) {
                 fail("breakingDispatchRejected", " target=" + target);
                 mc.stop();
@@ -309,19 +309,20 @@ public final class LiveJoinTest {
             if (upper) upperInteractionStage = 2; else lowerInteractionStage = 2;
             return false;
         }
-        if (stage == 2 && LivePredictionProbe.count(target) >= 2
-            && level.getBlockState(target).isAir()
-            && (!clientAliasVisible || level.getBlockState(alias).is(Blocks.GOLD_BLOCK))) {
-            System.out.println("ENDLESS_CLIENT_PREDICTION_PASS edge=" + (upper ? "upper" : "lower")
-                + " target=" + target + " alias=" + alias
-                + " clientAliasVisible=" + clientAliasVisible + " acknowledged=true");
-            if (!upper) return true;
-            upperInteractionStage = 3;
-            return false;
-        }
-        if (stage == 2 && LivePredictionProbe.count(target) >= 2 && !level.getBlockState(target).isAir()) {
-            fail("breakingRejected", " target=" + target + " state=" + level.getBlockState(target));
-            mc.stop();
+        if (stage == 2) {
+            if (LivePredictionProbe.count(target) >= 2
+                && level.getBlockState(target).isAir()
+                && (!clientAliasVisible || level.getBlockState(alias).is(Blocks.GOLD_BLOCK))) {
+                System.out.println("ENDLESS_CLIENT_PREDICTION_PASS edge=" + (upper ? "upper" : "lower")
+                    + " target=" + target + " alias=" + alias
+                    + " clientAliasVisible=" + clientAliasVisible + " acknowledged=true");
+                if (!upper) return true;
+                upperInteractionStage = 3;
+                return false;
+            }
+            if (!level.getBlockState(target).isAir()) {
+                mc.gameMode.continueDestroyBlock(target, Direction.UP);
+            }
             return false;
         }
         if (upper && stage == 3) {

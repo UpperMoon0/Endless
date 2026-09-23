@@ -2,6 +2,7 @@ package com.nstut.endless.network;
 
 import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.heights.EndlessLogicalHeights;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
@@ -35,6 +36,17 @@ class ExtendedBlockPosCodecTest {
             assertEquals(pos, ExtendedBlockPosCodec.read(buf));
             assertEquals(0, buf.readableBytes());
         }
+    }
+
+    @Test
+    void rawByteBufStreamCodecPathPreservesExtendedY() {
+        BlockPos pos = new BlockPos(1, -4095, 4);
+        ByteBuf buf = Unpooled.buffer();
+        ExtendedBlockPosCodec.write(buf, pos);
+        assertEquals(20, buf.readableBytes());
+        assertEquals(ExtendedBlockPosCodec.EXTENDED_MARKER, buf.getLong(0));
+        assertEquals(pos, ExtendedBlockPosCodec.read(buf));
+        assertEquals(0, buf.readableBytes());
     }
 
     @Test

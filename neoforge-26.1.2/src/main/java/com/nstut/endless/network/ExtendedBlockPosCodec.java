@@ -1,6 +1,7 @@
 package com.nstut.endless.network;
 
 import com.nstut.endless.heights.EndlessLogicalHeights;
+import io.netty.buffer.ByteBuf;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 
@@ -10,7 +11,7 @@ public final class ExtendedBlockPosCodec {
 
     private ExtendedBlockPosCodec() {}
 
-    public static BlockPos read(FriendlyByteBuf buf) {
+    public static BlockPos read(ByteBuf buf) {
         long packed = buf.readLong();
         if (packed == EXTENDED_MARKER && EndlessLogicalHeights.isActive()) {
             return new BlockPos(buf.readInt(), buf.readInt(), buf.readInt());
@@ -19,6 +20,12 @@ public final class ExtendedBlockPosCodec {
     }
 
     public static FriendlyByteBuf write(FriendlyByteBuf buf, BlockPos pos) {
+        write((ByteBuf) buf, pos);
+        return buf;
+    }
+
+    /** BlockPos.STREAM_CODEC uses FriendlyByteBuf's static raw-ByteBuf helpers on 1.21+. */
+    public static void write(ByteBuf buf, BlockPos pos) {
         long packed = pos.asLong();
         if (EndlessLogicalHeights.needsExtendedBlockPosEncoding(pos.getY())
             || (EndlessLogicalHeights.isActive() && packed == EXTENDED_MARKER)) {
@@ -29,6 +36,5 @@ public final class ExtendedBlockPosCodec {
         } else {
             buf.writeLong(packed);
         }
-        return buf;
     }
 }

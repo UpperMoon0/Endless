@@ -87,6 +87,26 @@ public abstract class ViewAreaMixin {
         return endless$windowBaseSection;
     }
 
+    @Inject(method = "getRenderSection(J)Lnet/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection;", at = @At("HEAD"), cancellable = true)
+    private void endless$getRenderSection(
+        long sectionNode,
+        CallbackInfoReturnable<SectionRenderDispatcher.RenderSection> cir
+    ) {
+        if (endless$windowBaseSection == UNINITIALIZED) {
+            return;
+        }
+        int ySection = SectionPos.y(sectionNode) - endless$windowBaseSection;
+        if (ySection < 0 || ySection >= sectionGridSizeY) {
+            cir.setReturnValue(null);
+            return;
+        }
+        int xSection = Mth.positiveModulo(SectionPos.x(sectionNode), sectionGridSizeX);
+        int zSection = Mth.positiveModulo(SectionPos.z(sectionNode), sectionGridSizeZ);
+        SectionRenderDispatcher.RenderSection renderSection =
+            this.sections[this.endless$sectionIndex(xSection, ySection, zSection)];
+        cir.setReturnValue(renderSection.getSectionNode() == sectionNode ? renderSection : null);
+    }
+
     @Inject(method = "getRenderSectionAt", at = @At("HEAD"), cancellable = true)
     private void endless$getRenderSectionAt(
         BlockPos pos,

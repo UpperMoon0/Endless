@@ -59,6 +59,7 @@ public final class MinecraftVerticalWorld {
         }
     };
     private long nextRevision = 1L;
+    private long lightCacheRevision;
 
     MinecraftVerticalWorld(Level level) {
         this.level = level;
@@ -138,25 +139,42 @@ public final class MinecraftVerticalWorld {
         return result;
     }
 
-    public synchronized int getBrightness(LightLayer layer, BlockPos pos) {
-        if (layer == LightLayer.BLOCK) {
-            BlockKey key = BlockKey.of(pos);
-            Byte cached = blockLight.get(key);
-            if (cached != null) {
-                return Byte.toUnsignedInt(cached);
-            }
-            int value = computeBlockLight(pos);
-            blockLight.put(key, (byte) value);
-            return value;
-        }
+    public int getBrightness(LightLayer layer, BlockPos pos) {
         BlockKey key = BlockKey.of(pos);
-        Integer cached = skyLight.get(key);
-        if (cached != null) {
-            return cached;
+        while (true) {
+            long revision;
+            synchronized (this) {
+                if (layer == LightLayer.BLOCK) {
+                    Byte cached = blockLight.get(key);
+                    if (cached != null) {
+                        return Byte.toUnsignedInt(cached);
+                    }
+                } else {
+                    Integer cached = skyLight.get(key);
+                    if (cached != null) {
+                        return cached;
+                    }
+                }
+                revision = lightCacheRevision;
+            }
+
+            // Never hold the sparse-world monitor while vanilla may synchronously
+            // request/generate a LevelChunk. Worldgen workers also query sparse
+            // height state, so doing that under this monitor creates a lock cycle.
+            int value = layer == LightLayer.BLOCK ? computeBlockLight(pos) : computeSkyLight(pos);
+
+            synchronized (this) {
+                if (revision != lightCacheRevision) {
+                    continue;
+                }
+                if (layer == LightLayer.BLOCK) {
+                    blockLight.put(key, (byte) value);
+                } else {
+                    skyLight.put(key, value);
+                }
+                return value;
+            }
         }
-        int value = computeSkyLight(pos);
-        skyLight.put(key, value);
-        return value;
     }
 
     public synchronized VerticalPageSnapshot snapshot(VerticalPagePos pos, boolean loadFromDisk) {
@@ -188,6 +206,7 @@ public final class MinecraftVerticalWorld {
         invalidateHeightColumn(key);
         invalidateBlockLightPage(pos);
         skyLight.clear();
+        lightCacheRevision++;
     }
 
     public synchronized List<Integer> loadedPageYs(int chunkX, int chunkZ) {
@@ -227,6 +246,7 @@ public final class MinecraftVerticalWorld {
         revisions.keySet().removeIf(pos -> pos.chunkX() == chunkX && pos.chunkZ() == chunkZ);
         invalidateHeightColumn(key);
         evictColumnLightCaches(chunkX, chunkZ);
+        lightCacheRevision++;
     }
 
     public synchronized void close() {
@@ -238,6 +258,7 @@ public final class MinecraftVerticalWorld {
         heightCache.clear();
         blockLight.clear();
         skyLight.clear();
+        lightCacheRevision++;
     }
 
     private void persist(VerticalPagePos pos) {
@@ -493,6 +514,7 @@ public final class MinecraftVerticalWorld {
         // Sky exposure depends on the highest sparse block in a column and can
         // therefore change arbitrarily far below a modified high-Y block.
         skyLight.clear();
+        lightCacheRevision++;
     }
 
     private void invalidateHeightColumn(long key) {

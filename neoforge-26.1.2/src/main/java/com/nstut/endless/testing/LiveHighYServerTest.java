@@ -145,6 +145,11 @@ public final class LiveHighYServerTest {
                 return;
             }
 
+            // Minecraft 26.1 ignores gameplay packets until its player-load handshake
+            // has completed. Keep the client at its normal spawn until that gate opens;
+            // otherwise the first extended-Y interaction is intentionally discarded.
+            if (!player.connection.hasClientLoaded()) return;
+
             if (!mechanicsVerified) {
                 // LevelTicks intentionally leaves ticks queued while the horizontal
                 // chunk is not entity-loaded/ticking. This fixture lives in chunk 0,0,

@@ -294,7 +294,18 @@ public final class LiveJoinTest {
                 return false;
             }
             if (clientAliasVisible && !level.getBlockState(alias).is(Blocks.GOLD_BLOCK)) return false;
-            mc.gameMode.startDestroyBlock(target, Direction.UP);
+            // Server switches the player to creative immediately before teleporting.
+            // Newer clients can receive the block/teleport before the game-mode update,
+            // so wait for instabuild instead of accidentally starting a survival break.
+            if (!mc.player.getAbilities().instabuild) return false;
+            boolean started = mc.gameMode.startDestroyBlock(target, Direction.UP);
+            System.out.println("ENDLESS_CLIENT_BREAK_DISPATCH edge=" + (upper ? "upper" : "lower")
+                + " started=" + started + " target=" + target);
+            if (!started) {
+                fail("breakingDispatchRejected", " target=" + target);
+                mc.stop();
+                return false;
+            }
             if (upper) upperInteractionStage = 2; else lowerInteractionStage = 2;
             return false;
         }

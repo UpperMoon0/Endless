@@ -502,8 +502,14 @@ public final class MinecraftVerticalWorld {
     }
 
     private void markDirty(VerticalPagePos pos) {
-        dirtyPages.add(pos);
-        revisions.put(pos, nextRevision++);
+        // Only the authoritative server owns persistence dirtiness and snapshot
+        // revisions. Client prediction/block-update writes must not advance the
+        // same revision namespace or a later authoritative page can look stale
+        // and be discarded purely because packet timing differed.
+        if (disk != null) {
+            dirtyPages.add(pos);
+            revisions.put(pos, nextRevision++);
+        }
     }
 
     private void invalidateForBlockChange(BlockPos pos) {

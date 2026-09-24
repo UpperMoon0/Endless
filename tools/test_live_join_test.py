@@ -1,4 +1,4 @@
-import io
+﻿import io
 import json
 from pathlib import Path
 import tempfile
@@ -23,7 +23,7 @@ class VerificationPolicyTest(unittest.TestCase):
 
     def test_unique_matrix(self):
         self.assertEqual(len(live.SCENARIOS), len({s.id for s in live.SCENARIOS}))
-        self.assertEqual(19, len(live.LIVE_CASES))
+        self.assertEqual(23, len(live.LIVE_CASES))
         self.assertEqual(len(live.LIVE_CASES), len(set(live.LIVE_CASES)))
 
     def test_million_gameplay_cannot_degrade_to_join_only(self):
@@ -66,6 +66,16 @@ class VerificationPolicyTest(unittest.TestCase):
         self.assertEqual((live.SAME_JVM_REJOIN_PASS_MARKER,), scenario.required_client_markers)
         self.assertFalse(scenario.required_server_markers)
 
+    def test_full_envelope_rejoin_matches_manual_be_render_regression(self):
+        scenario = next(s for s in live.SCENARIOS if s.id == "same-jvm-rejoin-full-envelope")
+        self.assertTrue(scenario.integrated_rejoin)
+        self.assertEqual(live.FAR_BUILD_HEIGHT, scenario.expected)
+        self.assertEqual(6_000_000, scenario.integrated_target_y)
+        self.assertFalse(scenario.integrated_legacy_layout)
+        self.assertEqual(12, scenario.render_distance)
+        for target in live.PORT_1211_TARGETS:
+            self.assertIn((target, scenario.id), live.LIVE_CASES)
+
     def test_scenario_environment_does_not_leak(self):
         with patch.dict(live.os.environ, {"ENDLESS_TEST_WAYSTONES": "true", "ENDLESS_TEST_EXTREME": "true"}):
             for s in live.SCENARIOS:
@@ -75,11 +85,24 @@ class VerificationPolicyTest(unittest.TestCase):
                 self.assertEqual(str(s.id == "far-envelope").lower(), env["ENDLESS_TEST_FAR"])
                 self.assertEqual("", env["ENDLESS_TEST_COLD_RESTART_PHASE"])
                 self.assertEqual(str(s.integrated_rejoin).lower(), env["ENDLESS_TEST_SAME_JVM_REJOIN"])
+                self.assertEqual(str(s.integrated_target_y), env["ENDLESS_TEST_TARGET_Y"])
+                self.assertEqual(str(s.integrated_legacy_layout).lower(), env["ENDLESS_TEST_LEGACY_LAYOUT"])
 
     def test_cold_restart_uses_far_envelope(self):
         scenario = next(s for s in live.SCENARIOS if s.cold_restart)
         self.assertEqual(live.FAR_BUILD_HEIGHT, scenario.expected)
 
+    def test_windows_graphical_session_selection_is_dynamic(self):
+        sessions = [(0, 4, ""), (3, 0, "RdpUser"), (7, 0, "ConsoleUser")]
+        self.assertEqual(3, live.choose_windows_interactive_session(3, 7, sessions))
+        self.assertEqual(7, live.choose_windows_interactive_session(0, 7, sessions))
+        self.assertEqual(3, live.choose_windows_interactive_session(0, 99, sessions))
+        self.assertFalse(live.needs_windows_interactive_bridge(7, 7))
+        self.assertTrue(live.needs_windows_interactive_bridge(0, 7))
+
+    def test_windows_graphical_session_selection_rejects_noninteractive(self):
+        with self.assertRaisesRegex(RuntimeError, "active logged-in Windows desktop"):
+            live.choose_windows_interactive_session(0, 1, [(0, 4, ""), (1, 4, "ConsoleUser")])
     def test_receipts_require_complete_exact_head(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
@@ -117,6 +140,10 @@ class OutputEvidenceTest(unittest.TestCase):
             pump = live.OutputPump(process, "test")
             pump.thread.join(timeout=2)
         return pump
+
+    def test_console_forwarding_survives_non_cp1252_text(self):
+        escaped = live.console_safe("timing=12 μs", "cp1252")
+        self.assertIn(r"\u03bc", escaped)
 
     def test_history_retains_consumed_markers(self):
         pump = self.pump("ready\nmechanics pass\n")

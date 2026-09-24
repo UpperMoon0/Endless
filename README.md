@@ -104,7 +104,7 @@ Run one loader explicitly:
 
 The live-join CI matrix starts real Fabric and Forge dedicated servers and clients. The extended scenario uses a configured `[-1024,1024)` logical range over a vanilla-sized dense core, exercises blocks, fluid, block entities, POIs, lighting, persistence, rendering and player travel at both configured sparse edges, executes real `/setblock` commands at and just outside those limits, and loads canonical Waystones+Balm artifacts to verify high-Y Waystone placement/manager/client state.
 
-The release gate currently contains **16 required Fabric/Forge live cells**, including million-scale gameplay, full-envelope +/-8M gameplay, cold restart, compatibility baselines, and a fully automated same-JVM rejoin regression. That rejoin test migrates to the legacy `[-2032,2032)` dense layout, writes at Y=1,000,000, saves/closes/reopens the same world, and verifies both the sparse edit and normal generated dense terrain remain intact and render again.
+The release gate currently contains **23 required live cells**: the 16 Fabric/Forge 1.20.1 cells, three port-runtime cells for Fabric 1.21.1 / NeoForge 1.21.1 / NeoForge 26.1.2, and four 1.21.1 same-JVM rejoin cells. The rejoin coverage includes both migrated legacy `[-2032,2032)` dense saves at Y=1,000,000 and a fresh `[-8,000,000,8,000,000)` world at Y=6,000,000. It validates generic vanilla block entities (chest, ender chest and shulker box) by requiring them to enter a completed render section after save/close/reopen, without any interaction-triggered refresh.
 
 ## License
 

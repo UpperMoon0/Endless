@@ -54,11 +54,19 @@ public abstract class ChunkAccessMixin {
      */
     @Inject(method = "isSectionEmpty", at = @At("HEAD"), cancellable = true)
     private void endless$isSectionEmpty(int sectionY, CallbackInfoReturnable<Boolean> cir) {
-        if (!EndlessLogicalHeights.isActive() || !((Object) this instanceof LevelChunk chunk)) {
+        if (!((Object) this instanceof LevelChunk chunk)) {
             return;
         }
         int index = chunk.getSectionIndexFromSectionY(sectionY);
         if (index >= 0 && index < chunk.getSections().length) {
+            return;
+        }
+        // A queued high-Y render compile can outlive logical-range teardown on
+        // Save & Quit. Vanilla would index the dense section array with the
+        // sparse section index and crash. Once the logical range is inactive,
+        // the unloading sparse section is safely considered empty.
+        if (!EndlessLogicalHeights.isActive()) {
+            cir.setReturnValue(true);
             return;
         }
 

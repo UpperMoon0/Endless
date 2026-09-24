@@ -3,6 +3,7 @@ package com.nstut.endless.mixin;
 import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.testing.LiveJoinTest;
 import com.nstut.endless.vertical.EndlessVerticalEngine;
+import com.nstut.endless.vertical.VerticalClientUpdates;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.ClientPacketListener;
@@ -50,6 +51,14 @@ public class ClientPacketListenerMixin {
             return;
         }
 
+        // NeoForge can dispatch the vanilla BE packet while the preceding sparse
+        // page payload is still queued for client-thread application. Queue the
+        // durable section refresh before consulting the current block state so
+        // that this ordering race cannot skip the rebuild entirely. The bounded
+        // retry loop waits until the render window is stable and harmlessly
+        // expires if no valid BE ever materializes.
+        VerticalClientUpdates.queueBlockEntityRenderRefresh(minecraft, pos);
+
         BlockEntityType<?> type = packet.getType();
         BlockState state = level.getBlockState(pos);
         if (!type.isValid(state)) {
@@ -75,11 +84,6 @@ public class ClientPacketListenerMixin {
         if (tag != null) {
             blockEntity.loadWithComponents(tag, level.registryAccess());
         }
-        // A page rebuild may be queued before this later BE packet is handled.
-        // Bypass ClientLevel#setBlocksDirty's state-difference filter so the
-        // render snapshot is guaranteed to include the newly registered BE.
-        minecraft.levelRenderer.setBlocksDirty(
-            pos.getX(), pos.getY(), pos.getZ(), pos.getX(), pos.getY(), pos.getZ());
         ci.cancel();
     }
 }

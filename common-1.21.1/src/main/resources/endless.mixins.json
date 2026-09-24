@@ -9,7 +9,10 @@
     "ClientHandshakePacketListenerMixin",
     "ClientPacketListenerMixin",
     "BlockStatePredictionHandlerMixin",
-    "RenderChunkMixin"
+    "RenderChunkMixin",
+    "RenderSectionCompiledMixin",
+    "accessor.LevelRendererAccessor",
+    "accessor.ViewAreaAccessor"
   ],
   "mixins": [
     "FriendlyByteBufMixin",

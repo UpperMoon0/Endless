@@ -50,6 +50,15 @@ neoForge {
             systemProperty 'endless.liveJoinColdRestartPhase', System.getenv('ENDLESS_TEST_COLD_RESTART_PHASE') ?: ''
             programArguments.addAll '--quickPlayMultiplayer', "127.0.0.1:${System.getenv('ENDLESS_TEST_PORT') ?: '25575'}"
         }
+        sameJvmRejoinTestClient {
+            client()
+            gameDirectory = project.file('run/live-rejoin/client')
+            systemProperty 'endless.sameJvmRejoinTest', 'true'
+            systemProperty 'endless.sameJvmRejoinTest.expectedMin', System.getenv('ENDLESS_TEST_EXPECTED_MIN') ?: '-1048576'
+            systemProperty 'endless.sameJvmRejoinTest.expectedMax', System.getenv('ENDLESS_TEST_EXPECTED_MAX') ?: '1048576'
+            systemProperty 'endless.sameJvmRejoinTest.targetY', System.getenv('ENDLESS_TEST_TARGET_Y') ?: '1000000'
+            systemProperty 'endless.sameJvmRejoinTest.legacyLayout', System.getenv('ENDLESS_TEST_LEGACY_LAYOUT') ?: 'true'
+        }
         liveJoinTestServer {
             server()
             gameDirectory = project.file('run/live-join/server')
@@ -73,6 +82,11 @@ neoForge {
 
 dependencies {
     implementation "com.google.code.gson:gson:2.10.1"
+
+    // Optional compatibility mod in development runs only; production metadata
+    // remains dependency-free.
+    runtimeOnly("net.blay09.mods:balm-neoforge:" + rootProject.balm_version_neoforge_1_21_1) { transitive = false }
+    runtimeOnly("net.blay09.mods:waystones-neoforge:" + rootProject.waystones_version_neoforge_1_21_1) { transitive = false }
 }
 
 processResources {

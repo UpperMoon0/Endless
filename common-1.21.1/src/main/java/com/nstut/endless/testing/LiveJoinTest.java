@@ -57,6 +57,9 @@ public final class LiveJoinTest {
     private static boolean upperRenderMarkerPrinted;
     private static int lowerInteractionStage;
     private static int upperInteractionStage;
+    private static int upperPersistentPlacementAttempts;
+    private static int upperPersistentAckBaseline;
+    private static int upperPersistentRetryTick;
     private static boolean extremeClientDone;
     private static int ticksWithLevel;
 
@@ -328,27 +331,53 @@ public final class LiveJoinTest {
         if (upper && stage == 3) {
             BlockPos persistentSupport = LiveHighYServerTest.upperPersistentSupportPos();
             BlockPos persistentTarget = LiveHighYServerTest.upperPersistentTargetPos();
-            if (!level.getBlockState(persistentSupport).is(Blocks.DEEPSLATE)
+            if (ticksWithLevel < upperPersistentRetryTick
+                || !level.getBlockState(persistentSupport).is(Blocks.DEEPSLATE)
                 || !level.getBlockState(persistentTarget).isAir()
                 || !mc.player.getMainHandItem().is(Blocks.STONE.asItem())) {
                 return false;
             }
-            BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(persistentSupport), Direction.UP, persistentSupport, false);
-            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+
+            upperPersistentAckBaseline = LivePredictionProbe.count(persistentTarget);
+            BlockHitResult hit = new BlockHitResult(
+                Vec3.atCenterOf(persistentSupport), Direction.UP, persistentSupport, false);
+            InteractionResult result = mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+            upperPersistentPlacementAttempts++;
+            System.out.println("ENDLESS_CLIENT_PERSISTENT_PLACEMENT_DISPATCH target=" + persistentTarget
+                + " attempt=" + upperPersistentPlacementAttempts + " result=" + result);
+            if (!result.consumesAction()) {
+                if (upperPersistentPlacementAttempts >= 3) {
+                    fail("persistentPlacementDispatchRejected", " target=" + persistentTarget
+                        + " attempts=" + upperPersistentPlacementAttempts + " result=" + result);
+                    mc.stop();
+                    return false;
+                }
+                upperPersistentRetryTick = ticksWithLevel + 5;
+                return false;
+            }
             upperInteractionStage = 4;
             return false;
         }
         if (upper && stage == 4) {
             BlockPos persistentTarget = LiveHighYServerTest.upperPersistentTargetPos();
-            if (LivePredictionProbe.count(persistentTarget) < 1) return false;
+            if (LivePredictionProbe.count(persistentTarget) <= upperPersistentAckBaseline) return false;
             if (!level.getBlockState(persistentTarget).is(Blocks.STONE)) {
+                if (upperPersistentPlacementAttempts < 3) {
+                    System.out.println("ENDLESS_CLIENT_PERSISTENT_PLACEMENT_RETRY target=" + persistentTarget
+                        + " attempt=" + upperPersistentPlacementAttempts
+                        + " state=" + level.getBlockState(persistentTarget));
+                    upperPersistentRetryTick = ticksWithLevel + 5;
+                    upperInteractionStage = 3;
+                    return false;
+                }
                 fail("persistentPlacementRejected", " target=" + persistentTarget
+                    + " attempts=" + upperPersistentPlacementAttempts
                     + " state=" + level.getBlockState(persistentTarget));
                 mc.stop();
                 return false;
             }
             System.out.println("ENDLESS_CLIENT_PERSISTENT_PLACEMENT_PASS target=" + persistentTarget
-                + " acknowledged=true");
+                + " attempts=" + upperPersistentPlacementAttempts + " acknowledged=true");
             return true;
         }
         return false;

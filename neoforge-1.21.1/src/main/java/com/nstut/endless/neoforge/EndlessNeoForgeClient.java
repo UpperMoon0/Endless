@@ -5,6 +5,7 @@ import com.nstut.endless.testing.LiveJoinTest;
 import com.nstut.endless.testing.LiveSameJvmRejoinTest;
 import com.nstut.endless.vertical.EndlessVerticalEngine;
 import com.nstut.endless.vertical.VerticalPageSnapshot;
+import com.nstut.endless.vertical.VerticalClientUpdates;
 import net.minecraft.client.Minecraft;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -24,6 +25,7 @@ public final class EndlessNeoForgeClient {
 
     @SubscribeEvent
     public static void clientTick(ClientTickEvent.Post event) {
+        VerticalClientUpdates.tick(Minecraft.getInstance());
         if (LiveJoinTest.isArmed()) LiveJoinTest.tick();
         if (LiveSameJvmRejoinTest.isArmed()) LiveSameJvmRejoinTest.tick();
     }
@@ -32,5 +34,6 @@ public final class EndlessNeoForgeClient {
     public static void loggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         var level = Minecraft.getInstance().level;
         if (level != null) EndlessVerticalEngine.close(level);
+        VerticalClientUpdates.reset();
     }
 }

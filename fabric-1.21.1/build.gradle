@@ -24,6 +24,16 @@ loom {
             property "endless.liveJoinColdRestartPhase", System.getenv('ENDLESS_TEST_COLD_RESTART_PHASE') ?: ''
             programArgs "--quickPlayMultiplayer", "127.0.0.1:${System.getenv('ENDLESS_TEST_PORT') ?: '25575'}"
         }
+        sameJvmRejoinTestClient {
+            client()
+            runDir("run/live-rejoin/client")
+            vmArg "-Xmx2G"
+            property "endless.sameJvmRejoinTest", "true"
+            property "endless.sameJvmRejoinTest.expectedMin", System.getenv('ENDLESS_TEST_EXPECTED_MIN') ?: '-1048576'
+            property "endless.sameJvmRejoinTest.expectedMax", System.getenv('ENDLESS_TEST_EXPECTED_MAX') ?: '1048576'
+            property "endless.sameJvmRejoinTest.targetY", System.getenv('ENDLESS_TEST_TARGET_Y') ?: '1000000'
+            property "endless.sameJvmRejoinTest.legacyLayout", System.getenv('ENDLESS_TEST_LEGACY_LAYOUT') ?: 'true'
+        }
         liveJoinTestServer {
             server()
             runDir("run/live-join/server")
@@ -60,6 +70,11 @@ dependencies {
     implementation project(':common')
     common(project(path: ':common-1.21.1', configuration: 'namedElements')) { transitive false }
     shadowBundle project(path: ':common-1.21.1', configuration: 'transformProductionFabric')
+
+    // Optional compatibility mod in development runs only; not bundled or
+    // declared as a production dependency.
+    modRuntimeOnly("net.blay09.mods:balm-fabric:" + rootProject.balm_version_fabric_1_21_1) { transitive = false }
+    modRuntimeOnly("net.blay09.mods:waystones-fabric:" + rootProject.waystones_version_fabric_1_21_1) { transitive = false }
 }
 
 processResources {

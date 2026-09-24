@@ -70,6 +70,12 @@ neoForge {
 
 dependencies {
     implementation "com.google.code.gson:gson:2.10.1"
+
+    // Optional compatibility mod in development runs only; production metadata
+    // remains dependency-free.
+    runtimeOnly("net.blay09.mods:balm-neoforge:" + rootProject.balm_version_26_1_2) { transitive = false }
+    runtimeOnly("net.blay09.mods:shogi-neoforge:" + rootProject.shogi_version_26_1_2) { transitive = false }
+    runtimeOnly("net.blay09.mods:waystones-neoforge:" + rootProject.waystones_version_26_1_2) { transitive = false }
 }
 
 processResources {

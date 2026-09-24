@@ -79,11 +79,15 @@ dependencies {
     // Real compatibility coverage only: normal development/runtime artifacts do
     // not acquire a hard Waystones dependency. Use the exact published
     // CurseForge files corresponding to canonical Waystones 14.1.20 and Balm
-    // 7.3.38 because TwelveIterations' release repository is not anonymously
-    // readable and its public group does not expose these historical artifacts.
+    // 7.3.38 so the established compatibility regression remains reproducible.
     if (System.getenv('ENDLESS_TEST_WAYSTONES') == 'true') {
         modRuntimeOnly "curse.maven:balm-fabric-500525:7420614"
         modRuntimeOnly "curse.maven:waystones-245755:7682268"
+    } else {
+        // Keep Waystones in normal development runs without creating a
+        // production dependency. Compatibility CI intentionally stays pinned.
+        modRuntimeOnly("net.blay09.mods:balm-fabric:" + rootProject.balm_version_1_20_1) { transitive = false }
+        modRuntimeOnly("net.blay09.mods:waystones-fabric:" + rootProject.waystones_version_1_20_1) { transitive = false }
     }
 }
 

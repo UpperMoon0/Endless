@@ -15,11 +15,11 @@ public final class LiveRenderProbe {
     private static final Set<Integer> RENDER_GRAPH_SECTIONS = ConcurrentHashMap.newKeySet();
     private static final Set<Long> VIEW_AREA_EXACT_SECTIONS = ConcurrentHashMap.newKeySet();
     private static final Set<Long> RENDER_GRAPH_EXACT_SECTIONS = ConcurrentHashMap.newKeySet();
-    private static final Set<Long> COMPILED_BLOCK_ENTITIES = ConcurrentHashMap.newKeySet();
+    private static final Set<ExactBlockPos> COMPILED_BLOCK_ENTITIES = ConcurrentHashMap.newKeySet();
     private static final Set<Long> COMPILED_SECTIONS = ConcurrentHashMap.newKeySet();
     private static final Set<Long> BLOCK_ENTITY_REFRESH_QUEUED = ConcurrentHashMap.newKeySet();
     private static final Set<Long> BLOCK_ENTITY_REFRESH_DIRTIED = ConcurrentHashMap.newKeySet();
-    private static final Set<Long> RENDER_CHUNK_BLOCK_ENTITIES = ConcurrentHashMap.newKeySet();
+    private static final Set<ExactBlockPos> RENDER_CHUNK_BLOCK_ENTITIES = ConcurrentHashMap.newKeySet();
 
     private LiveRenderProbe() {}
 
@@ -68,7 +68,7 @@ public final class LiveRenderProbe {
         if (!armed()) return;
         COMPILED_SECTIONS.add(sectionKey(origin));
         for (BlockEntity blockEntity : blockEntities) {
-            COMPILED_BLOCK_ENTITIES.add(blockEntity.getBlockPos().asLong());
+            COMPILED_BLOCK_ENTITIES.add(exactBlockKey(blockEntity.getBlockPos()));
         }
     }
 
@@ -81,11 +81,11 @@ public final class LiveRenderProbe {
     }
 
     public static void recordRenderChunkBlockEntity(BlockPos pos, BlockEntity blockEntity) {
-        if (armed() && blockEntity != null) RENDER_CHUNK_BLOCK_ENTITIES.add(pos.asLong());
+        if (armed() && blockEntity != null) RENDER_CHUNK_BLOCK_ENTITIES.add(exactBlockKey(pos));
     }
 
     public static boolean sawBlockEntityCompiled(BlockPos pos) {
-        return COMPILED_BLOCK_ENTITIES.contains(pos.asLong());
+        return COMPILED_BLOCK_ENTITIES.contains(exactBlockKey(pos));
     }
 
     public static boolean sawSectionCompiled(BlockPos pos) {
@@ -101,7 +101,7 @@ public final class LiveRenderProbe {
     }
 
     public static boolean sawRenderChunkBlockEntity(BlockPos pos) {
-        return RENDER_CHUNK_BLOCK_ENTITIES.contains(pos.asLong());
+        return RENDER_CHUNK_BLOCK_ENTITIES.contains(exactBlockKey(pos));
     }
 
     /** Clear evidence at a world transition so a prior session cannot satisfy a rejoin assertion. */
@@ -124,4 +124,10 @@ public final class LiveRenderProbe {
             SectionPos.blockToSectionCoord(pos.getY()),
             SectionPos.blockToSectionCoord(pos.getZ()));
     }
+
+    private static ExactBlockPos exactBlockKey(BlockPos pos) {
+        return new ExactBlockPos(pos.getX(), pos.getY(), pos.getZ());
+    }
+
+    private record ExactBlockPos(int x, int y, int z) {}
 }

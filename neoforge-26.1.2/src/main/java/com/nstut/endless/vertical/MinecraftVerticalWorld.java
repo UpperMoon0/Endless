@@ -89,6 +89,12 @@ public final class MinecraftVerticalWorld {
         return section.getFluidState(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15);
     }
 
+    /** True when a loaded sparse section contains a block state that owns a block entity. */
+    public synchronized boolean sectionMayContainBlockEntity(int chunkX, int sectionY, int chunkZ) {
+        LevelChunkSection section = getSection(chunkX, chunkZ, sectionY, false);
+        return section != null && section.maybeHas(BlockState::hasBlockEntity);
+    }
+
     public synchronized BlockState setBlockState(BlockPos pos, BlockState state) {
         int chunkX = pos.getX() >> 4;
         int chunkZ = pos.getZ() >> 4;

@@ -2,7 +2,11 @@ package com.nstut.endless.testing;
 
 import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.heights.EndlessLogicalHeights;
+import com.nstut.endless.vertical.VerticalNetworkBridge;
 import net.minecraft.client.Minecraft;
+import com.nstut.endless.mixin.accessor.VisibleSectionsAccessor;
+import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
+import net.minecraft.core.SectionPos;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.MinecraftServer;
@@ -14,6 +18,7 @@ import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.WorldDataConfiguration;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.WorldOptions;
 import net.minecraft.world.level.levelgen.presets.WorldPresets;
@@ -26,6 +31,7 @@ import net.minecraft.world.phys.Vec3;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -41,9 +47,16 @@ public final class LiveSameJvmRejoinTest {
     public static final String SAVE_MARKER = "ENDLESS_SAME_JVM_FIRST_SAVE_PASS";
 
     private static final String WORLD_ID = "endless-same-jvm-rejoin";
-    private static final int TARGET_Y = 1_000_000;
+    private static final int TARGET_Y = Integer.getInteger("endless.sameJvmRejoinTest.targetY", 1_000_000);
+    private static final boolean LEGACY_LAYOUT = Boolean.parseBoolean(
+        System.getProperty("endless.sameJvmRejoinTest.legacyLayout", "true"));
     private static final BlockPos SUPPORT = new BlockPos(0, TARGET_Y - 1, 0);
     private static final BlockPos TARGET = SUPPORT.above();
+    private static final List<BlockEntityFixture> BLOCK_ENTITY_FIXTURES = List.of(
+        new BlockEntityFixture(new BlockPos(2, TARGET_Y, 0), Blocks.CHEST.defaultBlockState()),
+        new BlockEntityFixture(new BlockPos(4, TARGET_Y, 0), Blocks.ENDER_CHEST.defaultBlockState()),
+        new BlockEntityFixture(new BlockPos(6, TARGET_Y, 0), Blocks.WHITE_SHULKER_BOX.defaultBlockState())
+    );
     private static final int MAX_TICKS = 4_000;
     private static final int DENSE_CANARY_Y = 0;
     private static final double GROUND_RETURN_Y = 100.0D;
@@ -59,10 +72,13 @@ public final class LiveSameJvmRejoinTest {
     private static boolean bootstrapSaveQueued;
     private static volatile boolean bootstrapSaveComplete;
     private static boolean bootstrapStopRequested;
+    private static MinecraftServer bootstrapStoppingServer;
     private static boolean bootstrapClearIssued;
     private static boolean bootstrapReopenIssued;
     private static boolean fixtureTaskQueued;
     private static volatile boolean fixtureReady;
+    private static boolean fixtureBlocksQueued;
+    private static volatile boolean fixtureBlocksReady;
     private static int lastPlacementAttemptTick = Integer.MIN_VALUE;
     private static int placementAttempts;
     private static boolean placementCheckQueued;
@@ -70,6 +86,7 @@ public final class LiveSameJvmRejoinTest {
     private static boolean saveTaskQueued;
     private static volatile boolean saveComplete;
     private static boolean serverStopRequested;
+    private static MinecraftServer stoppingServer;
     private static boolean clearIssued;
     private static boolean reopenIssued;
     private static boolean rejoinCheckQueued;
@@ -182,17 +199,21 @@ public final class LiveSameJvmRejoinTest {
             requireStageWithin(mc, 1_200, "bootstrap terrain save did not complete");
             return;
         }
+        if (!LEGACY_LAYOUT) {
+            setStage(Stage.WAIT_FIRST_JOIN);
+            return;
+        }
         if (!bootstrapStopRequested) {
             bootstrapStopRequested = true;
+            bootstrapStoppingServer = server;
             server.halt(false);
             setStage(Stage.WAIT_BOOTSTRAP_CLOSED);
         }
     }
 
     private static void waitForBootstrapClosedAndMigrate(Minecraft mc) {
-        MinecraftServer server = mc.getSingleplayerServer();
         if (!bootstrapClearIssued) {
-            if (server != null && !server.isShutdown()) {
+            if (bootstrapStoppingServer != null && !bootstrapStoppingServer.isShutdown()) {
                 requireStageWithin(mc, 1_000, "bootstrap integrated server did not stop");
                 return;
             }
@@ -253,19 +274,21 @@ public final class LiveSameJvmRejoinTest {
                 ServerPlayer player = requirePlayer(server, playerUuid);
                 ServerLevel level = player.level();
                 require(!level.isOutsideBuildHeight(TARGET_Y), "target is outside logical build range");
-                require(level.getSectionsCount() == 254,
-                    "migrated legacy dense core did not load as 254 sections: " + level.getSectionsCount());
-                require(level.getChunk(0, 0).getSections().length == 254,
-                    "migrated target chunk did not allocate 254 dense sections");
-                verifyDenseCanary(level, "migrated pre-placement");
+                int expectedDenseSections = LEGACY_LAYOUT ? 254 : 24;
+                require(level.getSectionsCount() == expectedDenseSections,
+                    "unexpected dense core section count: expected=" + expectedDenseSections
+                        + " actual=" + level.getSectionsCount() + " legacy=" + LEGACY_LAYOUT);
+                require(level.getChunk(0, 0).getSections().length == expectedDenseSections,
+                    "target chunk dense section count mismatch: expected=" + expectedDenseSections
+                        + " actual=" + level.getChunk(0, 0).getSections().length + " legacy=" + LEGACY_LAYOUT);
+                verifyDenseCanary(level, LEGACY_LAYOUT ? "migrated pre-placement" : "fresh pre-placement");
                 require(EndlessHeights.isOutsideDenseBuildHeight(TARGET_Y),
                     "target must exercise sparse storage, not the dense core");
-                require(level.setBlock(SUPPORT, Blocks.DEEPSLATE.defaultBlockState(), 3),
-                    "could not create sparse placement support");
-                require(level.removeBlock(TARGET, false) || level.getBlockState(TARGET).isAir(),
-                    "could not clear sparse placement target");
+                // Enter the target sparse page before creating the fixture. Sparse
+                // block updates are intentionally scoped to players whose current
+                // page window can see them; placing first would test that filter,
+                // not post-rejoin synchronization.
                 player.setGameMode(GameType.CREATIVE);
-                player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Blocks.STONE));
                 player.setNoGravity(true);
                 player.teleportTo(0.5D, TARGET_Y + 2.0D, 0.5D);
                 fixtureReady = true;
@@ -280,20 +303,48 @@ public final class LiveSameJvmRejoinTest {
             return;
         }
         boolean playerReady = Math.abs(mc.player.getY() - (TARGET_Y + 2.0D)) < 8.0D;
+        MinecraftServer server = mc.getSingleplayerServer();
+        if (server == null) {
+            fail(mc, "fixture", " integrated server disappeared before sparse fixture placement");
+            return;
+        }
+        if (playerReady && !fixtureBlocksQueued) {
+            fixtureBlocksQueued = true;
+            serverTask(server, "placeSparseFixture", () -> {
+                ServerPlayer player = requirePlayer(server, playerUuid);
+                ServerLevel level = player.level();
+                require(level.setBlock(SUPPORT, Blocks.DEEPSLATE.defaultBlockState(), 3),
+                    "could not create sparse placement support");
+                require(level.removeBlock(TARGET, false) || level.getBlockState(TARGET).isAir(),
+                    "could not clear sparse placement target");
+                for (BlockEntityFixture fixture : BLOCK_ENTITY_FIXTURES) {
+                    require(level.setBlock(fixture.pos(), fixture.state(), 3),
+                        "could not create sparse block-entity fixture at " + fixture.pos());
+                    requireValidBlockEntity(level, fixture, "initial server fixture");
+                }
+                // Initial fixture delivery is setup, not the behavior under test.
+                // A teleport can move the server player into the target page before
+                // vanilla horizontal chunk tracking has admitted chunk 0,0, so the
+                // immediate sparse blockChanged packet may legitimately have no
+                // recipients. Explicitly send the authoritative current window once
+                // the fixture exists; the regression begins at save/reopen below.
+                // Test setup must not depend on horizontal chunk-tracker timing.
+                // The target fixture is in chunk 0,0, so send that exact loaded
+                // chunk's sparse pages after the client has acknowledged the teleport.
+                VerticalNetworkBridge.sendVisiblePagesForChunk(player, level.getChunk(0, 0));
+                fixtureBlocksReady = true;
+            });
+            return;
+        }
         boolean supportVisible = mc.level.getBlockState(SUPPORT).is(Blocks.DEEPSLATE);
         boolean targetClear = mc.level.getBlockState(TARGET).isAir();
-        boolean holdingStone = mc.player.getMainHandItem().is(Blocks.STONE.asItem());
-        if (!playerReady || !supportVisible || !targetClear || !holdingStone) {
+        boolean blockEntitiesReady = blockEntitiesPresent(mc.level);
+        if (!playerReady || !fixtureBlocksReady || !supportVisible || !targetClear || !blockEntitiesReady) {
             requireStageWithin(mc, 1_000,
                 "client never received first sparse fixture playerY=" + mc.player.getY()
                     + " support=" + mc.level.getBlockState(SUPPORT)
                     + " target=" + mc.level.getBlockState(TARGET)
-                    + " held=" + mc.player.getMainHandItem());
-            return;
-        }
-        MinecraftServer server = mc.getSingleplayerServer();
-        if (server == null) {
-            fail(mc, "placement", " integrated server disappeared before sparse edit");
+                    + " blockEntities=" + blockEntityDiagnostic(mc.level));
             return;
         }
         if (!placementCheckQueued) {
@@ -337,6 +388,9 @@ public final class LiveSameJvmRejoinTest {
                 ServerPlayer player = requirePlayer(server, playerUuid);
                 require(player.level().getBlockState(TARGET).is(Blocks.STONE),
                     "sparse block vanished before save");
+                for (BlockEntityFixture fixture : BLOCK_ENTITY_FIXTURES) {
+                    requireValidBlockEntity(player.level(), fixture, "server before save");
+                }
                 server.saveEverything(false, true, true);
                 saveComplete = true;
             });
@@ -364,6 +418,7 @@ public final class LiveSameJvmRejoinTest {
         }
         if (!serverStopRequested) {
             serverStopRequested = true;
+            stoppingServer = server;
             System.out.println(SAVE_MARKER + " target=" + TARGET + " flushed=true");
             // Request the same integrated-server shutdown that Save & Quit drives,
             // but do it outside Minecraft.clearLevel() so the automated tick hook
@@ -374,9 +429,12 @@ public final class LiveSameJvmRejoinTest {
     }
 
     private static void waitForClosedAndReopen(Minecraft mc) {
-        MinecraftServer server = mc.getSingleplayerServer();
         if (!clearIssued) {
-            if (server != null && !server.isShutdown()) {
+            // Fabric can clear Minecraft#singleplayerServer as soon as the local
+            // connection closes, while the old server thread is still flushing
+            // chunks and still owns session.lock. Wait on the exact instance we
+            // halted so reopen cannot race world-storage teardown.
+            if (stoppingServer != null && !stoppingServer.isShutdown()) {
                 requireStageWithin(mc, 1_000, "first integrated server did not stop after save");
                 return;
             }
@@ -393,6 +451,7 @@ public final class LiveSameJvmRejoinTest {
                 requireStageWithin(mc, 1_200, "client model manager became unavailable before same-JVM reopen");
                 return;
             }
+            LiveRenderProbe.resetWorldEvidence();
             reopenIssued = true;
             setStage(Stage.WAIT_SECOND_JOIN);
             mc.createWorldOpenFlows().openWorld(WORLD_ID, () -> {});
@@ -414,6 +473,9 @@ public final class LiveSameJvmRejoinTest {
                 ServerPlayer player = requirePlayer(server, playerUuid);
                 require(player.level().getBlockState(TARGET).is(Blocks.STONE),
                     "saved sparse block is missing on reopened integrated server");
+                for (BlockEntityFixture fixture : BLOCK_ENTITY_FIXTURES) {
+                    requireValidBlockEntity(player.level(), fixture, "server reopen");
+                }
                 verifyDenseCanary(player.level(), "server reopen");
                 require(Math.abs(player.getY() - (TARGET_Y + 2.0D)) < 32.0D,
                     "reopened player did not retain million-height position: y=" + player.getY());
@@ -435,15 +497,26 @@ public final class LiveSameJvmRejoinTest {
         }
         boolean playerAtTarget = Math.abs(mc.player.getY() - (TARGET_Y + 2.0D)) < 32.0D;
         boolean clientHasBlock = mc.level.getBlockState(TARGET).is(Blocks.STONE);
+        boolean clientBlockEntitiesPresent = blockEntitiesPresent(mc.level);
+        boolean clientBlockEntitiesCompiled = blockEntitiesCompiled();
         boolean clientDensePreserved = denseCanaryMatches(mc.level);
-        if (!playerAtTarget || !clientHasBlock || !clientDensePreserved) {
+        mc.player.setXRot(90.0F);
+        // SUPPORT is in the next section below TARGET and has no block entities,
+        // so a special block-entity rebuild cannot satisfy this rendering check.
+        boolean visibleStoneMesh = hasVisibleSolidMesh(mc, TARGET) && hasVisibleSolidMesh(mc, SUPPORT);
+        if (!playerAtTarget || !clientHasBlock || !clientBlockEntitiesPresent
+            || !clientBlockEntitiesCompiled || !clientDensePreserved || !visibleStoneMesh) {
             requireStageWithin(mc, 1_200,
                 "saved sparse page was not resynchronized after same-JVM reopen"
                     + " playerY=" + mc.player.getY()
                     + " clientState=" + mc.level.getBlockState(TARGET)
+                    + " blockEntities=" + blockEntityDiagnostic(mc.level)
+                    + " visibleStoneMesh=" + visibleStoneMesh
+                    + " blockEntityCompiled=" + clientBlockEntitiesCompiled
                     + " logical=" + EndlessLogicalHeights.isActive() + " densePreserved=" + clientDensePreserved + " dense=" + denseCanaryDiagnostic(mc));
             return;
         }
+        System.out.println("ENDLESS_VISIBLE_STONE_MESH_PASS target=" + TARGET + " visible=true solidDraw=true");
         MinecraftServer server = mc.getSingleplayerServer();
         if (server == null) {
             fail(mc, "groundReturn", " integrated server disappeared before dense render check");
@@ -486,9 +559,68 @@ public final class LiveSameJvmRejoinTest {
         stage = Stage.DONE;
         System.out.println("ENDLESS_SAME_JVM_DENSE_CHUNK_PASS targetChunk=0,0 densePreserved=true viewArea=true renderGraph=true");
         System.out.println(PASS_MARKER + " target=" + TARGET
-            + " serverPersisted=true clientResynced=true denseChunkPreserved=true sameJvm=true");
+            + " serverPersisted=true clientResynced=true blockEntitiesCompiled=true denseChunkPreserved=true sameJvm=true");
+        System.out.flush();
         mc.stop();
     }
+
+    private static boolean blockEntitiesPresent(net.minecraft.world.level.Level level) {
+        for (BlockEntityFixture fixture : BLOCK_ENTITY_FIXTURES) {
+            BlockState state = level.getBlockState(fixture.pos());
+            BlockEntity blockEntity = level.getBlockEntity(fixture.pos());
+            if (state != fixture.state() || blockEntity == null || !blockEntity.getType().isValid(state)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean hasVisibleSolidMesh(Minecraft mc, BlockPos pos) {
+        return ((VisibleSectionsAccessor) (Object) mc.levelRenderer)
+            .endless$getVisibleSections().stream().anyMatch(section ->
+                section.getSectionNode() == SectionPos.asLong(pos)
+                    && section.getSectionMesh().getSectionDraw(ChunkSectionLayer.SOLID) != null
+                    && section.getSectionMesh().getSectionDraw(ChunkSectionLayer.SOLID).indexCount() > 0);
+    }
+
+    private static boolean blockEntitiesCompiled() {
+        for (BlockEntityFixture fixture : BLOCK_ENTITY_FIXTURES) {
+            if (!LiveRenderProbe.sawBlockEntityCompiled(fixture.pos())) return false;
+        }
+        return true;
+    }
+
+    private static String blockEntityDiagnostic(net.minecraft.world.level.Level level) {
+        StringBuilder result = new StringBuilder();
+        for (BlockEntityFixture fixture : BLOCK_ENTITY_FIXTURES) {
+            if (!result.isEmpty()) result.append(';');
+            BlockState state = level.getBlockState(fixture.pos());
+            BlockEntity blockEntity = level.getBlockEntity(fixture.pos());
+            result.append(fixture.pos()).append('=').append(state)
+                .append("/be=").append(blockEntity == null ? "null" : blockEntity.getType())
+                .append("/queued=").append(LiveRenderProbe.sawBlockEntityRefreshQueued(fixture.pos()))
+                .append("/dirtied=").append(LiveRenderProbe.sawBlockEntityRefreshDirtied(fixture.pos()))
+                .append("/viewArea=").append(LiveRenderProbe.sawViewAreaExact(fixture.pos()))
+                .append("/renderGraph=").append(LiveRenderProbe.sawRenderGraphExact(fixture.pos()))
+                .append("/renderState=").append(LiveRenderProbe.sawRenderChunk(fixture.pos()))
+                .append("/renderBE=").append(LiveRenderProbe.sawRenderChunkBlockEntity(fixture.pos()))
+                .append("/sectionCompiled=").append(LiveRenderProbe.sawSectionCompiled(fixture.pos()))
+                .append("/compiled=").append(LiveRenderProbe.sawBlockEntityCompiled(fixture.pos()));
+        }
+        return result.toString();
+    }
+
+    private static void requireValidBlockEntity(net.minecraft.world.level.Level level, BlockEntityFixture fixture, String phase) {
+        BlockState state = level.getBlockState(fixture.pos());
+        BlockEntity blockEntity = level.getBlockEntity(fixture.pos());
+        require(state == fixture.state(), phase + " block state mismatch at " + fixture.pos()
+            + " expected=" + fixture.state() + " actual=" + state);
+        require(blockEntity != null, phase + " block entity missing at " + fixture.pos());
+        require(blockEntity.getType().isValid(state), phase + " invalid block entity " + blockEntity.getType()
+            + " for state " + state + " at " + fixture.pos());
+    }
+
+    private record BlockEntityFixture(BlockPos pos, BlockState state) {}
 
     private static BlockState[] captureDenseCanary(net.minecraft.world.level.BlockGetter level) {
         BlockState[] snapshot = new BlockState[16 * 16];
@@ -590,8 +722,11 @@ public final class LiveSameJvmRejoinTest {
 
     private static void setStage(Stage next) {
         if (stage == next) return;
+        Stage previous = stage;
         stage = next;
         stageTick = ticks;
+        System.out.println("ENDLESS_SAME_JVM_STAGE from=" + previous + " to=" + next + " tick=" + ticks);
+        System.out.flush();
     }
 
     private static int intProperty(String key, int fallback) {
@@ -611,6 +746,7 @@ public final class LiveSameJvmRejoinTest {
         done = true;
         stage = Stage.DONE;
         System.out.println(FAIL_MARKER + " phase=" + phase + details);
+        System.out.flush();
         mc.stop();
     }
 

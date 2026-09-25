@@ -36,7 +36,9 @@ public abstract class RenderChunkMixin {
     private void endless$getBlockEntity(BlockPos pos, CallbackInfoReturnable<BlockEntity> cir) {
         if (this.levelHeightAccessor instanceof LevelChunk chunk
             && EndlessVerticalEngine.isExtendedY(chunk.getLevel(), pos.getY())) {
-            cir.setReturnValue(chunk.getBlockEntity(pos));
+            BlockEntity blockEntity = chunk.getBlockEntity(pos);
+            LiveRenderProbe.recordRenderChunkBlockEntity(pos, blockEntity);
+            cir.setReturnValue(blockEntity);
         }
     }
 }

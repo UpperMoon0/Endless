@@ -4,6 +4,9 @@ import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import com.nstut.endless.vertical.VerticalNetworkBridge;
 import net.minecraft.client.Minecraft;
+import com.nstut.endless.mixin.accessor.VisibleSectionsAccessor;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.core.SectionPos;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.MinecraftServer;
@@ -500,17 +503,23 @@ public final class LiveSameJvmRejoinTest {
         boolean clientBlockEntitiesPresent = blockEntitiesPresent(mc.level);
         boolean clientBlockEntitiesCompiled = blockEntitiesCompiled();
         boolean clientDensePreserved = denseCanaryMatches(mc.level);
+        mc.player.setXRot(90.0F);
+        // SUPPORT is a separate section with no block entities. Both ordinary
+        // meshes must reach the actual frustum-visible draw list after reopening.
+        boolean visibleStoneMesh = hasVisibleSolidMesh(mc, TARGET) && hasVisibleSolidMesh(mc, SUPPORT);
         if (!playerAtTarget || !clientHasBlock || !clientBlockEntitiesPresent
-            || !clientBlockEntitiesCompiled || !clientDensePreserved) {
+            || !clientBlockEntitiesCompiled || !clientDensePreserved || !visibleStoneMesh) {
             requireStageWithin(mc, 1_200,
                 "saved sparse page was not resynchronized after same-JVM reopen"
                     + " playerY=" + mc.player.getY()
                     + " clientState=" + mc.level.getBlockState(TARGET)
                     + " blockEntities=" + blockEntityDiagnostic(mc.level)
+                    + " visibleStoneMesh=" + visibleStoneMesh
                     + " blockEntityCompiled=" + clientBlockEntitiesCompiled
                     + " logical=" + EndlessLogicalHeights.isActive() + " densePreserved=" + clientDensePreserved + " dense=" + denseCanaryDiagnostic(mc));
             return;
         }
+        System.out.println("ENDLESS_VISIBLE_STONE_MESH_PASS target=" + TARGET + " visible=true solidDraw=true");
         MinecraftServer server = mc.getSingleplayerServer();
         if (server == null) {
             fail(mc, "groundReturn", " integrated server disappeared before dense render check");
@@ -567,6 +576,13 @@ public final class LiveSameJvmRejoinTest {
             }
         }
         return true;
+    }
+
+    private static boolean hasVisibleSolidMesh(Minecraft mc, BlockPos pos) {
+        return ((VisibleSectionsAccessor) (Object) mc.levelRenderer)
+            .endless$getVisibleSections().stream().anyMatch(section ->
+                SectionPos.of(section.getOrigin()).equals(SectionPos.of(pos))
+                    && !section.getCompiled().isEmpty(RenderType.solid()));
     }
 
     private static boolean blockEntitiesCompiled() {

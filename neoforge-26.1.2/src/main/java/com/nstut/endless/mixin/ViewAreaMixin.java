@@ -104,7 +104,12 @@ public abstract class ViewAreaMixin {
         int zSection = Mth.positiveModulo(SectionPos.z(sectionNode), sectionGridSizeZ);
         SectionRenderDispatcher.RenderSection renderSection =
             this.sections[this.endless$sectionIndex(xSection, ySection, zSection)];
-        cir.setReturnValue(renderSection.getSectionNode() == sectionNode ? renderSection : null);
+        if (renderSection.getSectionNode() != sectionNode) {
+            cir.setReturnValue(null);
+            return;
+        }
+        LiveRenderProbe.recordViewArea(renderSection.getRenderOrigin());
+        cir.setReturnValue(renderSection);
     }
 
     @Inject(method = "getRenderSectionAt", at = @At("HEAD"), cancellable = true)
@@ -124,7 +129,15 @@ public abstract class ViewAreaMixin {
         int zSection = Mth.positiveModulo(Math.floorDiv(pos.getZ(), 16), sectionGridSizeZ);
         SectionRenderDispatcher.RenderSection renderSection =
             this.sections[this.endless$sectionIndex(xSection, ySection, zSection)];
-        LiveRenderProbe.recordViewArea(pos);
+        long expectedNode = SectionPos.asLong(
+            Math.floorDiv(pos.getX(), 16),
+            Math.floorDiv(pos.getY(), 16),
+            Math.floorDiv(pos.getZ(), 16));
+        if (renderSection.getSectionNode() != expectedNode) {
+            cir.setReturnValue(null);
+            return;
+        }
+        LiveRenderProbe.recordViewArea(renderSection.getRenderOrigin());
         cir.setReturnValue(renderSection);
     }
 

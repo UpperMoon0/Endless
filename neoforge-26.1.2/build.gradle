@@ -48,6 +48,8 @@ neoForge {
             systemProperty 'endless.sameJvmRejoinTest', 'true'
             systemProperty 'endless.sameJvmRejoinTest.expectedMin', System.getenv('ENDLESS_TEST_EXPECTED_MIN') ?: '-1048576'
             systemProperty 'endless.sameJvmRejoinTest.expectedMax', System.getenv('ENDLESS_TEST_EXPECTED_MAX') ?: '1048576'
+            systemProperty 'endless.sameJvmRejoinTest.targetY', System.getenv('ENDLESS_TEST_TARGET_Y') ?: '1000000'
+            systemProperty 'endless.sameJvmRejoinTest.legacyLayout', System.getenv('ENDLESS_TEST_LEGACY_LAYOUT') ?: 'true'
         }
         liveJoinTestServer {
             server()

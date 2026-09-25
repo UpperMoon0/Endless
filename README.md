@@ -106,6 +106,8 @@ The live-join CI matrix starts real Fabric and Forge dedicated servers and clien
 
 The release gate currently contains **23 required live cells**: the 16 Fabric/Forge 1.20.1 cells, three port-runtime cells for Fabric 1.21.1 / NeoForge 1.21.1 / NeoForge 26.1.2, and four 1.21.1 same-JVM rejoin cells. The rejoin coverage includes both migrated legacy `[-2032,2032)` dense saves at Y=1,000,000 and a fresh `[-8,000,000,8,000,000)` world at Y=6,000,000. It validates generic vanilla block entities (chest, ender chest and shulker box) by requiring them to enter a completed render section after save/close/reopen, without any interaction-triggered refresh.
 
+The release gate contains **25 required live cells**: 16 Fabric/Forge 1.20.1 cells, three port-runtime cells for Fabric 1.21.1 / NeoForge 1.21.1 / NeoForge 26.1.2, and six same-JVM rejoin cells covering all three modern targets. Each modern target tests both a migrated legacy `[-2032,2032)` dense save at Y=1,000,000 and a fresh `[-8,000,000,8,000,000)` world at Y=6,000,000. The reopen oracle validates generic vanilla block entities (chest, ender chest and shulker box) with full XYZ keys and requires them to enter a completed render section after save/close/reopen, without any interaction-triggered refresh. Both modern rejoin scenarios run at render distance 12 and also require visible solid geometry for ordinary blocks in two separate sections, including one without block entities.
+
 ## License
 
 All Rights Reserved

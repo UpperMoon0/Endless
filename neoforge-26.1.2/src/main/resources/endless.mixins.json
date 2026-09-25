@@ -6,10 +6,15 @@
   "client": [
     "ViewAreaMixin",
     "SectionOcclusionGraphMixin",
+    "SectionOcclusionGraphStorageMixin",
     "ClientHandshakePacketListenerMixin",
     "ClientPacketListenerMixin",
     "BlockStatePredictionHandlerMixin",
-    "RenderChunkMixin"
+    "RenderChunkMixin",
+    "RenderSectionCompiledMixin",
+    "accessor.LevelRendererAccessor",
+    "accessor.ViewAreaAccessor",
+    "accessor.VisibleSectionsAccessor"
   ],
   "mixins": [
     "FriendlyByteBufMixin",

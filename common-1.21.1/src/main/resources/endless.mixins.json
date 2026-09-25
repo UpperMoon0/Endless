@@ -12,7 +12,8 @@
     "RenderChunkMixin",
     "RenderSectionCompiledMixin",
     "accessor.LevelRendererAccessor",
-    "accessor.ViewAreaAccessor"
+    "accessor.ViewAreaAccessor",
+    "accessor.VisibleSectionsAccessor"
   ],
   "mixins": [
     "FriendlyByteBufMixin",

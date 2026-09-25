@@ -23,3 +23,5 @@ Endless 0.5
 - Split client-only loader bootstraps so dedicated servers never resolve client classes.
 - Expanded the real-client sparse-edge scenario to cover block/fluid/block-entity/POI/light/height persistence, rendering and player travel on both Fabric and Forge.
 - Retained v0.4 fail-closed legacy-world migration guarantees.
+
+- Fixed invisible high-altitude blocks on NeoForge 26.1.2 at render distances of 8 or more by keeping the visibility tree around the camera. Modern rejoin tests now require visible solid block meshes in ordinary sections at render distance 12.

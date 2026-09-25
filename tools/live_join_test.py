@@ -67,6 +67,7 @@ SERVER_FATAL_MARKERS = (
     "BUILD FAILED",
 )
 DEFAULT_TIMEOUT = 360
+INTEGRATED_REJOIN_MIN_TIMEOUT = 600
 SERVER_DISCONNECT_MARKERS = ("lost connection: Disconnected", "lost connection: Timed out")
 
 
@@ -422,6 +423,7 @@ SCENARIOS.append(Scenario(
     server_port=0,
     required_client_markers=(SAME_JVM_REJOIN_PASS_MARKER,),
     integrated_rejoin=True,
+    render_distance=12,
 ))
 
 SCENARIOS.append(Scenario(
@@ -460,7 +462,7 @@ SCENARIOS.append(Scenario(
 
 LEGACY_TARGETS = ("fabric-1.20.1", "forge-1.20.1")
 PORT_TARGETS = ("fabric-1.21.1", "neoforge-1.21.1", "neoforge-26.1.2")
-PORT_1211_TARGETS = ("fabric-1.21.1", "neoforge-1.21.1")
+PORT_REJOIN_TARGETS = ("fabric-1.21.1", "neoforge-1.21.1", "neoforge-26.1.2")
 LIVE_CASES = tuple(
     (target, scenario.id)
     for target in LEGACY_TARGETS
@@ -468,7 +470,7 @@ LIVE_CASES = tuple(
     if scenario.id not in ("port-runtime", "same-jvm-rejoin-full-envelope")
 ) + tuple((target, "port-runtime") for target in PORT_TARGETS) + tuple(
     (target, scenario_id)
-    for target in PORT_1211_TARGETS
+    for target in PORT_REJOIN_TARGETS
     for scenario_id in ("same-jvm-rejoin", "same-jvm-rejoin-full-envelope")
 )
 SCENARIO_BY_ID = {scenario.id: scenario for scenario in SCENARIOS}
@@ -912,6 +914,12 @@ def run_live_session(
         stop_tree(server, graceful_server=True)
 
 
+def required_client_markers_for(target: str, scenario: Scenario) -> tuple[str, ...]:
+    if scenario.integrated_rejoin and target in PORT_REJOIN_TARGETS:
+        return scenario.required_client_markers + ("ENDLESS_VISIBLE_STONE_MESH_PASS",)
+    return scenario.required_client_markers
+
+
 def run_integrated_rejoin(
     root: Path, target: str, module: str, scenario: Scenario, timeout: int, env: dict[str, str]
 ) -> None:
@@ -925,7 +933,7 @@ def run_integrated_rejoin(
     try:
         line = output.wait_for(
             (SAME_JVM_REJOIN_PASS_MARKER,),
-            timeout,
+            max(timeout, INTEGRATED_REJOIN_MIN_TIMEOUT),
             fail_markers=(
                 SAME_JVM_REJOIN_FAIL_MARKER,
                 "Encountered an unexpected exception",
@@ -938,7 +946,7 @@ def run_integrated_rejoin(
         if line is None:
             raise RuntimeError(f"{label}: client did not finish same-JVM rejoin verification")
         output.wait_until_seen(
-            scenario.required_client_markers, min(timeout, 60), (SAME_JVM_REJOIN_FAIL_MARKER,)
+            required_client_markers_for(target, scenario), min(timeout, 60), (SAME_JVM_REJOIN_FAIL_MARKER,)
         )
         print(f"{label}: PASS ({line.rstrip()})", flush=True)
     finally:
@@ -999,7 +1007,7 @@ def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeo
         "dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=root, text=True).strip()),
         "expected": scenario.expected, "status": "running",
         "required_server_markers": scenario.required_server_markers,
-        "required_client_markers": scenario.required_client_markers,
+        "required_client_markers": required_client_markers_for(target, scenario),
     }
     try:
         _run_scenario(root, target, module, scenario, timeout)

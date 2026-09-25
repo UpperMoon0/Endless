@@ -1,4 +1,4 @@
-﻿import io
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -23,7 +23,7 @@ class VerificationPolicyTest(unittest.TestCase):
 
     def test_unique_matrix(self):
         self.assertEqual(len(live.SCENARIOS), len({s.id for s in live.SCENARIOS}))
-        self.assertEqual(23, len(live.LIVE_CASES))
+        self.assertEqual(25, len(live.LIVE_CASES))
         self.assertEqual(len(live.LIVE_CASES), len(set(live.LIVE_CASES)))
 
     def test_million_gameplay_cannot_degrade_to_join_only(self):
@@ -63,6 +63,7 @@ class VerificationPolicyTest(unittest.TestCase):
         self.assertTrue(scenario.integrated_rejoin)
         self.assertEqual("integrated", scenario.server_kind)
         self.assertEqual(live.MILLION_BUILD_HEIGHT, scenario.expected)
+        self.assertEqual(12, scenario.render_distance)
         self.assertEqual((live.SAME_JVM_REJOIN_PASS_MARKER,), scenario.required_client_markers)
         self.assertFalse(scenario.required_server_markers)
 
@@ -73,7 +74,7 @@ class VerificationPolicyTest(unittest.TestCase):
         self.assertEqual(6_000_000, scenario.integrated_target_y)
         self.assertFalse(scenario.integrated_legacy_layout)
         self.assertEqual(12, scenario.render_distance)
-        for target in live.PORT_1211_TARGETS:
+        for target in live.PORT_REJOIN_TARGETS:
             self.assertIn((target, scenario.id), live.LIVE_CASES)
 
     def test_scenario_environment_does_not_leak(self):
@@ -87,6 +88,17 @@ class VerificationPolicyTest(unittest.TestCase):
                 self.assertEqual(str(s.integrated_rejoin).lower(), env["ENDLESS_TEST_SAME_JVM_REJOIN"])
                 self.assertEqual(str(s.integrated_target_y), env["ENDLESS_TEST_TARGET_Y"])
                 self.assertEqual(str(s.integrated_legacy_layout).lower(), env["ENDLESS_TEST_LEGACY_LAYOUT"])
+
+    def test_modern_rejoin_requires_visible_ordinary_meshes(self):
+        for target in live.PORT_REJOIN_TARGETS:
+            for name in ("same-jvm-rejoin", "same-jvm-rejoin-full-envelope"):
+                scenario = live.SCENARIO_BY_ID[name]
+                self.assertEqual(12, scenario.render_distance)
+                self.assertIn("ENDLESS_VISIBLE_STONE_MESH_PASS",
+                              live.required_client_markers_for(target, scenario))
+        legacy = live.SCENARIO_BY_ID["same-jvm-rejoin"]
+        self.assertEqual(legacy.required_client_markers,
+                         live.required_client_markers_for("fabric-1.20.1", legacy))
 
     def test_cold_restart_uses_far_envelope(self):
         scenario = next(s for s in live.SCENARIOS if s.cold_restart)
@@ -165,6 +177,9 @@ class OutputEvidenceTest(unittest.TestCase):
         client = self.pump(live.PASS_MARKER + "\n")
         with self.assertRaisesRegex(RuntimeError, "server reported failure"):
             live.wait_for_live_join_outcome(client, server, 1, "test")
+
+    def test_integrated_rejoin_has_slow_save_wall_clock_floor(self):
+        self.assertGreaterEqual(live.INTEGRATED_REJOIN_MIN_TIMEOUT, 600)
 
     def test_mixin_crash_fails_before_ready_timeout(self):
         pump = self.pump("Critical injection failure\n")

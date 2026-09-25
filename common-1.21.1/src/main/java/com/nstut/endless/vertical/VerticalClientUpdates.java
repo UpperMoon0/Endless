@@ -24,6 +24,7 @@ public final class VerticalClientUpdates {
     public static void apply(Minecraft client, VerticalPageSnapshot snapshot) {
         EndlessVerticalEngine.world(client.level).applySnapshot(snapshot);
         VerticalPagePos pos = snapshot.pos();
+        BlockEntityPageRefreshScanner.schedule(pos);
         int x = pos.chunkX() << 4;
         int z = pos.chunkZ() << 4;
         // Neighbor faces and boundary light can change too. The work is bounded
@@ -41,15 +42,28 @@ public final class VerticalClientUpdates {
      * leave a permanently stale compiled section.
      */
     public static void queueBlockEntityRenderRefresh(Minecraft client, BlockPos pos) {
+        queueBlockEntityRenderRefresh(pos, true);
+        tick(client);
+    }
+
+    private static void queueBlockEntityRenderRefreshIfAbsent(BlockPos pos) {
+        queueBlockEntityRenderRefresh(pos, false);
+    }
+
+    private static void queueBlockEntityRenderRefresh(BlockPos pos, boolean resetExisting) {
         SectionKey key = new SectionKey(
             Math.floorDiv(pos.getX(), 16),
             Math.floorDiv(pos.getY(), 16),
             Math.floorDiv(pos.getZ(), 16));
-        // Multiple BE packets for one section arrive back-to-back. Replacing the
-        // pending entry lets the last packet define the settle/retry window.
-        PENDING_BLOCK_ENTITY_SECTIONS.put(key, new PendingRefresh());
-        LiveRenderProbe.recordBlockEntityRefreshQueued(pos);
-        tick(client);
+        PendingRefresh previous;
+        if (resetExisting) {
+            previous = PENDING_BLOCK_ENTITY_SECTIONS.put(key, new PendingRefresh());
+        } else {
+            previous = PENDING_BLOCK_ENTITY_SECTIONS.putIfAbsent(key, new PendingRefresh());
+        }
+        if (resetExisting || previous == null) {
+            LiveRenderProbe.recordBlockEntityRefreshQueued(pos);
+        }
     }
 
     /** Retry queued sparse BE invalidations once the target section is in the render window. */
@@ -58,6 +72,8 @@ public final class VerticalClientUpdates {
             PENDING_BLOCK_ENTITY_SECTIONS.clear();
             return;
         }
+        BlockEntityPageRefreshScanner.tick(
+            client, VerticalClientUpdates::queueBlockEntityRenderRefreshIfAbsent);
         if (PENDING_BLOCK_ENTITY_SECTIONS.isEmpty()) return;
 
         ViewArea viewArea = ((LevelRendererAccessor)(Object)client.levelRenderer).endless$getViewArea();
@@ -105,6 +121,7 @@ public final class VerticalClientUpdates {
 
     public static void reset() {
         PENDING_BLOCK_ENTITY_SECTIONS.clear();
+        BlockEntityPageRefreshScanner.reset();
     }
 
     private static final class PendingRefresh {

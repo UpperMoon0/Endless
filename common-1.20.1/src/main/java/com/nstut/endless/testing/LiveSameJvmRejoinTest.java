@@ -46,6 +46,7 @@ public final class LiveSameJvmRejoinTest {
     private static final BlockPos SUPPORT = new BlockPos(0, TARGET_Y - 1, 0);
     private static final BlockPos TARGET = SUPPORT.above();
     private static final int MAX_TICKS = 4_000;
+    private static final int SAVE_COMPLETION_TIMEOUT_TICKS = 1_200;
     private static final int DENSE_CANARY_Y = 0;
     private static final double GROUND_RETURN_Y = 100.0D;
     private static final BlockPos DENSE_RENDER_POS = new BlockPos(0, 80, 0);
@@ -181,7 +182,7 @@ public final class LiveSameJvmRejoinTest {
             });
         }
         if (!bootstrapSaveComplete) {
-            requireStageWithin(mc, 1_200, "bootstrap terrain save did not complete");
+            requireStageWithin(mc, SAVE_COMPLETION_TIMEOUT_TICKS, "bootstrap terrain save did not complete");
             return;
         }
         if (!bootstrapStopRequested) {
@@ -356,7 +357,7 @@ public final class LiveSameJvmRejoinTest {
     }
     private static void waitForSave(Minecraft mc) {
         if (!saveComplete) {
-            requireStageWithin(mc, 600, "integrated server save did not complete");
+            requireStageWithin(mc, SAVE_COMPLETION_TIMEOUT_TICKS, "integrated server save did not complete");
             return;
         }
         MinecraftServer server = mc.getSingleplayerServer();

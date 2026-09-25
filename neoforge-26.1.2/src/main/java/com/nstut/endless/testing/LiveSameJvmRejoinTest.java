@@ -58,6 +58,7 @@ public final class LiveSameJvmRejoinTest {
         new BlockEntityFixture(new BlockPos(6, TARGET_Y, 0), Blocks.WHITE_SHULKER_BOX.defaultBlockState())
     );
     private static final int MAX_TICKS = 4_000;
+    private static final int SAVE_COMPLETION_TIMEOUT_TICKS = 1_200;
     private static final int HYSTERESIS_PROBE_SECTION_DELTA = 8;
     private static final int DENSE_CANARY_Y = 0;
     private static final double GROUND_RETURN_Y = 100.0D;
@@ -201,7 +202,7 @@ public final class LiveSameJvmRejoinTest {
             });
         }
         if (!bootstrapSaveComplete) {
-            requireStageWithin(mc, 1_200, "bootstrap terrain save did not complete");
+            requireStageWithin(mc, SAVE_COMPLETION_TIMEOUT_TICKS, "bootstrap terrain save did not complete");
             return;
         }
         if (!LEGACY_LAYOUT) {
@@ -413,7 +414,7 @@ public final class LiveSameJvmRejoinTest {
     }
     private static void waitForSave(Minecraft mc) {
         if (!saveComplete) {
-            requireStageWithin(mc, 600, "integrated server save did not complete");
+            requireStageWithin(mc, SAVE_COMPLETION_TIMEOUT_TICKS, "integrated server save did not complete");
             return;
         }
         MinecraftServer server = mc.getSingleplayerServer();

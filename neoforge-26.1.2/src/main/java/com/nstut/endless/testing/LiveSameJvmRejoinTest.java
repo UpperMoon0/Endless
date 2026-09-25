@@ -58,6 +58,7 @@ public final class LiveSameJvmRejoinTest {
         new BlockEntityFixture(new BlockPos(6, TARGET_Y, 0), Blocks.WHITE_SHULKER_BOX.defaultBlockState())
     );
     private static final int MAX_TICKS = 4_000;
+    private static final int HYSTERESIS_PROBE_SECTION_DELTA = 8;
     private static final int DENSE_CANARY_Y = 0;
     private static final double GROUND_RETURN_Y = 100.0D;
     private static final BlockPos DENSE_RENDER_POS = new BlockPos(0, 80, 0);
@@ -91,6 +92,9 @@ public final class LiveSameJvmRejoinTest {
     private static boolean reopenIssued;
     private static boolean rejoinCheckQueued;
     private static volatile boolean reopenedServerSawBlock;
+    private static boolean hysteresisTeleportQueued;
+    private static volatile boolean hysteresisTeleportServerDone;
+    private static int initialViewBaseSection = Integer.MIN_VALUE;
     private static boolean groundTeleportQueued;
     private static volatile boolean groundTeleportServerDone;
     private static UUID playerUuid;
@@ -131,6 +135,7 @@ public final class LiveSameJvmRejoinTest {
                 case WAIT_CLOSED -> waitForClosedAndReopen(mc);
                 case WAIT_SECOND_JOIN -> waitForSecondJoin(mc);
                 case WAIT_CLIENT_RESYNC -> waitForClientResync(mc);
+                case WAIT_HYSTERESIS_PROBE -> waitForHysteresisProbe(mc);
                 case WAIT_GROUND_RETURN -> waitForGroundReturn(mc);
                 case DONE -> { }
             }
@@ -503,6 +508,8 @@ public final class LiveSameJvmRejoinTest {
         boolean clientBlockEntitiesInternallyValid = blockEntitiesInternallyValid(mc.level);
         boolean clientBlockEntitiesVisible = blockEntitiesVisible(mc);
         boolean clientDensePreserved = denseCanaryMatches(mc.level);
+        LiveRenderProbe.RenderWindowAlignment alignment = LiveRenderProbe.latestRenderWindowAlignment();
+        boolean renderWindowAligned = renderWindowAlignmentMatchesCamera(mc, alignment);
         mc.player.setXRot(90.0F);
         // SUPPORT is in the next section below TARGET and has no block entities,
         // so a special block-entity rebuild cannot satisfy this rendering check.
@@ -510,7 +517,7 @@ public final class LiveSameJvmRejoinTest {
         if (!playerAtTarget || !clientHasBlock || !clientBlockEntitiesPresent
             || !clientBlockEntitiesCompiled || !clientBlockEntitiesScannerDiscovered
             || !clientBlockEntitiesInternallyValid || !clientBlockEntitiesVisible
-            || !clientDensePreserved || !visibleStoneMesh) {
+            || !clientDensePreserved || !visibleStoneMesh || !renderWindowAligned) {
             requireStageWithin(mc, 1_200,
                 "saved sparse page was not resynchronized after same-JVM reopen"
                     + " playerY=" + mc.player.getY()
@@ -521,10 +528,64 @@ public final class LiveSameJvmRejoinTest {
                     + " blockEntityScannerDiscovered=" + clientBlockEntitiesScannerDiscovered
                     + " blockEntityInternallyValid=" + clientBlockEntitiesInternallyValid
                     + " blockEntityVisible=" + clientBlockEntitiesVisible
+                    + " renderWindow=" + alignment
                     + " logical=" + EndlessLogicalHeights.isActive() + " densePreserved=" + clientDensePreserved + " dense=" + denseCanaryDiagnostic(mc));
             return;
         }
         System.out.println("ENDLESS_VISIBLE_STONE_MESH_PASS target=" + TARGET + " visible=true solidDraw=true");
+        initialViewBaseSection = alignment.viewBaseSection();
+        System.out.println("ENDLESS_RENDER_WINDOW_EDGE_PASS phase=initial camera=" + alignment.cameraSection()
+            + " lowerEdge=" + alignment.viewBaseSection()
+            + " upperEdge=" + alignment.viewMaxSectionInclusive()
+            + " tree=[" + alignment.treeBaseSection() + "," + alignment.treeMaxSectionInclusive() + "]");
+
+        MinecraftServer server = mc.getSingleplayerServer();
+        if (server == null) {
+            fail(mc, "hysteresisProbe", " integrated server disappeared before render-window probe");
+            return;
+        }
+        if (!hysteresisTeleportQueued) {
+            hysteresisTeleportQueued = true;
+            serverTask(server, "hysteresisProbe", () -> {
+                ServerPlayer player = requirePlayer(server, playerUuid);
+                int initialCameraSection = Math.floorDiv(TARGET_Y + 2, 16);
+                double probeY = (double) (initialCameraSection + HYSTERESIS_PROBE_SECTION_DELTA) * 16.0D + 2.0D;
+                player.teleportTo(0.5D, probeY, 0.5D);
+                player.setNoGravity(true);
+                hysteresisTeleportServerDone = true;
+            });
+        }
+        setStage(Stage.WAIT_HYSTERESIS_PROBE);
+    }
+
+    private static void waitForHysteresisProbe(Minecraft mc) {
+        if (mc.level == null || mc.player == null || !hysteresisTeleportServerDone) {
+            requireStageWithin(mc, 1_200, "client/server did not complete visibility-tree hysteresis setup");
+            return;
+        }
+
+        int expectedCameraSection = Math.floorDiv(TARGET_Y + 2, 16) + HYSTERESIS_PROBE_SECTION_DELTA;
+        boolean atProbe = Math.floorDiv(mc.player.getBlockY(), 16) == expectedCameraSection;
+        LiveRenderProbe.RenderWindowAlignment alignment = LiveRenderProbe.latestRenderWindowAlignment();
+        boolean currentAlignment = renderWindowAlignmentMatchesCamera(mc, alignment);
+        boolean hysteresisHeldBase = alignment != null
+            && alignment.viewBaseSection() == initialViewBaseSection;
+        if (!atProbe || !currentAlignment || !hysteresisHeldBase) {
+            requireStageWithin(mc, 1_200,
+                "visibility tree did not cover both ViewArea edges under rebase hysteresis"
+                    + " playerY=" + mc.player.getY()
+                    + " expectedCameraSection=" + expectedCameraSection
+                    + " initialViewBase=" + initialViewBaseSection
+                    + " alignment=" + alignment);
+            return;
+        }
+
+        System.out.println("ENDLESS_RENDER_WINDOW_EDGE_PASS phase=hysteresis camera=" + alignment.cameraSection()
+            + " lowerEdge=" + alignment.viewBaseSection()
+            + " upperEdge=" + alignment.viewMaxSectionInclusive()
+            + " tree=[" + alignment.treeBaseSection() + "," + alignment.treeMaxSectionInclusive() + "]"
+            + " baseHeld=true");
+
         MinecraftServer server = mc.getSingleplayerServer();
         if (server == null) {
             fail(mc, "groundReturn", " integrated server disappeared before dense render check");
@@ -570,6 +631,18 @@ public final class LiveSameJvmRejoinTest {
             + " serverPersisted=true clientResynced=true blockEntitiesCompiled=true denseChunkPreserved=true sameJvm=true");
         System.out.flush();
         mc.stop();
+    }
+
+    private static boolean renderWindowAlignmentMatchesCamera(
+        Minecraft mc, LiveRenderProbe.RenderWindowAlignment alignment
+    ) {
+        if (alignment == null || mc.player == null) return false;
+        int cameraSection = Math.floorDiv(mc.player.getBlockY(), 16);
+        return alignment.cameraSection() == cameraSection
+            && alignment.viewSectionCount() == 32
+            && alignment.coversViewWindow()
+            && alignment.treeBaseSection() <= alignment.viewBaseSection()
+            && alignment.treeMaxSectionInclusive() >= alignment.viewMaxSectionInclusive();
     }
 
     private static boolean blockEntitiesPresent(net.minecraft.world.level.Level level) {
@@ -805,6 +878,7 @@ public final class LiveSameJvmRejoinTest {
         WAIT_CLOSED,
         WAIT_SECOND_JOIN,
         WAIT_CLIENT_RESYNC,
+        WAIT_HYSTERESIS_PROBE,
         WAIT_GROUND_RETURN,
         DONE
     }

@@ -2,6 +2,7 @@ package com.nstut.endless.mixin;
 
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import com.nstut.endless.testing.LiveRenderProbe;
+import com.nstut.endless.vertical.VerticalViewAreaWindow;
 import net.minecraft.client.renderer.ViewArea;
 import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
 import net.minecraft.core.BlockPos;
@@ -20,7 +21,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /** Camera-following 512-block render window for the sparse vertical engine. */
 @Mixin(ViewArea.class)
-public abstract class ViewAreaMixin {
+public abstract class ViewAreaMixin implements VerticalViewAreaWindow {
     @Unique private static final int RENDER_WINDOW_SECTIONS = 32;
     @Unique private static final int REBASE_HYSTERESIS_SECTIONS = 8;
     @Unique private static final int UNINITIALIZED = Integer.MIN_VALUE;
@@ -32,6 +33,23 @@ public abstract class ViewAreaMixin {
     @Shadow public SectionRenderDispatcher.RenderSection[] sections;
 
     @Unique private int endless$windowBaseSection = UNINITIALIZED;
+
+    @Override
+    public int endless$getWindowBaseSection() {
+        // GraphStorage is first created before LevelRenderer performs the initial
+        // camera reposition. In that short bootstrap interval the RenderSections
+        // still use the level's dense minimum, so expose that same base. The
+        // reposition immediately invalidates the graph and the next GraphStorage
+        // observes the real sparse camera-following base.
+        return endless$windowBaseSection == UNINITIALIZED
+            ? this.level.getMinSectionY()
+            : endless$windowBaseSection;
+    }
+
+    @Override
+    public int endless$getWindowSectionCount() {
+        return this.sectionGridSizeY;
+    }
 
     @Unique
     private int endless$sectionIndex(int x, int y, int z) {

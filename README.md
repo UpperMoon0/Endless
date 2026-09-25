@@ -1,6 +1,6 @@
 # Endless
 
-Endless is a Minecraft 1.20.1 mod for Forge and Fabric that provides a sparse, practically unbounded vertical building space without allocating a dense chunk column for the entire height.
+Endless provides sparse, practically unbounded vertical building space for Minecraft 1.20.1 (Fabric/Forge), 1.21.1 (Fabric/NeoForge), and 26.1.2 (NeoForge) without allocating a dense chunk column for the entire height.
 
 **v0.5 supported configuration envelope:** Y=-8,000,000 through Y=7,999,999.
 
@@ -10,7 +10,7 @@ CurseForge: https://www.curseforge.com/minecraft/mc-mods/nstut-endless
 
 ## How v0.5 works
 
-Minecraft 1.20.1 cannot safely make its normal `LevelChunkSection[]` millions of blocks tall. Vanilla also packs `BlockPos` Y into 12 bits and stores normal chunk section Y as a signed byte. Endless therefore separates the user-facing logical build range from the vanilla-compatible dense chunk core and stores extended space in sparse pages.
+Vanilla Minecraft cannot safely make its normal `LevelChunkSection[]` millions of blocks tall. The supported versions also retain narrow packed-position or dense-section assumptions that cannot represent the full Endless envelope directly. Endless therefore separates the user-facing logical build range from the vanilla-compatible dense chunk core and stores extended space in sparse pages.
 
 - `config/endless.json` defines the **logical build range** used by placement, commands, teleport validity, AI limits, rendering queries, and sparse routing. Any section-aligned subrange of `[-8000000, 8000000)` is supported.
 - A fresh v0.5 world keeps the **dense core** at vanilla `[-64, 320)`. Widening the logical config does not widen `LevelChunkSection[]`.
@@ -72,7 +72,7 @@ Back up important worlds before upgrading. Sparse v0.5 pages do not reinterpret 
 
 ## Compatibility notes
 
-Endless supports Minecraft 1.20.1 on Forge and Fabric. Sparse multiplayer requires an Endless v0.5-compatible client.
+Endless supports Minecraft 1.20.1 on Fabric/Forge, Minecraft 1.21.1 on Fabric/NeoForge, and Minecraft 26.1.2 on NeoForge. Sparse multiplayer requires an Endless v0.5-compatible client on the same Minecraft/loader line as the server.
 
 Mods that use ordinary `Level`, `LevelChunk`, `BlockPos`, block entity, tick, POI, heightmap, and brightness APIs can operate at high Y through Endless' routing. A mod that directly converts high-Y positions with `BlockPos.asLong()`, assumes `chunk.getSections()` contains every possible Y, or directly inspects vanilla light `DataLayer` storage can still impose vanilla's old bounds on itself. Those are representation-level assumptions that cannot be transparently fixed inside another mod's private data structures.
 
@@ -96,15 +96,22 @@ Build and test:
 Run one loader explicitly:
 
 ```bash
-./gradlew runFabricClient
-./gradlew runForgeClient
-./gradlew runFabricServer
-./gradlew runForgeServer
+./gradlew runFabric1201Client
+./gradlew runForge1201Client
+./gradlew runFabric1211Client
+./gradlew runNeoForge1211Client
+./gradlew runNeoForge2612Client
+
+./gradlew runFabric1201Server
+./gradlew runForge1201Server
+./gradlew runFabric1211Server
+./gradlew runNeoForge1211Server
+./gradlew runNeoForge2612Server
 ```
 
-The live-join CI matrix starts real Fabric and Forge dedicated servers and clients. The extended scenario uses a configured `[-1024,1024)` logical range over a vanilla-sized dense core, exercises blocks, fluid, block entities, POIs, lighting, persistence, rendering and player travel at both configured sparse edges, executes real `/setblock` commands at and just outside those limits, and loads canonical Waystones+Balm artifacts to verify high-Y Waystone placement/manager/client state.
+Use `./gradlew testAllVersions` for shared/version-specific unit tests. Build release artifacts per Minecraft line (for example `:fabric-1.20.1:build :forge-1.20.1:build`, then the 1.21.1 targets in a separate Gradle invocation); Loom production transforms for different Minecraft mapping sets are intentionally isolated.
 
-The release gate currently contains **23 required live cells**: the 16 Fabric/Forge 1.20.1 cells, three port-runtime cells for Fabric 1.21.1 / NeoForge 1.21.1 / NeoForge 26.1.2, and four 1.21.1 same-JVM rejoin cells. The rejoin coverage includes both migrated legacy `[-2032,2032)` dense saves at Y=1,000,000 and a fresh `[-8,000,000,8,000,000)` world at Y=6,000,000. It validates generic vanilla block entities (chest, ender chest and shulker box) by requiring them to enter a completed render section after save/close/reopen, without any interaction-triggered refresh.
+The live-join CI matrix starts real Fabric and Forge dedicated servers and clients. The extended scenario uses a configured `[-1024,1024)` logical range over a vanilla-sized dense core, exercises blocks, fluid, block entities, POIs, lighting, persistence, rendering and player travel at both configured sparse edges, executes real `/setblock` commands at and just outside those limits, and loads canonical Waystones+Balm artifacts to verify high-Y Waystone placement/manager/client state.
 
 The release gate contains **25 required live cells**: 16 Fabric/Forge 1.20.1 cells, three port-runtime cells for Fabric 1.21.1 / NeoForge 1.21.1 / NeoForge 26.1.2, and six same-JVM rejoin cells covering all three modern targets. Each modern target tests both a migrated legacy `[-2032,2032)` dense save at Y=1,000,000 and a fresh `[-8,000,000,8,000,000)` world at Y=6,000,000. The reopen oracle validates generic vanilla block entities (chest, ender chest and shulker box) with full XYZ keys and requires them to enter a completed render section after save/close/reopen, without any interaction-triggered refresh. Both modern rejoin scenarios run at render distance 12 and also require visible solid geometry for ordinary blocks in two separate sections, including one without block entities.
 

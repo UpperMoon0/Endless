@@ -1,5 +1,6 @@
 package com.nstut.endless.vertical;
 
+import com.nstut.endless.debug.EndlessDebugTrace;
 import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import com.nstut.endless.testing.LiveHighYServerTest;
@@ -7,6 +8,7 @@ import com.nstut.endless.testing.LiveFarEnvelopeServerTest;
 import com.nstut.endless.testing.LiveColdRestartServerTest;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -142,9 +144,21 @@ public final class VerticalNetworkBridge {
                 continue;
             }
             Packet<ClientGamePacketListener> packet = blockEntity.getUpdatePacket();
-            if (packet != null) {
-                player.connection.send(packet);
+            if (packet == null) {
+                // Vanilla chunk BE data is applied before the sparse high-Y page on the
+                // client, so blocks such as chests cannot be instantiated from that
+                // packet: the dense LevelChunk still reports AIR at this position.
+                // Re-send a generic BE packet after the sparse page. The client-side
+                // sparse hook can now create/register the BE against the authoritative
+                // high-Y state. Preserve custom update packets when a BE supplies one.
+                packet = ClientboundBlockEntityDataPacket.create(blockEntity);
+                EndlessDebugTrace.log("BE_SYNC_FALLBACK", "player=" + player.getGameProfile().name()
+                    + " pos=" + blockEntity.getBlockPos() + " type=" + blockEntity.getType());
+            } else {
+                EndlessDebugTrace.log("BE_SYNC_CUSTOM", "player=" + player.getGameProfile().name()
+                    + " pos=" + blockEntity.getBlockPos() + " packet=" + packet.getClass().getName());
             }
+            player.connection.send(packet);
         }
     }
 

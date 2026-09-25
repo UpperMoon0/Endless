@@ -10,12 +10,12 @@ Endless lets you build higher and dig deeper than ever before. In v0.5, you can 
 * **Sparse Vertical Storage** — Fresh worlds keep Minecraft's normal `[-64,320)` dense chunk core. Extended construction is stored in 512-block vertical pages that are allocated only where data exists.
 * **All Dimensions Supported** — Works in the Overworld, Nether, End, and other normal dimensions.
 * **Compatible with Existing Worlds** — v0.5 preserves the fail-closed migration safeguards from v0.4 so old extended sections are not silently discarded. Back up important worlds before upgrading.
-* **Forge and Fabric** — The same sparse engine and multiplayer protocol are implemented on both loaders for Minecraft 1.20.1.
+* **Multi-version loaders** - Minecraft 1.20.1 is supported on Fabric/Forge, Minecraft 1.21.1 on Fabric/NeoForge, and Minecraft 26.1.2 on NeoForge.
 * **Persistent High-Y Blocks** — Sparse pages use dedicated compressed storage outside vanilla Anvil section serialization, so blocks far above or below vanilla limits survive save and reload.
 * **Blocks, Fluids and Block Entities** — Normal block access, fluids, block entities, scheduled ticks and block updates work throughout the configured range.
 * **Heightmaps, Lighting and POIs** — Sparse blocks participate in supported height queries, block/sky lighting, and point-of-interest storage without widening vanilla section arrays.
 * **Server-Authoritative Multiplayer** — Servers synchronize the configured logical range and dense layout before sparse world data is used. Extended worlds require Endless v0.5-compatible clients.
-* **Waystones Compatible** — Waystones 1.20.1 placement and high-Y block entity state are explicitly supported and covered by live client/server tests.
+* **Waystones Compatibility** - Development/runtime compatibility coverage is included where matching Waystones artifacts are available; the 1.20.1 sparse placement path is explicitly exercised by the live matrix.
 * **Camera-Following Rendering** — The client renders a 512-block vertical window around the camera instead of allocating render chunks for the entire logical build range.
 * **Void Damage at the Boundary** — The below-world kill plane follows your configured minimum and triggers 64 blocks below it.
 

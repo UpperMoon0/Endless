@@ -18,6 +18,8 @@ java {
 }
 
 sourceSets.main.java.srcDir rootProject.file('common/src/main/java')
+sourceSets.main.java.srcDir rootProject.file('common-versioned/src/main/java')
+sourceSets.main.java.srcDir rootProject.file('common-modern/src/main/java')
 
 neoForge {
     version = rootProject.neoforge_version_26_1_2

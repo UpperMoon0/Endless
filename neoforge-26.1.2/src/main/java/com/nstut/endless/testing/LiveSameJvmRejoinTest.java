@@ -499,13 +499,18 @@ public final class LiveSameJvmRejoinTest {
         boolean clientHasBlock = mc.level.getBlockState(TARGET).is(Blocks.STONE);
         boolean clientBlockEntitiesPresent = blockEntitiesPresent(mc.level);
         boolean clientBlockEntitiesCompiled = blockEntitiesCompiled();
+        boolean clientBlockEntitiesScannerDiscovered = blockEntitiesScannerDiscovered();
+        boolean clientBlockEntitiesInternallyValid = blockEntitiesInternallyValid(mc.level);
+        boolean clientBlockEntitiesVisible = blockEntitiesVisible(mc);
         boolean clientDensePreserved = denseCanaryMatches(mc.level);
         mc.player.setXRot(90.0F);
         // SUPPORT is in the next section below TARGET and has no block entities,
         // so a special block-entity rebuild cannot satisfy this rendering check.
         boolean visibleStoneMesh = hasVisibleSolidMesh(mc, TARGET) && hasVisibleSolidMesh(mc, SUPPORT);
         if (!playerAtTarget || !clientHasBlock || !clientBlockEntitiesPresent
-            || !clientBlockEntitiesCompiled || !clientDensePreserved || !visibleStoneMesh) {
+            || !clientBlockEntitiesCompiled || !clientBlockEntitiesScannerDiscovered
+            || !clientBlockEntitiesInternallyValid || !clientBlockEntitiesVisible
+            || !clientDensePreserved || !visibleStoneMesh) {
             requireStageWithin(mc, 1_200,
                 "saved sparse page was not resynchronized after same-JVM reopen"
                     + " playerY=" + mc.player.getY()
@@ -513,6 +518,9 @@ public final class LiveSameJvmRejoinTest {
                     + " blockEntities=" + blockEntityDiagnostic(mc.level)
                     + " visibleStoneMesh=" + visibleStoneMesh
                     + " blockEntityCompiled=" + clientBlockEntitiesCompiled
+                    + " blockEntityScannerDiscovered=" + clientBlockEntitiesScannerDiscovered
+                    + " blockEntityInternallyValid=" + clientBlockEntitiesInternallyValid
+                    + " blockEntityVisible=" + clientBlockEntitiesVisible
                     + " logical=" + EndlessLogicalHeights.isActive() + " densePreserved=" + clientDensePreserved + " dense=" + denseCanaryDiagnostic(mc));
             return;
         }
@@ -586,6 +594,37 @@ public final class LiveSameJvmRejoinTest {
     private static boolean blockEntitiesCompiled() {
         for (BlockEntityFixture fixture : BLOCK_ENTITY_FIXTURES) {
             if (!LiveRenderProbe.sawBlockEntityCompiled(fixture.pos())) return false;
+        }
+        return true;
+    }
+
+    private static boolean blockEntitiesScannerDiscovered() {
+        for (BlockEntityFixture fixture : BLOCK_ENTITY_FIXTURES) {
+            if (!LiveRenderProbe.sawBlockEntityScannerDiscovered(fixture.pos())) return false;
+        }
+        return true;
+    }
+
+    private static boolean blockEntitiesInternallyValid(net.minecraft.world.level.Level level) {
+        for (BlockEntityFixture fixture : BLOCK_ENTITY_FIXTURES) {
+            BlockState state = level.getBlockState(fixture.pos());
+            BlockEntity blockEntity = level.getBlockEntity(fixture.pos());
+            if (blockEntity == null
+                || blockEntity.isRemoved()
+                || !blockEntity.hasLevel()
+                || blockEntity.getBlockState() != state
+                || !blockEntity.getType().isValid(blockEntity.getBlockState())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean blockEntitiesVisible(Minecraft mc) {
+        java.util.Set<BlockPos> visible = new java.util.HashSet<>();
+        mc.levelRenderer.iterateVisibleBlockEntities(blockEntity -> visible.add(blockEntity.getBlockPos()));
+        for (BlockEntityFixture fixture : BLOCK_ENTITY_FIXTURES) {
+            if (!visible.contains(fixture.pos())) return false;
         }
         return true;
     }

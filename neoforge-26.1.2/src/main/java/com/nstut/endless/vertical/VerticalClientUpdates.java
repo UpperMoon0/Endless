@@ -1,5 +1,6 @@
 package com.nstut.endless.vertical;
 
+import com.nstut.endless.debug.EndlessDebugTrace;
 import com.nstut.endless.mixin.accessor.LevelRendererAccessor;
 import com.nstut.endless.mixin.accessor.ViewAreaAccessor;
 import com.nstut.endless.testing.LiveRenderProbe;
@@ -25,6 +26,8 @@ public final class VerticalClientUpdates {
         MinecraftVerticalWorld world = EndlessVerticalEngine.world(client.level);
         world.applySnapshot(snapshot);
         VerticalPagePos pos = snapshot.pos();
+        EndlessDebugTrace.log("PAGE_APPLY", "page=" + pos + " sections=" + snapshot.sections().size());
+        BlockEntityPageRefreshScanner.schedule(pos);
         int x = pos.chunkX() << 4;
         int z = pos.chunkZ() << 4;
         // Neighbor faces and boundary light can change too. The work is bounded
@@ -54,31 +57,53 @@ public final class VerticalClientUpdates {
      * leave a permanently stale compiled section.
      */
     public static void queueBlockEntityRenderRefresh(Minecraft client, BlockPos pos) {
-        queueSectionRenderRefresh(pos);
+        queueSectionRenderRefresh(pos, true);
         tick(client);
     }
 
     private static void queueSectionRenderRefresh(BlockPos pos) {
+        queueSectionRenderRefresh(pos, true);
+    }
+
+    private static void queueSectionRenderRefreshIfAbsent(BlockPos pos) {
+        queueSectionRenderRefresh(pos, false);
+    }
+
+    private static void queueSectionRenderRefresh(BlockPos pos, boolean resetExisting) {
         SectionKey key = new SectionKey(
             Math.floorDiv(pos.getX(), 16),
             Math.floorDiv(pos.getY(), 16),
             Math.floorDiv(pos.getZ(), 16));
-        // Multiple BE/state updates for one section arrive back-to-back.
-        // Replacing the pending entry lets the last update define the settle window.
-        PENDING_BLOCK_ENTITY_SECTIONS.put(key, new PendingRefresh());
-        LiveRenderProbe.recordBlockEntityRefreshQueued(pos);
+        PendingRefresh previous;
+        if (resetExisting) {
+            previous = PENDING_BLOCK_ENTITY_SECTIONS.put(key, new PendingRefresh());
+        } else {
+            previous = PENDING_BLOCK_ENTITY_SECTIONS.putIfAbsent(key, new PendingRefresh());
+        }
+        if (resetExisting || previous == null) {
+            LiveRenderProbe.recordBlockEntityRefreshQueued(pos);
+            EndlessDebugTrace.log("BE_REFRESH_QUEUE", "section=" + key
+                + " resetExisting=" + resetExisting + " replaced=" + (previous != null));
+        }
     }
 
     /** Retry queued sparse BE invalidations once the target section is in the render window. */
     public static void tick(Minecraft client) {
         if (client.level == null) {
             PENDING_BLOCK_ENTITY_SECTIONS.clear();
+            EndlessDebugTrace.state("refresh-level", "BE_REFRESH_LEVEL", "level=null pending=0");
             return;
         }
+        BlockEntityPageRefreshScanner.tick(
+            client, VerticalClientUpdates::queueSectionRenderRefreshIfAbsent);
         if (PENDING_BLOCK_ENTITY_SECTIONS.isEmpty()) return;
 
         ViewArea viewArea = ((LevelRendererAccessor)(Object)client.levelRenderer).endless$getViewArea();
-        if (viewArea == null) return;
+        if (viewArea == null) {
+            EndlessDebugTrace.state("refresh-viewarea", "BE_REFRESH_VIEWAREA",
+                "viewArea=null pending=" + PENDING_BLOCK_ENTITY_SECTIONS.size());
+            return;
+        }
         Iterator<Map.Entry<SectionKey, PendingRefresh>> iterator = PENDING_BLOCK_ENTITY_SECTIONS.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<SectionKey, PendingRefresh> entry = iterator.next();
@@ -88,6 +113,8 @@ public final class VerticalClientUpdates {
             SectionRenderDispatcher.RenderSection renderSection =
                 ((ViewAreaAccessor)(Object)viewArea).endless$invokeGetRenderSectionAt(expectedOrigin);
             if (renderSection == null) {
+                EndlessDebugTrace.state("refresh-section:" + key, "BE_REFRESH_SECTION",
+                    "section=" + key + " slot=null");
                 pending.resetStability();
                 continue;
             }
@@ -99,10 +126,14 @@ public final class VerticalClientUpdates {
             if (Math.floorDiv(actualOrigin.getX(), 16) != key.x()
                 || Math.floorDiv(actualOrigin.getY(), 16) != key.y()
                 || Math.floorDiv(actualOrigin.getZ(), 16) != key.z()) {
+                EndlessDebugTrace.state("refresh-section:" + key, "BE_REFRESH_SECTION",
+                    "section=" + key + " slotOrigin=" + actualOrigin + " match=false");
                 pending.resetStability();
                 continue;
             }
 
+            EndlessDebugTrace.state("refresh-section:" + key, "BE_REFRESH_SECTION",
+                "section=" + key + " slotOrigin=" + actualOrigin + " match=true");
             pending.stableTicks++;
             if (pending.stableTicks < REQUIRED_STABLE_TICKS) continue;
             if (pending.cooldownTicks > 0) {
@@ -112,6 +143,9 @@ public final class VerticalClientUpdates {
 
             client.levelRenderer.setSectionDirtyWithNeighbors(key.x(), key.y(), key.z());
             LiveRenderProbe.recordBlockEntityRefreshDirtied(expectedOrigin);
+            EndlessDebugTrace.log("BE_REFRESH_DIRTY", "section=" + key
+                + " invalidation=" + (pending.invalidations + 1)
+                + " stableTicks=" + pending.stableTicks);
 
             pending.invalidations++;
             pending.cooldownTicks = RETRY_INTERVAL_TICKS;
@@ -120,7 +154,13 @@ public final class VerticalClientUpdates {
                     Math.floorDiv(blockEntity.getBlockPos().getX(), 16) == key.x()
                         && Math.floorDiv(blockEntity.getBlockPos().getY(), 16) == key.y()
                         && Math.floorDiv(blockEntity.getBlockPos().getZ(), 16) == key.z());
+            EndlessDebugTrace.state("refresh-compiled:" + key, "BE_REFRESH_COMPILED",
+                "section=" + key + " compiledBE=" + compiledBlockEntity
+                    + " meshBECount=" + renderSection.getSectionMesh().getRenderableBlockEntities().size()
+                    + " invalidations=" + pending.invalidations);
             if (compiledBlockEntity || pending.invalidations >= MAX_INVALIDATIONS) {
+                EndlessDebugTrace.log("BE_REFRESH_DONE", "section=" + key
+                    + " reason=" + (compiledBlockEntity ? "compiled-be" : "max-invalidations"));
                 iterator.remove();
             }
         }
@@ -128,6 +168,9 @@ public final class VerticalClientUpdates {
 
     public static void reset() {
         PENDING_BLOCK_ENTITY_SECTIONS.clear();
+        BlockEntityPageRefreshScanner.reset();
+        EndlessDebugTrace.reset();
+        EndlessDebugTrace.log("CLIENT_RESET", "refreshPending=0");
     }
 
     private static final class PendingRefresh {

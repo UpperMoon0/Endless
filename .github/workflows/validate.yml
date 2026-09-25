@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  compile:
-    name: Compile port matrix
+  tests:
+    name: Unit tests
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -30,19 +30,50 @@ jobs:
             caches/fabric-loom
       - run: rm -rf "$GRADLE_USER_HOME/caches/fabric-loom"
       - run: chmod +x gradlew
+      - run: ./gradlew testAllVersions --stacktrace --no-daemon
 
-      - name: Compile Minecraft 1.21.1 common implementation
-        run: ./gradlew :common:test :common-1.21.1:compileJava --stacktrace --no-daemon
+  build-1201:
+    name: Build Minecraft 1.20.1
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-excludes: |
+            caches/fabric-loom
+      - run: rm -rf "$GRADLE_USER_HOME/caches/fabric-loom"
+      - run: chmod +x gradlew
+      - run: ./gradlew :fabric-1.20.1:build :forge-1.20.1:build --stacktrace --no-daemon
 
-      - name: Compile Minecraft 1.21.1 loaders
-        run: ./gradlew :fabric-1.21.1:compileJava :neoforge-1.21.1:compileJava --stacktrace --no-daemon
+  build-1211:
+    name: Build Minecraft 1.21.1
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-excludes: |
+            caches/fabric-loom
+      - run: rm -rf "$GRADLE_USER_HOME/caches/fabric-loom"
+      - run: chmod +x gradlew
+      - run: ./gradlew :fabric-1.21.1:build :neoforge-1.21.1:build --stacktrace --no-daemon
 
-      - name: Verify legacy Minecraft 1.20.1 line
-        run: ./gradlew :common-1.20.1:test :fabric-1.20.1:build :forge-1.20.1:build --stacktrace --no-daemon
-
-
-  compile-26:
-    name: Compile NeoForge 26.1.2
+  build-26:
+    name: Build NeoForge 26.1.2
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -55,15 +86,18 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew
-      - run: ./gradlew :neoforge-26.1.2:compileJava --stacktrace --no-daemon
-
+      - run: ./gradlew :neoforge-26.1.2:build --stacktrace --no-daemon
 
   harness:
-    name: Harness tests
+    name: Harness and metadata tests
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: python3 -m unittest discover -s tools -p 'test_*.py' -v
+      - run: python3 tools/check_multiversion_metadata.py

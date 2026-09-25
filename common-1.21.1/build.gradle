@@ -1,3 +1,10 @@
+sourceSets.main.java {
+    srcDir rootProject.file('common-versioned/src/main/java')
+    srcDir rootProject.file('common-1201-1211/src/main/java')
+    srcDir rootProject.file('common-modern/src/main/java')
+}
+sourceSets.test.java.srcDir rootProject.file('common-1201-1211/src/test/java')
+
 architectury {
     common project.enabled_platforms.split(',')
 }

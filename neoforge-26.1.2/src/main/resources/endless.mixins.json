@@ -12,6 +12,7 @@
     "BlockStatePredictionHandlerMixin",
     "RenderChunkMixin",
     "RenderSectionCompiledMixin",
+    "BlockEntityRenderDispatcherDebugMixin",
     "accessor.LevelRendererAccessor",
     "accessor.ViewAreaAccessor",
     "accessor.VisibleSectionsAccessor"

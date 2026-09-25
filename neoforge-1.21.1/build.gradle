@@ -19,7 +19,10 @@ java {
 
 sourceSets.main.java {
     srcDir rootProject.file('common/src/main/java')
+    srcDir rootProject.file('common-versioned/src/main/java')
+    srcDir rootProject.file('common-1201-1211/src/main/java')
     srcDir rootProject.file('common-1.21.1/src/main/java')
+    srcDir rootProject.file('common-modern/src/main/java')
 }
 sourceSets.main.resources {
     srcDir rootProject.file('common-1.21.1/src/main/resources')

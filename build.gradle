@@ -118,5 +118,5 @@ runTargets.each { taskName, target ->
 tasks.register('testAllVersions') {
     group = 'verification'
     description = 'Runs shared and Minecraft-version-specific unit tests.'
-    dependsOn ':common:test', ':common-1.20.1:test'
+    dependsOn ':common:test', ':common-1.20.1:test', ':common-1.21.1:test'
 }

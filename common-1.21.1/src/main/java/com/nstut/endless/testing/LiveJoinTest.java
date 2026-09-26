@@ -57,6 +57,10 @@ public final class LiveJoinTest {
     private static boolean upperRenderMarkerPrinted;
     private static int lowerInteractionStage;
     private static int upperInteractionStage;
+    private static final LivePlacementSettlement lowerPlacement = new LivePlacementSettlement();
+    private static final LivePlacementSettlement upperPlacement = new LivePlacementSettlement();
+    private static int lowerBreakAckBaseline;
+    private static int upperBreakAckBaseline;
     private static int upperPersistentPlacementAttempts;
     private static int upperPersistentAckBaseline;
     private static int upperPersistentRetryTick;
@@ -257,6 +261,7 @@ public final class LiveJoinTest {
         BlockPos target = upper ? LiveHighYServerTest.upperInteractionTargetPos() : LiveHighYServerTest.lowerInteractionTargetPos();
         BlockPos alias = LiveHighYServerTest.packedAliasPos(target);
         int stage = upper ? upperInteractionStage : lowerInteractionStage;
+        LivePlacementSettlement placement = upper ? upperPlacement : lowerPlacement;
         // At the full +/-8M envelope the 12-bit packed-Y alias can itself be
         // sparse and hundreds of blocks outside the client's current page window.
         // Only require client visibility when the alias is in the always-sent dense
@@ -273,8 +278,10 @@ public final class LiveJoinTest {
                 return false;
             }
             BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(support), Direction.UP, support, false);
+            placement.dispatched(LivePredictionProbe.count(target));
             InteractionResult result = mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
             System.out.println("ENDLESS_CLIENT_INTERACTION_DISPATCH edge=" + (upper ? "upper" : "lower")
+                + " attempt=" + placement.attempts()
                 + " result=" + result
                 + " target=" + target
                 + " localState=" + level.getBlockState(target)
@@ -290,9 +297,19 @@ public final class LiveJoinTest {
             return false;
         }
         if (stage == 1) {
-            if (LivePredictionProbe.count(target) < 1) return false;
-            if (!level.getBlockState(target).is(Blocks.STONE)) {
-                fail("placementRejected", " target=" + target + " state=" + level.getBlockState(target));
+            var state = level.getBlockState(target);
+            LivePlacementSettlement.Result settled = placement.poll(ticksWithLevel,
+                LivePredictionProbe.count(target), state.is(Blocks.STONE), state.isAir());
+            if (settled == LivePlacementSettlement.Result.WAIT) return false;
+            if (settled == LivePlacementSettlement.Result.RETRY) {
+                System.out.println("ENDLESS_CLIENT_INTERACTION_RETRY edge=" + (upper ? "upper" : "lower")
+                    + " target=" + target + " attempt=" + placement.attempts() + " state=" + state);
+                if (upper) upperInteractionStage = 0; else lowerInteractionStage = 0;
+                return false;
+            }
+            if (settled == LivePlacementSettlement.Result.REJECTED) {
+                fail("placementRejected", " target=" + target + " state=" + state
+                    + " attempts=" + placement.attempts());
                 mc.stop();
                 return false;
             }
@@ -301,6 +318,10 @@ public final class LiveJoinTest {
             // teleport/block synchronization. Dispatch the ordinary destroy action in
             // whatever local mode the client currently has; stage 2 will keep driving
             // vanilla progressive mining if the client still believes it is survival.
+            // Placement retries may have already produced several acks. Breaking
+            // must receive its own ack rather than reusing the old count >= 2 gate.
+            if (upper) upperBreakAckBaseline = LivePredictionProbe.count(target);
+            else lowerBreakAckBaseline = LivePredictionProbe.count(target);
             boolean started = mc.gameMode.startDestroyBlock(target, Direction.UP);
             System.out.println("ENDLESS_CLIENT_BREAK_DISPATCH edge=" + (upper ? "upper" : "lower")
                 + " started=" + started + " mode=" + mc.gameMode.getPlayerMode() + " target=" + target);
@@ -313,7 +334,7 @@ public final class LiveJoinTest {
             return false;
         }
         if (stage == 2) {
-            if (LivePredictionProbe.count(target) >= 2
+            if (LivePredictionProbe.count(target) > (upper ? upperBreakAckBaseline : lowerBreakAckBaseline)
                 && level.getBlockState(target).isAir()
                 && (!clientAliasVisible || level.getBlockState(alias).is(Blocks.GOLD_BLOCK))) {
                 System.out.println("ENDLESS_CLIENT_PREDICTION_PASS edge=" + (upper ? "upper" : "lower")

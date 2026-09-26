@@ -566,7 +566,7 @@ public final class LiveSameJvmRejoinTest {
         }
 
         int expectedCameraSection = Math.floorDiv(TARGET_Y + 2, 16) + HYSTERESIS_PROBE_SECTION_DELTA;
-        boolean atProbe = Math.floorDiv(mc.player.getBlockY(), 16) == expectedCameraSection;
+        boolean atProbe = cameraSection(mc) == expectedCameraSection;
         LiveRenderProbe.RenderWindowAlignment alignment = LiveRenderProbe.latestRenderWindowAlignment();
         boolean currentAlignment = renderWindowAlignmentMatchesCamera(mc, alignment);
         boolean hysteresisHeldBase = alignment != null
@@ -638,12 +638,17 @@ public final class LiveSameJvmRejoinTest {
         Minecraft mc, LiveRenderProbe.RenderWindowAlignment alignment
     ) {
         if (alignment == null || mc.player == null) return false;
-        int cameraSection = Math.floorDiv(mc.player.getBlockY(), 16);
-        return alignment.cameraSection() == cameraSection
+        return alignment.cameraSection() == cameraSection(mc)
             && alignment.viewSectionCount() == 32
             && alignment.coversViewWindow()
             && alignment.treeBaseSection() <= alignment.viewBaseSection()
             && alignment.treeMaxSectionInclusive() >= alignment.viewMaxSectionInclusive();
+    }
+
+    private static int cameraSection(Minecraft mc) {
+        // Rendering follows the eye/camera, which can cross a section boundary
+        // while the player's feet remain in the section below it.
+        return Math.floorDiv(mc.gameRenderer.getMainCamera().blockPosition().getY(), 16);
     }
 
     private static boolean blockEntitiesPresent(net.minecraft.world.level.Level level) {

@@ -78,8 +78,11 @@ These checks verify drawable geometry and visibility selection, not final pixels
 
 Page updates dirty only the affected page and neighboring sections instead of
 recreating the entire renderer. The live harness uses a four-chunk view distance
-and bounded startup/gameplay deadlines. It does not retry a failed assertion into
-a pass or weaken required markers.
+and bounded startup/gameplay deadlines. In the 1.21.1 placement probe, an
+acknowledged AIR observation gets 40 client ticks to settle before another
+placement is attempted, up to three attempts. Each attempt and the subsequent
+break require fresh prediction acknowledgements; persistent rejection still
+fails. The harness never reruns a failed scenario or weakens required markers.
 
 ## Run locally
 

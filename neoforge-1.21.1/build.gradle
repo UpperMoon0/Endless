@@ -49,6 +49,7 @@ neoForge {
             systemProperty 'endless.liveJoinTest.expectLogical', (System.getenv('ENDLESS_TEST_PRESEED_STALE') == 'true') ? 'false' : 'true'
             systemProperty 'endless.liveJoinTest.highY', System.getenv('ENDLESS_TEST_EXTREME') ?: 'false'
             systemProperty 'endless.liveJoinWaystonesTest', System.getenv('ENDLESS_TEST_WAYSTONES') ?: 'false'
+            systemProperty 'endless.liveJoinCreateTest', System.getenv('ENDLESS_TEST_CREATE') ?: 'false'
             systemProperty 'endless.liveJoinFarEnvelopeTest', System.getenv('ENDLESS_TEST_FAR') ?: 'false'
             systemProperty 'endless.liveJoinColdRestartPhase', System.getenv('ENDLESS_TEST_COLD_RESTART_PHASE') ?: ''
             programArguments.addAll '--quickPlayMultiplayer', "127.0.0.1:${System.getenv('ENDLESS_TEST_PORT') ?: '25575'}"
@@ -67,6 +68,7 @@ neoForge {
             gameDirectory = project.file('run/live-join/server')
             systemProperty 'endless.liveJoinHighYTest', System.getenv('ENDLESS_TEST_EXTREME') ?: 'false'
             systemProperty 'endless.liveJoinWaystonesTest', System.getenv('ENDLESS_TEST_WAYSTONES') ?: 'false'
+            systemProperty 'endless.liveJoinCreateTest', System.getenv('ENDLESS_TEST_CREATE') ?: 'false'
             systemProperty 'endless.liveJoinFarEnvelopeTest', System.getenv('ENDLESS_TEST_FAR') ?: 'false'
             systemProperty 'endless.liveJoinColdRestartPhase', System.getenv('ENDLESS_TEST_COLD_RESTART_PHASE') ?: ''
             programArgument '--nogui'
@@ -90,6 +92,12 @@ dependencies {
     // remains dependency-free.
     runtimeOnly("net.blay09.mods:balm-neoforge:" + rootProject.balm_version_neoforge_1_21_1) { transitive = false }
     runtimeOnly("net.blay09.mods:waystones-neoforge:" + rootProject.waystones_version_neoforge_1_21_1) { transitive = false }
+    if (System.getenv('ENDLESS_TEST_CREATE') == 'true') {
+        runtimeOnly("com.simibubi.create:create-1.21.1:6.0.11-312") { transitive = false }
+        runtimeOnly("com.tterrag.registrate:Registrate:MC1.21-1.3.0+67") { transitive = false }
+        runtimeOnly("net.createmod.ponder:ponder-neoforge:1.0.85+mc1.21.1") { transitive = false }
+        runtimeOnly("dev.engine-room.flywheel:flywheel-neoforge-1.21.1:1.0.6") { transitive = false }
+    }
 }
 
 processResources {

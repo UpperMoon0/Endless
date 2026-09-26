@@ -1,4 +1,4 @@
-﻿import io
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -23,7 +23,7 @@ class VerificationPolicyTest(unittest.TestCase):
 
     def test_unique_matrix(self):
         self.assertEqual(len(live.SCENARIOS), len({s.id for s in live.SCENARIOS}))
-        self.assertEqual(25, len(live.LIVE_CASES))
+        self.assertEqual(27, len(live.LIVE_CASES))
         self.assertEqual(len(live.LIVE_CASES), len(set(live.LIVE_CASES)))
 
     def test_million_gameplay_cannot_degrade_to_join_only(self):
@@ -58,6 +58,18 @@ class VerificationPolicyTest(unittest.TestCase):
         for target in live.PORT_TARGETS:
             self.assertIn((target, "port-runtime"), live.LIVE_CASES)
 
+    def test_create_compat_is_scoped_to_supported_loaders(self):
+        scenario = next(s for s in live.SCENARIOS if s.id == "create-compat")
+        self.assertTrue(scenario.create)
+        self.assertTrue(scenario.gameplay)
+        self.assertFalse(scenario.waystones)
+        self.assertIn("ENDLESS_CREATE_SPARSE_PASS", scenario.required_server_markers)
+        self.assertNotIn("ENDLESS_WAYSTONES_SPARSE_PASS", scenario.required_server_markers)
+        create_cases = {case for case in live.LIVE_CASES if case[1] == "create-compat"}
+        self.assertEqual(
+            {("forge-1.20.1", "create-compat"), ("neoforge-1.21.1", "create-compat")},
+            create_cases,
+        )
     def test_same_jvm_rejoin_is_exact_integrated_lifecycle_gate(self):
         scenario = next(s for s in live.SCENARIOS if s.id == "same-jvm-rejoin")
         self.assertTrue(scenario.integrated_rejoin)
@@ -78,11 +90,12 @@ class VerificationPolicyTest(unittest.TestCase):
             self.assertIn((target, scenario.id), live.LIVE_CASES)
 
     def test_scenario_environment_does_not_leak(self):
-        with patch.dict(live.os.environ, {"ENDLESS_TEST_WAYSTONES": "true", "ENDLESS_TEST_EXTREME": "true"}):
+        with patch.dict(live.os.environ, {"ENDLESS_TEST_WAYSTONES": "true", "ENDLESS_TEST_CREATE": "true", "ENDLESS_TEST_EXTREME": "true"}):
             for s in live.SCENARIOS:
                 env = live.scenario_env(s)
                 self.assertEqual(str(s.gameplay).lower(), env["ENDLESS_TEST_EXTREME"])
                 self.assertEqual(str(s.waystones).lower(), env["ENDLESS_TEST_WAYSTONES"])
+                self.assertEqual(str(s.create).lower(), env["ENDLESS_TEST_CREATE"])
                 self.assertEqual(str(s.id == "far-envelope").lower(), env["ENDLESS_TEST_FAR"])
                 self.assertEqual("", env["ENDLESS_TEST_COLD_RESTART_PHASE"])
                 self.assertEqual(str(s.integrated_rejoin).lower(), env["ENDLESS_TEST_SAME_JVM_REJOIN"])

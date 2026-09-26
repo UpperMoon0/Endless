@@ -15,6 +15,12 @@ allprojects {
     repositories {
         mavenLocal()
         mavenCentral()
+        maven { url = uri('https://maven.createmod.net') }
+        maven { url = uri('https://maven.ithundxr.dev/snapshots') }
+        maven {
+            url = uri('https://maven.ithundxr.dev/mirror')
+            content { includeGroup 'com.tterrag.registrate' }
+        }
         maven {
             url = uri('https://maven.twelveiterations.com/repository/maven-public/')
             content {

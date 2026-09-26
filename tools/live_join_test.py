@@ -310,6 +310,7 @@ class Scenario:
     cold_restart: bool = False
     gameplay: bool = False
     waystones: bool = False
+    create: bool = False
     integrated_rejoin: bool = False
     integrated_target_y: int = 1_000_000
     integrated_legacy_layout: bool = True
@@ -441,6 +442,22 @@ SCENARIOS.append(Scenario(
     render_distance=12,
 ))
 
+SCENARIOS.append(Scenario(
+    id="create-compat",
+    description="actual Create schematic placement and sparse persistence at million-scale Y",
+    server_kind="modded",
+    server_config=MILLION_BUILD_HEIGHT,
+    client_config=VANILLA_BUILD_HEIGHT,
+    expected=MILLION_BUILD_HEIGHT,
+    server_port=25582,
+    gameplay=True,
+    create=True,
+    required_server_markers=tuple(
+        marker for marker in SCENARIOS[0].required_server_markers
+        if marker != "ENDLESS_WAYSTONES_SPARSE_PASS"
+    ) + ("ENDLESS_CREATE_SPARSE_PASS",),
+    required_client_markers=SCENARIOS[0].required_client_markers,
+))
 # New-version runtime gate: exercise the actual sparse engine, network sync,
 # client prediction, rendering, pathfinding, scheduled mechanics and persistence
 # without imposing the 1.20.1-only Waystones compatibility fixture.
@@ -463,12 +480,15 @@ SCENARIOS.append(Scenario(
 LEGACY_TARGETS = ("fabric-1.20.1", "forge-1.20.1")
 PORT_TARGETS = ("fabric-1.21.1", "neoforge-1.21.1", "neoforge-26.1.2")
 PORT_REJOIN_TARGETS = ("fabric-1.21.1", "neoforge-1.21.1", "neoforge-26.1.2")
+CREATE_TARGETS = ("forge-1.20.1", "neoforge-1.21.1")
 LIVE_CASES = tuple(
     (target, scenario.id)
     for target in LEGACY_TARGETS
     for scenario in SCENARIOS
-    if scenario.id not in ("port-runtime", "same-jvm-rejoin-full-envelope")
+    if scenario.id not in ("port-runtime", "same-jvm-rejoin-full-envelope", "create-compat")
 ) + tuple((target, "port-runtime") for target in PORT_TARGETS) + tuple(
+    (target, "create-compat") for target in CREATE_TARGETS
+) + tuple(
     (target, scenario_id)
     for target in PORT_REJOIN_TARGETS
     for scenario_id in ("same-jvm-rejoin", "same-jvm-rejoin-full-envelope")
@@ -861,6 +881,7 @@ def scenario_env(scenario: Scenario, cold_phase: str = "") -> dict[str, str]:
     env["ENDLESS_TEST_PRESEED_STALE"] = "true" if scenario.id == "baseline-no-endless" else "false"
     env["ENDLESS_TEST_EXTREME"] = "true" if scenario.gameplay else "false"
     env["ENDLESS_TEST_WAYSTONES"] = "true" if scenario.waystones else "false"
+    env["ENDLESS_TEST_CREATE"] = "true" if scenario.create else "false"
     env["ENDLESS_TEST_FAR"] = "true" if scenario.id == "far-envelope" else "false"
     env["ENDLESS_TEST_COLD_RESTART_PHASE"] = cold_phase
     env["ENDLESS_TEST_SAME_JVM_REJOIN"] = "true" if scenario.integrated_rejoin else "false"

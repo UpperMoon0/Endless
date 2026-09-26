@@ -3,6 +3,9 @@
   "package": "com.nstut.endless.neoforge.mixin",
   "compatibilityLevel": "JAVA_21",
   "minVersion": "0.8",
+  "mixins": [
+    "compat.CreateBlockHelperMixin"
+  ],
   "client": [
     "NeoForgeBlockStatePredictionHandlerMixin"
   ],

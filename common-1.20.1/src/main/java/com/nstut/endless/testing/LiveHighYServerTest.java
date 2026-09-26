@@ -9,6 +9,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -29,6 +30,7 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.ItemLike;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.block.BedBlock;
@@ -49,10 +51,12 @@ import java.util.UUID;
 public final class LiveHighYServerTest {
     public static final String SYSTEM_PROPERTY = "endless.liveJoinHighYTest";
     public static final String WAYSTONES_SYSTEM_PROPERTY = "endless.liveJoinWaystonesTest";
+    public static final String CREATE_SYSTEM_PROPERTY = "endless.liveJoinCreateTest";
     public static final String PASS_MARKER = "ENDLESS_HIGH_Y_SERVER_PASS";
     public static final String FAIL_MARKER = "ENDLESS_HIGH_Y_SERVER_FAIL";
     public static final String COMMAND_PASS_MARKER = "ENDLESS_COMMAND_BOUNDS_PASS";
     public static final String WAYSTONES_PASS_MARKER = "ENDLESS_WAYSTONES_SPARSE_PASS";
+    public static final String CREATE_PASS_MARKER = "ENDLESS_CREATE_SPARSE_PASS";
     public static final String PATHFINDING_PASS_MARKER = "ENDLESS_PATHFINDING_PASS";
     public static final String CLIENT_INTERACTION_PASS_MARKER = "ENDLESS_CLIENT_INTERACTION_SERVER_PASS";
     public static final String CLIENT_PERSISTENCE_PASS_MARKER = "ENDLESS_CLIENT_PLACEMENT_PERSISTENCE_PASS";
@@ -110,6 +114,9 @@ public final class LiveHighYServerTest {
     /** Legal two-block Waystone occupies logical max-2 and max-1. */
     public static BlockPos upperWaystoneBasePos() { return pos(24, upperY() - 1); }
     public static BlockPos upperWaystoneTopPos() { return upperWaystoneBasePos().above(); }
+
+    /** Create schematic rail fixture stays in forced chunk 0,0 and sparse storage. */
+    public static BlockPos upperCreateRailPos() { return pos(12, upperY() - 4); }
 
     /** Client-originated interaction targets intentionally live outside packed BlockPos Y. */
     public static BlockPos lowerInteractionSupportPos() { return new BlockPos(1, lowerY(), 4); }
@@ -259,6 +266,7 @@ public final class LiveHighYServerTest {
         verifyPathfinding(level);
         verifySparseBiomeSemantics(level);
         prepareWaystonesIfRequested(level, player);
+        prepareCreateIfRequested(level);
 
         lowerStand = spawnStand(level, 10.5D, min + 1.0D);
         upperStand = spawnStand(level, 10.5D, max - 2.0D);
@@ -451,6 +459,43 @@ public final class LiveHighYServerTest {
     }
 
     /**
+     * Exercise Create's actual schematic rail placement entry point. Create
+     * normally writes directly through LevelChunk#getSection(int), which cannot
+     * address Endless sparse pages. Reflection keeps Create an optional runtime
+     * fixture rather than a production compile dependency.
+     */
+    private static void prepareCreateIfRequested(ServerLevel level) throws Exception {
+        if (!Boolean.parseBoolean(System.getProperty(CREATE_SYSTEM_PROPERTY, "false"))) return;
+
+        Class<?> blockHelper = Class.forName("com.simibubi.create.foundation.utility.BlockHelper");
+        Method placeSchematicBlock = blockHelper.getMethod(
+            "placeSchematicBlock",
+            Level.class,
+            BlockState.class,
+            BlockPos.class,
+            ItemStack.class,
+            CompoundTag.class
+        );
+
+        BlockPos railPos = upperCreateRailPos();
+        require(EndlessHeights.isOutsideDenseBuildHeight(railPos.getY()),
+            "Create rail fixture must exercise sparse storage");
+        require(level.setBlock(railPos.below(), Blocks.DEEPSLATE.defaultBlockState(), 3),
+            "could not create sparse Create rail support");
+
+        placeSchematicBlock.invoke(
+            null,
+            level,
+            Blocks.RAIL.defaultBlockState(),
+            railPos,
+            ItemStack.EMPTY,
+            null
+        );
+
+        require(level.getBlockState(railPos).is(Blocks.RAIL),
+            "Create schematic rail placement did not write sparse rail at " + railPos);
+    }
+    /**
      * Load and exercise the actual Waystones 1.20.1 classes when the CI
      * compatibility leg requests them. No compile-time Waystones dependency is
      * introduced into common production code.
@@ -594,6 +639,11 @@ public final class LiveHighYServerTest {
         verifyReloadedBoundary(level, true);
         requirePoi(level, lowerPoiPos(), "lower-bound POI did not survive flush + eviction + reload");
         requirePoi(level, upperPoiPos(), "upper-bound POI did not survive flush + eviction + reload");
+        if (Boolean.parseBoolean(System.getProperty(CREATE_SYSTEM_PROPERTY, "false"))) {
+            require(level.getBlockState(upperCreateRailPos()).is(Blocks.RAIL),
+                "Create schematic rail disappeared after sparse reload");
+            System.out.println(CREATE_PASS_MARKER + " rail=" + upperCreateRailPos());
+        }
         if (Boolean.parseBoolean(System.getProperty(WAYSTONES_SYSTEM_PROPERTY, "false"))) {
             UUID baseUid = verifyWaystoneManager(level, upperWaystoneBasePos(), upperWaystoneBasePos(), upperWaystoneTopPos());
             UUID topUid = verifyWaystoneManager(level, upperWaystoneTopPos(), upperWaystoneBasePos(), upperWaystoneTopPos());

@@ -2,13 +2,76 @@ pluginManagement {
     repositories {
         maven { url "https://maven.fabricmc.net/" }
         maven { url "https://maven.architectury.dev/" }
-        maven { url "https://files.minecraftforge.net/maven/" }
+        maven { url "https://maven.neoforged.net/releases" }
+        // Resolve generic Gradle plugins before touching Forge's repository:
+        // a Forge Maven timeout must not block artifacts hosted on Plugin Portal.
         gradlePluginPortal()
+        maven { url "https://files.minecraftforge.net/maven/" }
     }
+}
+
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.9.0'
 }
 
 rootProject.name = 'endless'
 
-include 'common'
-include 'fabric'
-include 'forge'
+def allProjects = [
+    'common',
+    'common-1.20.1', 'fabric-1.20.1', 'forge-1.20.1',
+    'common-1.21.1', 'fabric-1.21.1', 'neoforge-1.21.1',
+    'neoforge-26.1.2'
+] as Set
+
+def requestedTasks = gradle.startParameter.taskNames
+def targetedProjects = requestedTasks
+    .findAll { it.startsWith(':') }
+    .collect { it.split(':')[1] }
+    .findAll { it in allProjects } as Set
+
+def wholeWorkspaceTasks = ['buildAll', 'testAllVersions'] as Set
+def needsWholeWorkspace = requestedTasks.isEmpty() || requestedTasks.any { taskName ->
+    taskName in wholeWorkspaceTasks || !taskName.startsWith(':')
+}
+
+def selected = ['common'] as Set
+if (needsWholeWorkspace || targetedProjects.isEmpty()) {
+    selected.addAll(allProjects)
+} else {
+    targetedProjects.each { projectName ->
+        switch (projectName) {
+            case 'common':
+                break
+            case 'common-1.20.1':
+                selected.add('common-1.20.1')
+                break
+            case 'fabric-1.20.1':
+            case 'forge-1.20.1':
+                selected.addAll(['common-1.20.1', projectName])
+                break
+            case 'common-1.21.1':
+                selected.add('common-1.21.1')
+                break
+            case 'fabric-1.21.1':
+            case 'neoforge-1.21.1':
+                selected.addAll(['common-1.21.1', projectName])
+                break
+            case 'neoforge-26.1.2':
+                selected.add('neoforge-26.1.2')
+                break
+        }
+    }
+}
+
+selected.each { include it }
+
+gradle.ext.mcVersionMapping = [
+    ':common': 'shared',
+    ':common-1.20.1': '1.20.1',
+    ':fabric-1.20.1': '1.20.1',
+    ':forge-1.20.1': '1.20.1',
+    ':common-1.21.1': '1.21.1',
+    ':fabric-1.21.1': '1.21.1',
+    ':neoforge-1.21.1': '1.21.1',
+    ':neoforge-26.1.2': '26.1.2',
+]

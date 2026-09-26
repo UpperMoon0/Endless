@@ -1,4 +1,4 @@
-import io
+﻿import io
 import json
 from pathlib import Path
 import tempfile
@@ -23,7 +23,8 @@ class VerificationPolicyTest(unittest.TestCase):
 
     def test_unique_matrix(self):
         self.assertEqual(len(live.SCENARIOS), len({s.id for s in live.SCENARIOS}))
-        self.assertEqual(16, len(live.SCENARIOS) * len(live.TARGETS))
+        self.assertEqual(25, len(live.LIVE_CASES))
+        self.assertEqual(len(live.LIVE_CASES), len(set(live.LIVE_CASES)))
 
     def test_million_gameplay_cannot_degrade_to_join_only(self):
         scenario = next(s for s in live.SCENARIOS if s.id == "million-gameplay")
@@ -46,34 +47,79 @@ class VerificationPolicyTest(unittest.TestCase):
         for edge in ["lower", "upper"]:
             self.assertIn(f"ENDLESS_RENDER_PATH_PASS edge={edge}", scenario.required_client_markers)
 
+    def test_new_versions_have_real_runtime_gate_without_legacy_waystones(self):
+        scenario = next(s for s in live.SCENARIOS if s.id == "port-runtime")
+        self.assertTrue(scenario.gameplay)
+        self.assertFalse(scenario.waystones)
+        self.assertNotIn("ENDLESS_WAYSTONES_SPARSE_PASS", scenario.required_server_markers)
+        for marker in ["ENDLESS_PATHFINDING_PASS", "ENDLESS_CLIENT_INTERACTION_SERVER_PASS",
+                       "ENDLESS_CLIENT_PLACEMENT_PERSISTENCE_PASS", "ENDLESS_HIGH_Y_SERVER_PASS"]:
+            self.assertIn(marker, scenario.required_server_markers)
+        for target in live.PORT_TARGETS:
+            self.assertIn((target, "port-runtime"), live.LIVE_CASES)
+
     def test_same_jvm_rejoin_is_exact_integrated_lifecycle_gate(self):
         scenario = next(s for s in live.SCENARIOS if s.id == "same-jvm-rejoin")
         self.assertTrue(scenario.integrated_rejoin)
         self.assertEqual("integrated", scenario.server_kind)
         self.assertEqual(live.MILLION_BUILD_HEIGHT, scenario.expected)
+        self.assertEqual(12, scenario.render_distance)
         self.assertEqual((live.SAME_JVM_REJOIN_PASS_MARKER,), scenario.required_client_markers)
         self.assertFalse(scenario.required_server_markers)
+
+    def test_full_envelope_rejoin_matches_manual_be_render_regression(self):
+        scenario = next(s for s in live.SCENARIOS if s.id == "same-jvm-rejoin-full-envelope")
+        self.assertTrue(scenario.integrated_rejoin)
+        self.assertEqual(live.FAR_BUILD_HEIGHT, scenario.expected)
+        self.assertEqual(6_000_000, scenario.integrated_target_y)
+        self.assertFalse(scenario.integrated_legacy_layout)
+        self.assertEqual(12, scenario.render_distance)
+        for target in live.PORT_REJOIN_TARGETS:
+            self.assertIn((target, scenario.id), live.LIVE_CASES)
 
     def test_scenario_environment_does_not_leak(self):
         with patch.dict(live.os.environ, {"ENDLESS_TEST_WAYSTONES": "true", "ENDLESS_TEST_EXTREME": "true"}):
             for s in live.SCENARIOS:
                 env = live.scenario_env(s)
                 self.assertEqual(str(s.gameplay).lower(), env["ENDLESS_TEST_EXTREME"])
-                self.assertEqual(str(s.gameplay).lower(), env["ENDLESS_TEST_WAYSTONES"])
+                self.assertEqual(str(s.waystones).lower(), env["ENDLESS_TEST_WAYSTONES"])
                 self.assertEqual(str(s.id == "far-envelope").lower(), env["ENDLESS_TEST_FAR"])
                 self.assertEqual("", env["ENDLESS_TEST_COLD_RESTART_PHASE"])
                 self.assertEqual(str(s.integrated_rejoin).lower(), env["ENDLESS_TEST_SAME_JVM_REJOIN"])
+                self.assertEqual(str(s.integrated_target_y), env["ENDLESS_TEST_TARGET_Y"])
+                self.assertEqual(str(s.integrated_legacy_layout).lower(), env["ENDLESS_TEST_LEGACY_LAYOUT"])
+
+    def test_modern_rejoin_requires_visible_ordinary_meshes(self):
+        for target in live.PORT_REJOIN_TARGETS:
+            for name in ("same-jvm-rejoin", "same-jvm-rejoin-full-envelope"):
+                scenario = live.SCENARIO_BY_ID[name]
+                self.assertEqual(12, scenario.render_distance)
+                self.assertIn("ENDLESS_VISIBLE_STONE_MESH_PASS",
+                              live.required_client_markers_for(target, scenario))
+        legacy = live.SCENARIO_BY_ID["same-jvm-rejoin"]
+        self.assertEqual(legacy.required_client_markers,
+                         live.required_client_markers_for("fabric-1.20.1", legacy))
 
     def test_cold_restart_uses_far_envelope(self):
         scenario = next(s for s in live.SCENARIOS if s.cold_restart)
         self.assertEqual(live.FAR_BUILD_HEIGHT, scenario.expected)
 
+    def test_windows_graphical_session_selection_is_dynamic(self):
+        sessions = [(0, 4, ""), (3, 0, "RdpUser"), (7, 0, "ConsoleUser")]
+        self.assertEqual(3, live.choose_windows_interactive_session(3, 7, sessions))
+        self.assertEqual(7, live.choose_windows_interactive_session(0, 7, sessions))
+        self.assertEqual(3, live.choose_windows_interactive_session(0, 99, sessions))
+        self.assertFalse(live.needs_windows_interactive_bridge(7, 7))
+        self.assertTrue(live.needs_windows_interactive_bridge(0, 7))
+
+    def test_windows_graphical_session_selection_rejects_noninteractive(self):
+        with self.assertRaisesRegex(RuntimeError, "active logged-in Windows desktop"):
+            live.choose_windows_interactive_session(0, 1, [(0, 4, ""), (1, 4, "ConsoleUser")])
     def test_receipts_require_complete_exact_head(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
-            for target in live.TARGETS:
-                for scenario in live.SCENARIOS:
-                    (directory / f"{target}--{scenario.id}.pass").write_text("abc123\n")
+            for target, scenario_id in live.LIVE_CASES:
+                (directory / f"{target}--{scenario_id}.pass").write_text("abc123\n")
             live.verify_receipts(directory, "abc123")
             receipt = next(directory.glob("*.pass"))
             receipt.write_text("old-head\n")
@@ -107,6 +153,10 @@ class OutputEvidenceTest(unittest.TestCase):
             pump.thread.join(timeout=2)
         return pump
 
+    def test_console_forwarding_survives_non_cp1252_text(self):
+        escaped = live.console_safe("timing=12 μs", "cp1252")
+        self.assertIn(r"\u03bc", escaped)
+
     def test_history_retains_consumed_markers(self):
         pump = self.pump("ready\nmechanics pass\n")
         self.assertEqual("ready\n", pump.wait_for(("ready",), 1))
@@ -127,6 +177,9 @@ class OutputEvidenceTest(unittest.TestCase):
         client = self.pump(live.PASS_MARKER + "\n")
         with self.assertRaisesRegex(RuntimeError, "server reported failure"):
             live.wait_for_live_join_outcome(client, server, 1, "test")
+
+    def test_integrated_rejoin_has_slow_save_wall_clock_floor(self):
+        self.assertGreaterEqual(live.INTEGRATED_REJOIN_MIN_TIMEOUT, 600)
 
     def test_mixin_crash_fails_before_ready_timeout(self):
         pump = self.pump("Critical injection failure\n")

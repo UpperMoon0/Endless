@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "endless",
+  "version": "${version}",
+  "name": "Endless",
+  "description": "Sparse practical infinite build height with persistent high-Y world state.",
+  "authors": ["NsTut"],
+  "license": "All-Rights-Reserved",
+  "icon": "assets/endless/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.nstut.endless.fabric.EndlessFabric"],
+    "client": ["com.nstut.endless.fabric.EndlessFabricClient"]
+  },
+  "mixins": ["endless.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.17.2",
+    "fabric-api": "*",
+    "minecraft": "=1.21.1",
+    "java": ">=21",
+    "architectury": ">=13.0.8"
+  }
+}

@@ -1,0 +1,12 @@
+Endless 0.6
+
+- Added Minecraft 1.21.1 support on Fabric and NeoForge and Minecraft 26.1.2 support on NeoForge while retaining the 1.20.1 Fabric/Forge line.
+- Consolidated duplicated per-version implementation sources into shared 1.20.1/1.21.1, modern-renderer, and version-neutral source sets to reduce port drift.
+- Added release packaging and metadata validation for every supported Minecraft/loader target, including version-specific unit-test coverage and exact-head CI checkout.
+- Fixed NeoForge 26.1.2 high-Y rendering so the visibility Octree uses the exact moving ViewArea vertical window, including the full 32-section window while its 8-section rebase hysteresis is active.
+- Added a live render-window regression at render distance 12 that verifies both ViewArea edges remain inside the visibility tree before and during the hysteresis hold.
+- Fixed high-Y block entities such as chests remaining invisible after save/rejoin until player interaction or a neighboring block update. Sparse page synchronization now sends a fallback block-entity data packet after the authoritative sparse page when vanilla provides no custom update packet.
+- Added same-JVM save/reopen coverage for chest, ender chest, and shulker-box block entities on NeoForge 26.1.2 and strengthened render assertions to use exact XYZ coordinates.
+- Added config-gated high-Y block-entity/render diagnostics. `debug` defaults to `false`; when enabled, detailed `ENDLESS_DEBUG` traces are also written to `logs/endless-debug.log`.
+- Fixed sparse block-entity render refresh ordering so delayed block entities are discovered and their render sections are rebuilt without relying on interaction.
+- Kept the v0.5 sparse logical build envelope and fail-closed world-migration guarantees unchanged: supported configured Y remains -8,000,000 through 7,999,999.

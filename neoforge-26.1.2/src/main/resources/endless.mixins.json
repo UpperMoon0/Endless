@@ -1,0 +1,52 @@
+{
+  "required": true,
+  "package": "com.nstut.endless.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "minVersion": "0.8",
+  "client": [
+    "ViewAreaMixin",
+    "SectionOcclusionGraphMixin",
+    "SectionOcclusionGraphStorageMixin",
+    "ClientHandshakePacketListenerMixin",
+    "ClientPacketListenerMixin",
+    "BlockStatePredictionHandlerMixin",
+    "RenderChunkMixin",
+    "RenderSectionCompiledMixin",
+    "BlockEntityRenderDispatcherDebugMixin",
+    "accessor.LevelRendererAccessor",
+    "accessor.ViewAreaAccessor",
+    "accessor.VisibleSectionsAccessor"
+  ],
+  "mixins": [
+    "FriendlyByteBufMixin",
+    "LevelHeightAccessorMixin",
+    "LevelReaderMixin",
+    "LevelMixin",
+    "ChunkAccessMixin",
+    "ChunkSkyLightSourcesMixin",
+    "ChunkHolderMixin",
+    "LevelChunkMixin",
+    "LevelLightEngineMixin",
+    "ChunkMapMixin",
+    "ClientboundLevelChunkPacketDataMixin",
+    "SectionStorageMixin",
+    "PoiManagerMixin",
+    "EntityMixin",
+    "GoalUtilsMixin",
+    "ServerLevelMixin",
+    "ServerGamePacketListenerMixin",
+    "BiomeMixin",
+    "PathNavigationMixin",
+    "PathNavigationRegionMixin",
+    "PathTypeCacheMixin",
+    "GroundPathNavigationMixin",
+    "WalkNodeEvaluatorMixin",
+    "FlyNodeEvaluatorMixin",
+    "accessor.WalkNodeEvaluatorAccessor",
+    "accessor.MinecraftVerticalWorldAccessor",
+    "compat.WaystoneBlockBaseMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

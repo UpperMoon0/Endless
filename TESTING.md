@@ -14,12 +14,12 @@ test alone does not certify real player interaction at large heights.
 | Million gameplay | The same complete gameplay assertions in `[-1,048,576, 1,048,576)` | Reuses the extended scenario; bounded X/Z and vertical windows |
 | Representation envelope | Sparse access, POIs and page packet/storage round trips near ±8,000,000 | Lightweight smoke, no full-height scans |
 | Cold restart | Blocks, fluids, block entities, redstone, light and POIs near ±8,000,000 after a fresh server JVM | Two launches reuse only that scenario's saved world |
-| Same-JVM rejoin | Automated million-height edit on a migrated legacy `[-2032,2032)` dense layout, save/close/reopen in one client JVM, 254-section dense-array preservation, generated-terrain canary equality, sparse resync and dense render traversal | One integrated-client lifecycle per loader; no manual navigation |
+| Same-JVM rejoin | Automated save/close/reopen in one client JVM on both a migrated legacy Y=1,000,000 save and a fresh +/-8M world at Y=6,000,000; generic block-entity registration, completed render-section membership and visible ordinary solid meshes at distance 12; dense canary preservation | Shell/CI launches the self-driving graphical client; no manual navigation |
 | Compatibility baselines | Vanilla-range Endless server and genuine vanilla server, including stale client range reset | No gameplay compatibility dependencies |
 
-Every live scenario runs on Fabric and Forge: **16 required cells**. The same-jvm-rejoin cell is fully automated: it creates/opens the singleplayer world, migrates the save to the legacy `[-2032,2032)` dense layout, verifies the resulting 254-section dense array, snapshots normal generated terrain as a dense canary, performs the million-height sparse edit, saves, shuts down the integrated server, reopens the same save in the same client JVM, returns to dense terrain, and proves both the sparse edit and the original dense terrain survived unchanged and traversed the renderer again without manual menu navigation or clicks. The
-scenario list in `tools/live_join_test.py` generates both the CI matrix and the
-receipt requirements, preventing the gate from silently omitting a new scenario.
+The live matrix contains **25 required cells**: 16 Fabric/Forge 1.20.1 cells, three port-runtime cells for Fabric 1.21.1 / NeoForge 1.21.1 / NeoForge 26.1.2, and six same-JVM rejoin cells across all three modern targets. The rejoin pair per modern target covers both the migrated 254-section legacy dense layout at Y=1,000,000 and the exact fresh full-envelope regression at Y=6,000,000 with render distance 12. Each rejoin creates the world, installs multiple vanilla block-entity types, saves and shuts down the integrated server, waits for the exact server thread to release the world lock, reopens the same save in the same client JVM, and requires every block entity to appear in a completed render section without interaction. Block-entity evidence uses full XYZ coordinates rather than vanilla's packed `BlockPos.asLong()` representation. The dense canary must also survive and render again.
+
+The harness launches graphical clients itself. Linux uses `xvfb-run` when `DISPLAY` is absent. On Windows, a service-session runner discovers the active logged-in desktop and launches the self-driving client there with Windows session APIs; no keyboard, mouse, menu navigation, or manual client launch is part of the test. The scenario list in `tools/live_join_test.py` generates both the CI matrix and the receipt requirements, preventing the gate from silently omitting a new scenario.
 Missing, extra and stale receipts fail verification. CI cancels superseded PR
 runs and keeps independent cells running after another cell fails.
 
@@ -65,10 +65,24 @@ shader compatibility, Sodium/Embeddium, every third-party mod, or sustained
 performance under a large player-built world**. Those require dedicated graphical
 and workload coverage before making those release claims.
 
+The modern rejoin scenarios also require `ENDLESS_VISIBLE_STONE_MESH_PASS`:
+ordinary stone and its deepslate support in separate sections must have solid
+geometry in the renderer's actual frustum-visible section list. Both run at
+render distance 12. The support section has no block entities, preventing a
+special block-entity rebuild from masking missing ordinary terrain rendering.
+This catches the 26.1.2 visibility-tree regression: at render distance >= 8,
+vanilla anchored the tree at the dense world bottom while Endless's section grid
+followed the high-Y camera. Traversal and even forced compilation could pass
+while the tree culled the geometry. The tree now follows the camera as well.
+These checks verify drawable geometry and visibility selection, not final pixels.
+
 Page updates dirty only the affected page and neighboring sections instead of
 recreating the entire renderer. The live harness uses a four-chunk view distance
-and bounded startup/gameplay deadlines. It does not retry a failed assertion into
-a pass or weaken required markers.
+and bounded startup/gameplay deadlines. Across the live placement probes, an
+acknowledged AIR observation gets 40 client ticks to settle before another
+placement is attempted, up to three attempts. Each attempt and the subsequent
+break require fresh prediction acknowledgements; persistent rejection still
+fails. The harness never reruns a failed scenario or weakens required markers.
 
 ## Run locally
 

@@ -1,155 +1,91 @@
 plugins {
-    id 'dev.architectury.loom' version '1.10-SNAPSHOT' apply false
+    id 'dev.architectury.loom' version '1.11-SNAPSHOT' apply false
     id 'architectury-plugin' version '3.4-SNAPSHOT'
-    id 'com.github.johnrengelman.shadow' version '8.1.1' apply false
+    id 'com.gradleup.shadow' version '8.3.6' apply false
 }
 
 architectury {
-    minecraft = project.minecraft_version
-}
-
-/*
- * GitHub-hosted runners share outbound IP space. Maven Central can return a
- * hard HTTP 403 when the shared egress IP is blocked for aggregate automated
- * traffic, even though this project is only resolving normal dependencies.
- *
- * Google publishes a documented Maven Central mirror specifically suitable for
- * build environments. Redirect only the two canonical Central hosts, and only
- * on GitHub Actions. Local developer builds retain Loom/Gradle's normal
- * repository configuration.
- *
- * configureEach applies to repositories Loom adds later while configuring the
- * subprojects, which is where the Forge failure occurred.
- */
-if (System.getenv('GITHUB_ACTIONS') == 'true') {
-    def centralHosts = ['repo.maven.apache.org', 'repo1.maven.org'] as Set
-    def centralMirror = uri('https://maven-central.storage-download.googleapis.com/maven2/')
-    allprojects {
-        repositories.configureEach { repo ->
-            if (repo instanceof org.gradle.api.artifacts.repositories.MavenArtifactRepository
-                && repo.url != null
-                && centralHosts.contains(repo.url.host)) {
-                logger.lifecycle("Endless CI: Maven Central ${repo.url} -> ${centralMirror}")
-                repo.setUrl(centralMirror)
-            }
-        }
-        buildscript.repositories.configureEach { repo ->
-            if (repo instanceof org.gradle.api.artifacts.repositories.MavenArtifactRepository
-                && repo.url != null
-                && centralHosts.contains(repo.url.host)) {
-                logger.lifecycle("Endless CI: Maven Central ${repo.url} -> ${centralMirror}")
-                repo.setUrl(centralMirror)
-            }
-        }
-    }
-}
-
-/*
- * Development run-task UX
- *
- * This is a multi-project Architectury workspace:
- *
- *   :common
- *   :fabric
- *   :forge
- *
- * A bare Gradle task selector such as:
- *
- *   ./gradlew runClient
- *
- * matches runClient tasks in multiple subprojects. That can start more than
- * one Minecraft instance, and :common may look like another Fabric launch.
- *
- * Never allow the ambiguous selectors. Developers must select a loader
- * explicitly, either through the convenience tasks below or with a fully
- * qualified task path such as :fabric:runClient.
- */
-def ambiguousRunTasks = ['runClient', 'runServer']
-
-def ambiguousRequestedTasks = gradle.startParameter.taskNames.findAll { taskName ->
-    ambiguousRunTasks.contains(taskName)
-}
-
-if (!ambiguousRequestedTasks.isEmpty()) {
-    throw new GradleException(
-        "Ambiguous Minecraft run task '${ambiguousRequestedTasks.join(', ')}'.\n" +
-        "Endless is a multi-loader workspace. Use one of:\n" +
-        "  ./gradlew runFabricClient\n" +
-        "  ./gradlew runForgeClient\n" +
-        "  ./gradlew runFabricServer\n" +
-        "  ./gradlew runForgeServer\n" +
-        "or a fully qualified task such as:\n" +
-        "  ./gradlew :fabric:runClient\n" +
-        "  ./gradlew :forge:runClient"
-    )
-}
-
-tasks.register('runFabricClient') {
-    group = 'minecraft'
-    description = 'Launch the Endless Fabric development client.'
-    dependsOn(':fabric:runClient')
-}
-
-tasks.register('runForgeClient') {
-    group = 'minecraft'
-    description = 'Launch the Endless Forge development client.'
-    dependsOn(':forge:runClient')
-}
-
-tasks.register('runFabricServer') {
-    group = 'minecraft'
-    description = 'Launch the Endless Fabric development server.'
-    dependsOn(':fabric:runServer')
-}
-
-tasks.register('runForgeServer') {
-    group = 'minecraft'
-    description = 'Launch the Endless Forge development server.'
-    dependsOn(':forge:runServer')
+    minecraft = rootProject.findProperty('minecraft_version')
 }
 
 allprojects {
     group = rootProject.maven_group
     version = rootProject.mod_version
+
+    repositories {
+        mavenLocal()
+        mavenCentral()
+        maven {
+            url = uri('https://maven.twelveiterations.com/repository/maven-public/')
+            content {
+                includeGroup 'net.blay09.mods'
+            }
+        }
+    }
+}
+
+def versionGroupFor(String projectName) {
+    return gradle.ext.mcVersionMapping.get(projectName)
+}
+
+def depVersionsFor(String mcVer) {
+    def prefix = mcVer.replace('.', '_')
+    return [
+        minecraft_version: rootProject.findProperty("minecraft_version_${prefix}"),
+        architectury_api_version: rootProject.findProperty("architectury_version_${prefix}"),
+        fabric_loader_version: rootProject.findProperty("fabric_loader_version_${prefix}"),
+        fabric_api_version: rootProject.findProperty("fabric_api_version_${prefix}"),
+        forge_version: rootProject.findProperty("forge_version_${prefix}"),
+        neoforge_version: rootProject.findProperty("neoforge_version_${prefix}"),
+        enabled_platforms: rootProject.findProperty("enabled_platforms_${prefix}")
+    ]
 }
 
 subprojects {
+    if (project.name == 'common' || project.name == 'neoforge-1.21.1' || project.name == 'neoforge-26.1.2') {
+        return
+    }
+
     apply plugin: 'dev.architectury.loom'
     apply plugin: 'architectury-plugin'
     apply plugin: 'maven-publish'
 
+    def mcVer = versionGroupFor(":${project.name}")
+    def deps = depVersionsFor(mcVer)
+
+    project.ext.minecraft_version = deps.minecraft_version
+    project.ext.architectury_api_version = deps.architectury_api_version
+    project.ext.fabric_loader_version = deps.fabric_loader_version
+    project.ext.fabric_api_version = deps.fabric_api_version
+    project.ext.forge_version = deps.forge_version
+    project.ext.neoforge_version = deps.neoforge_version
+    project.ext.enabled_platforms = deps.enabled_platforms
+
     base {
-        // Set up a suffixed format for the mod jar names, e.g. `example-fabric`.
         archivesName = "$rootProject.archives_name-$project.name"
     }
 
-    repositories {
-        // Add repositories to retrieve artifacts from in here.
-        // You should only use this when depending on other mods because
-        // Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
-        // See https://docs.gradle.org/current/userguide/declaring_repositories.html
-        // for more information about repositories.
+    loom {
+        silentMojangMappingsLicense()
     }
 
     dependencies {
-        minecraft "net.minecraft:minecraft:$rootProject.minecraft_version"
+        minecraft "net.minecraft:minecraft:${deps.minecraft_version}"
         mappings loom.officialMojangMappings()
     }
 
     java {
-        // Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
-        // if it is present.
         withSourcesJar()
-
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        def javaVersion = mcVer == '1.20.1' ? JavaVersion.VERSION_17 : JavaVersion.VERSION_21
+        sourceCompatibility = javaVersion
+        targetCompatibility = javaVersion
     }
 
     tasks.withType(JavaCompile).configureEach {
-        it.options.release = 17
+        options.release = mcVer == '1.20.1' ? 17 : 21
+        options.encoding = 'UTF-8'
     }
 
-    // Configure Maven publishing.
     publishing {
         publications {
             mavenJava(MavenPublication) {
@@ -157,13 +93,30 @@ subprojects {
                 from components.java
             }
         }
-
-        // See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
-        repositories {
-            // Add repositories to publish to here.
-            // Notice: This block does NOT have the same function as the block in the top level.
-            // The repositories here will be used for publishing your artifact, not for
-            // retrieving dependencies.
-        }
     }
+}
+
+def runTargets = [
+    runFabric1201Client: ':fabric-1.20.1:runClient',
+    runForge1201Client: ':forge-1.20.1:runClient',
+    runFabric1211Client: ':fabric-1.21.1:runClient',
+    runNeoForge1211Client: ':neoforge-1.21.1:runClient',
+    runNeoForge2612Client: ':neoforge-26.1.2:runClient',
+    runFabric1201Server: ':fabric-1.20.1:runServer',
+    runForge1201Server: ':forge-1.20.1:runServer',
+    runFabric1211Server: ':fabric-1.21.1:runServer',
+    runNeoForge1211Server: ':neoforge-1.21.1:runServer',
+    runNeoForge2612Server: ':neoforge-26.1.2:runServer'
+]
+runTargets.each { taskName, target ->
+    tasks.register(taskName) {
+        group = 'minecraft'
+        dependsOn target
+    }
+}
+
+tasks.register('testAllVersions') {
+    group = 'verification'
+    description = 'Runs shared and Minecraft-version-specific unit tests.'
+    dependsOn ':common:test', ':common-1.20.1:test', ':common-1.21.1:test'
 }

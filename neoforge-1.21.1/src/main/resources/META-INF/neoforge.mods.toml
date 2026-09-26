@@ -1,0 +1,34 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "All Rights Reserved"
+
+[[mods]]
+modId = "endless"
+version = "${version}"
+displayName = "Endless"
+authors = "NsTut"
+description = '''
+Sparse practical infinite build height with persistent high-Y blocks, fluids,
+block entities, lighting, POIs, and server-authoritative synchronization.
+'''
+logoFile = "assets/endless/icon.png"
+
+[[dependencies.endless]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.endless]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1,1.22)"
+ordering = "NONE"
+side = "BOTH"
+
+[[mixins]]
+config = "endless.mixins.json"
+
+[[mixins]]
+config = "endless-neoforge.mixins.json"

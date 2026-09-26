@@ -28,6 +28,7 @@ A compile-passing build that fails this test would still be rejected.
 from __future__ import annotations
 
 import argparse
+import ctypes
 from contextlib import contextmanager
 import json
 import os
@@ -66,11 +67,213 @@ SERVER_FATAL_MARKERS = (
     "BUILD FAILED",
 )
 DEFAULT_TIMEOUT = 360
+INTEGRATED_REJOIN_MIN_TIMEOUT = 600
 SERVER_DISCONNECT_MARKERS = ("lost connection: Disconnected", "lost connection: Timed out")
 
 
 class TransientPreLoginFailure(RuntimeError):
     """Transport/startup failure before Endless reported any test progress."""
+
+
+class InteractiveLogStream:
+    """Blocking line iterator over an interactive client's redirected log."""
+
+    def __init__(self, process, path: Path):
+        self.process = process
+        self.path = path
+
+    def __iter__(self):
+        position = 0
+        while True:
+            if self.path.exists():
+                with self.path.open("r", encoding="utf-8", errors="replace") as f:
+                    f.seek(position)
+                    while True:
+                        line = f.readline()
+                        if line:
+                            position = f.tell()
+                            yield line
+                        elif self.process.poll() is not None:
+                            return
+                        else:
+                            time.sleep(0.1)
+            elif self.process.poll() is not None:
+                return
+            else:
+                time.sleep(0.1)
+
+
+class WindowsInteractiveProcess:
+    """Popen-like wrapper for a client launched in another Windows session."""
+
+    stdin = None
+    stdout = None
+
+    def __init__(self, pid: int, handle: int, log_path: Path):
+        self.pid = pid
+        self._handle = handle
+        self.returncode: int | None = None
+        self.stdout = InteractiveLogStream(self, log_path)
+
+    def poll(self) -> int | None:
+        if self.returncode is not None:
+            return self.returncode
+        from ctypes import wintypes
+        code = wintypes.DWORD()
+        if not ctypes.windll.kernel32.GetExitCodeProcess(self._handle, ctypes.byref(code)):
+            raise ctypes.WinError()
+        if code.value == 259:
+            return None
+        self.returncode = code.value
+        ctypes.windll.kernel32.CloseHandle(self._handle)
+        self._handle = 0
+        return self.returncode
+
+    def wait(self, timeout: float | None = None) -> int:
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while True:
+            code = self.poll()
+            if code is not None:
+                return code
+            if deadline is not None and time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired("interactive-client", timeout)
+            time.sleep(0.1)
+
+
+def choose_windows_interactive_session(
+    current_session: int, active_console_session: int, sessions: list[tuple[int, int, str]]
+) -> int:
+    WTS_ACTIVE = 0
+    candidates = [
+        session_id for session_id, state, username in sessions
+        if state == WTS_ACTIVE and username.strip()
+    ]
+    if current_session in candidates:
+        return current_session
+    if active_console_session in candidates:
+        return active_console_session
+    if candidates:
+        return min(candidates)
+    raise RuntimeError("graphical tests require an active logged-in Windows desktop session")
+
+
+def windows_interactive_session() -> tuple[int, int]:
+    from ctypes import wintypes
+
+    class WTS_SESSION_INFOW(ctypes.Structure):
+        _fields_ = [
+            ("SessionId", wintypes.DWORD),
+            ("pWinStationName", wintypes.LPWSTR),
+            ("State", ctypes.c_int),
+        ]
+
+    kernel32 = ctypes.windll.kernel32
+    wtsapi32 = ctypes.windll.wtsapi32
+    current = wintypes.DWORD()
+    if not kernel32.ProcessIdToSessionId(os.getpid(), ctypes.byref(current)):
+        raise ctypes.WinError()
+
+    buffer = ctypes.POINTER(WTS_SESSION_INFOW)()
+    count = wintypes.DWORD()
+    if not wtsapi32.WTSEnumerateSessionsW(None, 0, 1, ctypes.byref(buffer), ctypes.byref(count)):
+        raise ctypes.WinError()
+
+    sessions: list[tuple[int, int, str]] = []
+    try:
+        for index in range(count.value):
+            info = buffer[index]
+            username_buffer = wintypes.LPWSTR()
+            username_bytes = wintypes.DWORD()
+            username = ""
+            if wtsapi32.WTSQuerySessionInformationW(
+                None, info.SessionId, 5, ctypes.byref(username_buffer), ctypes.byref(username_bytes)
+            ):
+                try:
+                    username = username_buffer.value or ""
+                finally:
+                    wtsapi32.WTSFreeMemory(username_buffer)
+            sessions.append((info.SessionId, info.State, username))
+    finally:
+        wtsapi32.WTSFreeMemory(buffer)
+
+    active_console = kernel32.WTSGetActiveConsoleSessionId()
+    return current.value, choose_windows_interactive_session(current.value, active_console, sessions)
+
+
+def needs_windows_interactive_bridge(current_session: int, target_session: int) -> bool:
+    return current_session != target_session
+
+
+def launch_windows_interactive(
+    cmd: list[str], root: Path, env: dict[str, str], target_session: int, log_path: Path
+) -> WindowsInteractiveProcess:
+    from ctypes import wintypes
+
+    wrapper = log_path.with_name(log_path.stem + "-session.cmd")
+    wrapper.parent.mkdir(parents=True, exist_ok=True)
+    log_path.unlink(missing_ok=True)
+    lines = ["@echo off", f'cd /d "{root}"']
+    for key, value in sorted(env.items()):
+        if key.startswith("ENDLESS_") or key in ("JAVA_HOME", "GRADLE_USER_HOME"):
+            lines.append(f'set "{key}={value.replace("%", "%%")}"')
+    if env.get("JAVA_HOME"):
+        lines.append('set "PATH=%JAVA_HOME%\\bin;%PATH%"')
+    lines.append(f'call {subprocess.list2cmdline(cmd)} > "{log_path}" 2>&1')
+    lines.append("exit /b %ERRORLEVEL%")
+    wrapper.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
+
+    CREATE_NEW_PROCESS_GROUP = 0x00000200
+    CREATE_UNICODE_ENVIRONMENT = 0x00000400
+
+    class STARTUPINFOW(ctypes.Structure):
+        _fields_ = [
+            ("cb", wintypes.DWORD), ("lpReserved", wintypes.LPWSTR), ("lpDesktop", wintypes.LPWSTR),
+            ("lpTitle", wintypes.LPWSTR), ("dwX", wintypes.DWORD), ("dwY", wintypes.DWORD),
+            ("dwXSize", wintypes.DWORD), ("dwYSize", wintypes.DWORD), ("dwXCountChars", wintypes.DWORD),
+            ("dwYCountChars", wintypes.DWORD), ("dwFillAttribute", wintypes.DWORD), ("dwFlags", wintypes.DWORD),
+            ("wShowWindow", wintypes.WORD), ("cbReserved2", wintypes.WORD),
+            ("lpReserved2", ctypes.POINTER(ctypes.c_byte)),
+            ("hStdInput", wintypes.HANDLE), ("hStdOutput", wintypes.HANDLE), ("hStdError", wintypes.HANDLE),
+        ]
+
+    class PROCESS_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ("hProcess", wintypes.HANDLE), ("hThread", wintypes.HANDLE),
+            ("dwProcessId", wintypes.DWORD), ("dwThreadId", wintypes.DWORD),
+        ]
+
+    token = wintypes.HANDLE()
+    env_block = ctypes.c_void_p()
+    wtsapi32 = ctypes.windll.wtsapi32
+    userenv = ctypes.windll.userenv
+    advapi32 = ctypes.windll.advapi32
+    kernel32 = ctypes.windll.kernel32
+    if not wtsapi32.WTSQueryUserToken(target_session, ctypes.byref(token)):
+        raise ctypes.WinError()
+    try:
+        if not userenv.CreateEnvironmentBlock(ctypes.byref(env_block), token, False):
+            raise ctypes.WinError()
+        try:
+            startup = STARTUPINFOW()
+            startup.cb = ctypes.sizeof(startup)
+            startup.lpDesktop = "winsta0\\default"
+            process = PROCESS_INFORMATION()
+            comspec = os.environ.get("COMSPEC", r"C:\Windows\System32\cmd.exe")
+            cmdline = ctypes.create_unicode_buffer(
+                f'{subprocess.list2cmdline([comspec])} /d /s /c ""{wrapper}""'
+            )
+            if not advapi32.CreateProcessAsUserW(
+                token, comspec, cmdline, None, None, False,
+                CREATE_NEW_PROCESS_GROUP | CREATE_UNICODE_ENVIRONMENT,
+                env_block, str(root), ctypes.byref(startup), ctypes.byref(process)
+            ):
+                raise ctypes.WinError()
+            kernel32.CloseHandle(process.hThread)
+            return WindowsInteractiveProcess(process.dwProcessId, process.hProcess, log_path)
+        finally:
+            userenv.DestroyEnvironmentBlock(env_block)
+    finally:
+        kernel32.CloseHandle(token)
 
 
 # Shared config presets. The client's on-disk config deliberately disagrees
@@ -83,8 +286,11 @@ VANILLA_BUILD_HEIGHT = {"minBuildHeight": -64, "maxBuildHeight": 320}
 MC_VERSION = "1.20.1"
 
 TARGETS = {
-    "fabric-1.20.1": "fabric",
-    "forge-1.20.1": "forge",
+    "fabric-1.20.1": "fabric-1.20.1",
+    "forge-1.20.1": "forge-1.20.1",
+    "fabric-1.21.1": "fabric-1.21.1",
+    "neoforge-1.21.1": "neoforge-1.21.1",
+    "neoforge-26.1.2": "neoforge-26.1.2",
 }
 
 
@@ -103,7 +309,11 @@ class Scenario:
     required_client_markers: tuple[str, ...] = ()
     cold_restart: bool = False
     gameplay: bool = False
+    waystones: bool = False
     integrated_rejoin: bool = False
+    integrated_target_y: int = 1_000_000
+    integrated_legacy_layout: bool = True
+    render_distance: int = 4
 
 
 SCENARIOS = [
@@ -116,6 +326,7 @@ SCENARIOS = [
         expected=EXTENDED_BUILD_HEIGHT,
         server_port=25575,
         gameplay=True,
+        waystones=True,
         required_server_markers=(
             "ENDLESS_COMMAND_BOUNDS_PASS",
             "ENDLESS_WAYSTONES_SPARSE_PASS",
@@ -185,6 +396,7 @@ SCENARIOS.append(Scenario(
     required_server_markers=SCENARIOS[0].required_server_markers,
     required_client_markers=SCENARIOS[0].required_client_markers,
     gameplay=True,
+    waystones=True,
 ))
 
 SCENARIOS.append(Scenario(
@@ -198,11 +410,12 @@ SCENARIOS.append(Scenario(
     required_server_markers=SCENARIOS[0].required_server_markers,
     required_client_markers=SCENARIOS[0].required_client_markers,
     gameplay=True,
+    waystones=True,
 ))
 
 SCENARIOS.append(Scenario(
     id="same-jvm-rejoin",
-    description="singleplayer save/leave/reopen in one client JVM preserves a real block at Y=1,000,000",
+    description="singleplayer save/leave/reopen preserves sparse blocks and generically rendered block entities at Y=1,000,000",
     server_kind="integrated",
     server_config=None,
     client_config=MILLION_BUILD_HEIGHT,
@@ -210,7 +423,57 @@ SCENARIOS.append(Scenario(
     server_port=0,
     required_client_markers=(SAME_JVM_REJOIN_PASS_MARKER,),
     integrated_rejoin=True,
+    render_distance=12,
 ))
+
+SCENARIOS.append(Scenario(
+    id="same-jvm-rejoin-full-envelope",
+    description="fresh singleplayer +/-8M save/leave/reopen at Y=6,000,000 renders persisted block entities without interaction",
+    server_kind="integrated",
+    server_config=None,
+    client_config=FAR_BUILD_HEIGHT,
+    expected=FAR_BUILD_HEIGHT,
+    server_port=0,
+    required_client_markers=(SAME_JVM_REJOIN_PASS_MARKER,),
+    integrated_rejoin=True,
+    integrated_target_y=6_000_000,
+    integrated_legacy_layout=False,
+    render_distance=12,
+))
+
+# New-version runtime gate: exercise the actual sparse engine, network sync,
+# client prediction, rendering, pathfinding, scheduled mechanics and persistence
+# without imposing the 1.20.1-only Waystones compatibility fixture.
+SCENARIOS.append(Scenario(
+    id="port-runtime",
+    description="real sparse gameplay/runtime gate for newly ported loader versions",
+    server_kind="modded",
+    server_config=EXTENDED_BUILD_HEIGHT,
+    client_config=VANILLA_BUILD_HEIGHT,
+    expected=EXTENDED_BUILD_HEIGHT,
+    server_port=25581,
+    gameplay=True,
+    required_server_markers=tuple(
+        marker for marker in SCENARIOS[0].required_server_markers
+        if marker != "ENDLESS_WAYSTONES_SPARSE_PASS"
+    ),
+    required_client_markers=SCENARIOS[0].required_client_markers,
+))
+
+LEGACY_TARGETS = ("fabric-1.20.1", "forge-1.20.1")
+PORT_TARGETS = ("fabric-1.21.1", "neoforge-1.21.1", "neoforge-26.1.2")
+PORT_REJOIN_TARGETS = ("fabric-1.21.1", "neoforge-1.21.1", "neoforge-26.1.2")
+LIVE_CASES = tuple(
+    (target, scenario.id)
+    for target in LEGACY_TARGETS
+    for scenario in SCENARIOS
+    if scenario.id not in ("port-runtime", "same-jvm-rejoin-full-envelope")
+) + tuple((target, "port-runtime") for target in PORT_TARGETS) + tuple(
+    (target, scenario_id)
+    for target in PORT_REJOIN_TARGETS
+    for scenario_id in ("same-jvm-rejoin", "same-jvm-rejoin-full-envelope")
+)
+SCENARIO_BY_ID = {scenario.id: scenario for scenario in SCENARIOS}
 
 
 @contextmanager
@@ -242,13 +505,21 @@ def checkout_lock(root: Path):
 
 
 def verify_receipts(directory: Path, head: str) -> None:
-    expected = {f"{target}--{scenario.id}.pass" for target in TARGETS for scenario in SCENARIOS}
+    expected = {f"{target}--{scenario_id}.pass" for target, scenario_id in LIVE_CASES}
     actual = {p.name for p in directory.glob("*.pass")}
     if expected != actual:
         raise RuntimeError(f"scenario receipts differ: missing={sorted(expected-actual)} extra={sorted(actual-expected)}")
     for name in sorted(expected):
         if (directory / name).read_text(encoding="utf-8").strip() != head:
             raise RuntimeError(f"stale scenario receipt: {name}")
+
+
+def console_safe(text: str, encoding: str | None = None) -> str:
+    """Make subprocess log forwarding safe for legacy Windows console encodings."""
+    target = encoding or getattr(sys.stdout, "encoding", None)
+    if not target:
+        return text
+    return text.encode(target, errors="backslashreplace").decode(target)
 
 
 class OutputPump:
@@ -269,7 +540,7 @@ class OutputPump:
                 if log:
                     log.write(line)
                     log.flush()
-                print(f"[{self.prefix}] {line}", end="", flush=True)
+                print(console_safe(f"[{self.prefix}] {line}"), end="", flush=True)
                 self.history.append(line)
                 self.lines.put(line)
         finally:
@@ -379,6 +650,10 @@ def wait_for_live_join_outcome(
                 f"{label}: server exited before the client reported an outcome"
             )
         if client_output.exhausted():
+            if not any("ENDLESS_" in line for line in client_output.history):
+                raise TransientPreLoginFailure(
+                    f"{label}: client exited before Endless login verification began"
+                )
             return None
 
         time.sleep(0.1)
@@ -415,7 +690,30 @@ def popen(cmd: list[str], root: Path, env: dict[str, str] | None = None) -> subp
     return subprocess.Popen(cmd, **kwargs)  # type: ignore[arg-type]
 
 
-def stop_tree(process: subprocess.Popen[str], graceful_server: bool = False) -> None:
+def launch_graphical_client(
+    cmd: list[str],
+    root: Path,
+    env: dict[str, str],
+    prefix: str,
+    log_path: Path,
+):
+    """Start a self-driving graphical client without manual desktop interaction."""
+    if os.name == "nt":
+        current_session, target_session = windows_interactive_session()
+        if needs_windows_interactive_bridge(current_session, target_session):
+            process = launch_windows_interactive(cmd, root, env, target_session, log_path)
+            return process, OutputPump(process, prefix)
+    elif not os.environ.get("DISPLAY"):
+        xvfb = shutil.which("xvfb-run")
+        if xvfb is None:
+            raise RuntimeError("DISPLAY is unset and xvfb-run is not installed")
+        cmd = [xvfb, "-a", *cmd]
+
+    process = popen(cmd, root, env=env)
+    return process, OutputPump(process, prefix, log_path)
+
+
+def stop_tree(process, graceful_server: bool = False) -> None:
     if process.poll() is not None:
         return
     if graceful_server and process.stdin is not None:
@@ -515,7 +813,7 @@ def prepare_server(module_dir: Path, scenario: Scenario) -> None:
     write_endless_config(server_dir / "config", scenario.server_config)  # type: ignore[arg-type]
 
 
-def prepare_client_dir(client_dir: Path, module: str, config: dict) -> None:
+def prepare_client_dir(client_dir: Path, module: str, config: dict, render_distance: int = 4) -> None:
     reset_dir(client_dir)
     # A fresh Minecraft directory otherwise opens the accessibility/narrator
     # onboarding screen, which blocks automation and makes the test interactive.
@@ -524,13 +822,13 @@ def prepare_client_dir(client_dir: Path, module: str, config: dict) -> None:
         "narratorHotkey:false\n"
         "onboardAccessibility:false\n"
         "skipMultiplayerWarning:true\n"
-        "renderDistance:4\n"
+        f"renderDistance:{render_distance}\n"
         "simulationDistance:5\n"
         "maxFps:60\n",
         encoding="utf-8",
     )
     write_endless_config(client_dir / "config", config)
-    if module == "forge":
+    if module.startswith("forge-"):
         # Forge's early-display window creates its own GL context before the
         # game launches and only reaches GL 4.6/4.5 core profiles; on the CI
         # runner's virtual display it times out ("Timed out trying to setup
@@ -550,7 +848,8 @@ def prepare_client(module_dir: Path, module: str, scenario: Scenario) -> None:
 
 def prepare_integrated_client(module_dir: Path, module: str, scenario: Scenario) -> None:
     prepare_client_dir(
-        module_dir / "run" / "live-rejoin" / "client", module, scenario.client_config
+        module_dir / "run" / "live-rejoin" / "client", module, scenario.client_config,
+        render_distance=scenario.render_distance,
     )
 
 
@@ -561,10 +860,12 @@ def scenario_env(scenario: Scenario, cold_phase: str = "") -> dict[str, str]:
     env["ENDLESS_TEST_PORT"] = str(scenario.server_port)
     env["ENDLESS_TEST_PRESEED_STALE"] = "true" if scenario.id == "baseline-no-endless" else "false"
     env["ENDLESS_TEST_EXTREME"] = "true" if scenario.gameplay else "false"
-    env["ENDLESS_TEST_WAYSTONES"] = "true" if scenario.gameplay else "false"
+    env["ENDLESS_TEST_WAYSTONES"] = "true" if scenario.waystones else "false"
     env["ENDLESS_TEST_FAR"] = "true" if scenario.id == "far-envelope" else "false"
     env["ENDLESS_TEST_COLD_RESTART_PHASE"] = cold_phase
     env["ENDLESS_TEST_SAME_JVM_REJOIN"] = "true" if scenario.integrated_rejoin else "false"
+    env["ENDLESS_TEST_TARGET_Y"] = str(scenario.integrated_target_y)
+    env["ENDLESS_TEST_LEGACY_LAYOUT"] = str(scenario.integrated_legacy_layout).lower()
     return env
 
 
@@ -591,14 +892,9 @@ def run_live_session(
             raise RuntimeError(f"{label}: server did not become ready")
 
         client_cmd = command(root, f":{module}:runLiveJoinTestClient")
-        if os.name != "nt" and not os.environ.get("DISPLAY"):
-            xvfb = shutil.which("xvfb-run")
-            if xvfb is None:
-                raise RuntimeError("DISPLAY is unset and xvfb-run is not installed")
-            client_cmd = [xvfb, "-a", *client_cmd]
-
-        client = popen(client_cmd, root, env=env)
-        client_output = OutputPump(client, f"{label}/client", evidence / "client.log")
+        client, client_output = launch_graphical_client(
+            client_cmd, root, env, f"{label}/client", evidence / "client.log"
+        )
         outcome = wait_for_live_join_outcome(client_output, server_output, timeout, label)
         if outcome is None:
             raise RuntimeError(f"{label}: client did not report a live-join outcome")
@@ -618,6 +914,12 @@ def run_live_session(
         stop_tree(server, graceful_server=True)
 
 
+def required_client_markers_for(target: str, scenario: Scenario) -> tuple[str, ...]:
+    if scenario.integrated_rejoin and target in PORT_REJOIN_TARGETS:
+        return scenario.required_client_markers + ("ENDLESS_VISIBLE_STONE_MESH_PASS",)
+    return scenario.required_client_markers
+
+
 def run_integrated_rejoin(
     root: Path, target: str, module: str, scenario: Scenario, timeout: int, env: dict[str, str]
 ) -> None:
@@ -625,18 +927,13 @@ def run_integrated_rejoin(
     evidence = root / "build" / "live-join-evidence" / label
     evidence.mkdir(parents=True, exist_ok=True)
     client_cmd = command(root, f":{module}:runSameJvmRejoinTestClient")
-    if os.name != "nt" and not os.environ.get("DISPLAY"):
-        xvfb = shutil.which("xvfb-run")
-        if xvfb is None:
-            raise RuntimeError("DISPLAY is unset and xvfb-run is not installed")
-        client_cmd = [xvfb, "-a", *client_cmd]
-
-    client = popen(client_cmd, root, env=env)
-    output = OutputPump(client, f"{label}/client", evidence / "client.log")
+    client, output = launch_graphical_client(
+        client_cmd, root, env, f"{label}/client", evidence / "client.log"
+    )
     try:
         line = output.wait_for(
             (SAME_JVM_REJOIN_PASS_MARKER,),
-            timeout,
+            max(timeout, INTEGRATED_REJOIN_MIN_TIMEOUT),
             fail_markers=(
                 SAME_JVM_REJOIN_FAIL_MARKER,
                 "Encountered an unexpected exception",
@@ -649,7 +946,7 @@ def run_integrated_rejoin(
         if line is None:
             raise RuntimeError(f"{label}: client did not finish same-JVM rejoin verification")
         output.wait_until_seen(
-            scenario.required_client_markers, min(timeout, 60), (SAME_JVM_REJOIN_FAIL_MARKER,)
+            required_client_markers_for(target, scenario), min(timeout, 60), (SAME_JVM_REJOIN_FAIL_MARKER,)
         )
         print(f"{label}: PASS ({line.rstrip()})", flush=True)
     finally:
@@ -710,7 +1007,7 @@ def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeo
         "dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=root, text=True).strip()),
         "expected": scenario.expected, "status": "running",
         "required_server_markers": scenario.required_server_markers,
-        "required_client_markers": scenario.required_client_markers,
+        "required_client_markers": required_client_markers_for(target, scenario),
     }
     try:
         _run_scenario(root, target, module, scenario, timeout)
@@ -731,8 +1028,9 @@ def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeo
 
 def run_target(root: Path, target: str, timeout: int) -> None:
     module = TARGETS[target]
-    for scenario in SCENARIOS:
-        run_scenario(root, target, module, scenario, timeout)
+    for case_target, scenario_id in LIVE_CASES:
+        if case_target == target:
+            run_scenario(root, target, module, SCENARIO_BY_ID[scenario_id], timeout)
 
 
 def main() -> int:
@@ -747,7 +1045,12 @@ def main() -> int:
 
     root = Path(__file__).resolve().parents[1]
     if args.matrix:
-        print(json.dumps({"target": list(TARGETS), "scenario": [s.id for s in SCENARIOS]}))
+        print(json.dumps({
+            "include": [
+                {"target": target, "scenario": scenario_id}
+                for target, scenario_id in LIVE_CASES
+            ]
+        }))
         return 0
     if args.verify_receipts:
         if not args.head:
@@ -756,17 +1059,25 @@ def main() -> int:
         return 0
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
-    targets = args.target or list(TARGETS)
-    scenarios = [s for s in SCENARIOS if args.scenario is None or s.id in args.scenario]
+    target_filter = set(args.target) if args.target else None
+    scenario_filter = set(args.scenario) if args.scenario else None
+    cases = [
+        (target, scenario_id)
+        for target, scenario_id in LIVE_CASES
+        if (target_filter is None or target in target_filter)
+        and (scenario_filter is None or scenario_id in scenario_filter)
+    ]
+    if not cases:
+        parser.error("requested target/scenario combination is not part of the canonical live matrix")
     failures = []
     with checkout_lock(root):
-        for target in targets:
-            for scenario in scenarios:
-                try:
-                    run_scenario(root, target, TARGETS[target], scenario, args.timeout)
-                except (RuntimeError, subprocess.SubprocessError, OSError) as exc:
-                    failures.append(f"{target}/{scenario.id}: {exc}")
-                    print(f"LIVE JOIN TEST FAILED: {failures[-1]}", file=sys.stderr)
+        for target, scenario_id in cases:
+            scenario = SCENARIO_BY_ID[scenario_id]
+            try:
+                run_scenario(root, target, TARGETS[target], scenario, args.timeout)
+            except (RuntimeError, subprocess.SubprocessError, OSError) as exc:
+                failures.append(f"{target}/{scenario.id}: {exc}")
+                print(f"LIVE JOIN TEST FAILED: {failures[-1]}", file=sys.stderr)
     return 1 if failures else 0
 
 

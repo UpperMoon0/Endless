@@ -1,0 +1,34 @@
+sourceSets.main.java {
+    srcDir rootProject.file('common-versioned/src/main/java')
+    srcDir rootProject.file('common-1201-1211/src/main/java')
+    srcDir rootProject.file('common-modern/src/main/java')
+}
+sourceSets.test.java.srcDir rootProject.file('common-1201-1211/src/test/java')
+
+architectury {
+    common project.enabled_platforms.split(',')
+}
+
+dependencies {
+    implementation project(':common')
+    modImplementation "net.fabricmc:fabric-loader:$fabric_loader_version"
+    modImplementation "dev.architectury:architectury:$architectury_api_version"
+
+    testImplementation platform("org.junit:junit-bom:5.11.4")
+    testImplementation "org.junit.jupiter:junit-jupiter"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
+}
+
+jar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from {
+        project(':common').sourceSets.main.output
+    }
+}

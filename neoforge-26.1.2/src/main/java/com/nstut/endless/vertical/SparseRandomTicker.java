@@ -1,0 +1,91 @@
+package com.nstut.endless.vertical;
+
+import com.nstut.endless.mixin.accessor.MinecraftVerticalWorldAccessor;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.material.FluidState;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/** Runs vanilla-style random block/fluid ticks for currently loaded sparse sections. */
+public final class SparseRandomTicker {
+    private SparseRandomTicker() {}
+
+    public static void tickLoadedColumn(ServerLevel level, LevelChunk chunk, int randomTickSpeed) {
+        if (randomTickSpeed <= 0) {
+            return;
+        }
+
+        MinecraftVerticalWorld world = EndlessVerticalEngine.world(level);
+        List<TickSection> sections = new ArrayList<>();
+        synchronized (world) {
+            Map<Long, SparseVerticalColumn<LevelChunkSection>> columns =
+                ((MinecraftVerticalWorldAccessor) (Object) world).endless$getColumns();
+            SparseVerticalColumn<LevelChunkSection> column =
+                columns.get(ChunkPos.pack(chunk.getPos().x(), chunk.getPos().z()));
+            if (column == null || column.isEmpty()) {
+                return;
+            }
+
+            List<Integer> pageYs = column.pageYs();
+            for (int pageY : pageYs) {
+                VerticalPage<LevelChunkSection> page = column.getPage(pageY);
+                if (page == null) {
+                    continue;
+                }
+                page.forEachOccupiedSection((sectionY, section) ->
+                    sections.add(new TickSection(sectionY, section)));
+            }
+
+            // Do not call vanilla block/fluid tick callbacks while holding the sparse-world
+            // monitor. A callback may synchronously load/generate a chunk while a worldgen
+            // worker calls back into Endless height queries, which also need this monitor.
+            if (sections.isEmpty()) {
+                return;
+            }
+        }
+
+        int baseX = chunk.getPos().getMinBlockX();
+        int baseZ = chunk.getPos().getMinBlockZ();
+        for (TickSection entry : sections) {
+            tickSection(level, entry.section(), entry.sectionY(), baseX, baseZ, randomTickSpeed);
+        }
+    }
+
+    private static void tickSection(
+        ServerLevel level,
+        LevelChunkSection section,
+        int sectionY,
+        int baseX,
+        int baseZ,
+        int randomTickSpeed
+    ) {
+        if (!section.isRandomlyTicking()) {
+            return;
+        }
+        int baseY = SectionPos.sectionToBlockCoord(sectionY);
+        for (int i = 0; i < randomTickSpeed; i++) {
+            BlockPos pos = level.getBlockRandomPos(baseX, baseY, baseZ, 15);
+            BlockState state = section.getBlockState(
+                pos.getX() - baseX,
+                pos.getY() - baseY,
+                pos.getZ() - baseZ);
+            if (state.isRandomlyTicking()) {
+                state.randomTick(level, pos, level.getRandom());
+            }
+            FluidState fluid = state.getFluidState();
+            if (fluid.isRandomlyTicking()) {
+                fluid.randomTick(level, pos, level.getRandom());
+            }
+        }
+    }
+    private record TickSection(int sectionY, LevelChunkSection section) {}
+
+}

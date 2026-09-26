@@ -36,6 +36,7 @@ public class EndlessConfig {
 
     private static EndlessConfig instance;
     private BuildHeightConfig buildHeight = new BuildHeightConfig();
+    private boolean debug = false;
 
     // Migration bookkeeping is deliberately transient. rawLoadedBuildHeight
     // preserves the exact pre-normalization evidence from disk until a pre-v0.4
@@ -61,6 +62,7 @@ public class EndlessConfig {
     void load(Path configDir) {
         Path configFile = configDir.resolve(CONFIG_FILENAME);
         buildHeight = new BuildHeightConfig();
+        debug = false;
         rawLoadedBuildHeight = null;
         normalizationPending = false;
         normalizationWriteAllowed = true;
@@ -81,6 +83,7 @@ public class EndlessConfig {
             try (FileReader reader = new FileReader(file)) {
                 EndlessConfig loadedConfig = GSON.fromJson(reader, EndlessConfig.class);
                 loadedHeight = loadedConfig != null ? loadedConfig.buildHeight : null;
+                debug = loadedConfig != null && loadedConfig.debug;
             } catch (RuntimeException e) {
                 Path broken = configFile.resolveSibling(CONFIG_FILENAME + ".broken");
                 try {
@@ -155,6 +158,14 @@ public class EndlessConfig {
 
     public BuildHeightConfig getBuildHeight() {
         return buildHeight;
+    }
+
+    public boolean isDebug() {
+        return debug;
+    }
+
+    public void setDebug(boolean debug) {
+        this.debug = debug;
     }
 
     /** Exact values parsed from disk before v0.5 envelope/alignment normalization. */

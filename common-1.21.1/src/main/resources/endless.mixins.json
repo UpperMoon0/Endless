@@ -13,7 +13,9 @@
     "RenderSectionCompiledMixin",
     "accessor.LevelRendererAccessor",
     "accessor.ViewAreaAccessor",
-    "accessor.VisibleSectionsAccessor"
+    "accessor.VisibleSectionsAccessor",
+    "compat.CreateArmInteractionPointHandlerMixin",
+    "compat.CreateEjectorTargetHandlerMixin"
   ],
   "mixins": [
     "FriendlyByteBufMixin",
@@ -42,7 +44,11 @@
     "FlyNodeEvaluatorMixin",
     "accessor.WalkNodeEvaluatorAccessor",
     "accessor.MinecraftVerticalWorldAccessor",
-    "compat.WaystoneBlockBaseMixin"
+    "compat.WaystoneBlockBaseMixin",
+    "compat.CreateGeneratingKineticBlockEntityMixin",
+    "compat.CreateKineticBlockEntityMixin",
+    "compat.CreateDisplayTargetMixin",
+    "compat.CreateLinkBehaviourMixin"
   ],
   "injectors": {
     "defaultRequire": 1

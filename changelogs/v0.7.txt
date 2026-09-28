@@ -1,0 +1,10 @@
+Endless 0.7
+
+- Added explicit Create compatibility for Forge 1.20.1 / Create 6.0.8 and NeoForge 1.21.1 / Create 6.0.11.
+- Fixed Create schematic rail placement at sparse Y by routing its dense-section write through Endless sparse storage while preserving Create's block update semantics.
+- Fixed Create kinetic generator network-ID aliasing above the packed BlockPos Y range. Sparse generators now receive collision-free per-dimension IDs from persistent SavedData, survive unload/reload and cold restart, and migrate old packed IDs before network registration.
+- Preserved exact high-Y positions for Create display-link reservations and redstone-link relocation state instead of relying only on BlockPos.asLong().
+- Fixed Create mechanical-arm and weighted-ejector client hover caches so positions separated by a packed-Y alias period are not treated as the same target.
+- Audited Create contraption serialization: block positions are serialized in local contraption space and the default 2,048-block assembly cap keeps those local coordinates inside BlockPos's packed-Y range, so no Endless hook is applied there.
+- Audited Create/Flywheel SectionPos visual caches: Minecraft's 20-bit packed section Y covers the entire Endless +/-8,000,000 representation envelope, so those caches do not need compatibility rewriting.
+- Extended the real-client matrix with Create sparse-placement/kinetic coverage and a two-process cold-restart persistence/migration gate on both supported Create loader lines.

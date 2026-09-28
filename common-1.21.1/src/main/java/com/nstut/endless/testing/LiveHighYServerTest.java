@@ -59,6 +59,7 @@ public final class LiveHighYServerTest {
     public static final String COMMAND_PASS_MARKER = "ENDLESS_COMMAND_BOUNDS_PASS";
     public static final String WAYSTONES_PASS_MARKER = "ENDLESS_WAYSTONES_SPARSE_PASS";
     public static final String CREATE_PASS_MARKER = "ENDLESS_CREATE_SPARSE_PASS";
+    public static final String CREATE_KINETIC_PASS_MARKER = "ENDLESS_CREATE_KINETIC_PASS";
     public static final String PATHFINDING_PASS_MARKER = "ENDLESS_PATHFINDING_PASS";
     public static final String CLIENT_INTERACTION_PASS_MARKER = "ENDLESS_CLIENT_INTERACTION_SERVER_PASS";
     public static final String CLIENT_PERSISTENCE_PASS_MARKER = "ENDLESS_CLIENT_PLACEMENT_PERSISTENCE_PASS";
@@ -79,6 +80,8 @@ public final class LiveHighYServerTest {
     private static boolean upperClientBroken;
     private static boolean upperPersistentClientPlaced;
     private static boolean clientInteractionPassPrinted;
+    private static Long createMotorNetworkA;
+    private static Long createMotorNetworkB;
 
     private LiveHighYServerTest() {}
 
@@ -119,6 +122,10 @@ public final class LiveHighYServerTest {
 
     /** Create schematic rail fixture stays in forced chunk 0,0 and sparse storage. */
     public static BlockPos upperCreateRailPos() { return pos(12, upperY() - 4); }
+
+    /** Two unconnected Create generators whose vanilla packed BlockPos longs collide. */
+    public static BlockPos lowerCreateMotorPos() { return pos(14, upperY() - 4097); }
+    public static BlockPos upperCreateMotorPos() { return lowerCreateMotorPos().above(4096); }
 
     /** Client-originated interaction targets intentionally live outside packed BlockPos Y. */
     public static BlockPos lowerInteractionSupportPos() { return new BlockPos(1, lowerY(), 4); }
@@ -186,6 +193,7 @@ public final class LiveHighYServerTest {
                 requirePoi(level, lowerPoiPos(), "lower-bound POI was not registered/searchable");
                 requirePoi(level, upperPoiPos(), "upper-bound POI was not registered/searchable");
                 verifyDelayedMechanics(level);
+                verifyCreateKineticIsolationIfRequested(level);
                 flushReloadAndVerify(level);
                 requireEntityAlive(lowerStand, "lower-bound entity did not survive normal ticking");
                 requireEntityAlive(upperStand, "upper-bound entity did not survive normal ticking");
@@ -504,6 +512,116 @@ public final class LiveHighYServerTest {
 
         require(level.getBlockState(railPos).is(Blocks.RAIL),
             "Create schematic rail placement did not write sparse rail at " + railPos);
+
+        Block createMotor = BuiltInRegistries.BLOCK.get(ResourceLocation.fromNamespaceAndPath("create", "creative_motor"));
+        require(createMotor != Blocks.AIR, "Create creative motor is missing from the runtime registry");
+
+        BlockPos motorA = lowerCreateMotorPos();
+        BlockPos motorB = upperCreateMotorPos();
+        require(EndlessHeights.isOutsideDenseBuildHeight(motorA.getY())
+                && EndlessHeights.isOutsideDenseBuildHeight(motorB.getY()),
+            "Create kinetic alias fixtures must both use sparse storage");
+        require(motorA.asLong() == motorB.asLong(),
+            "Create kinetic alias fixtures must collide under vanilla BlockPos#asLong");
+        require(level.setBlock(motorA, createMotor.defaultBlockState(), 3),
+            "could not place first sparse Create creative motor");
+        require(level.setBlock(motorB, createMotor.defaultBlockState(), 3),
+            "could not place second sparse Create creative motor");
+    }
+
+    private static void verifyCreateKineticIsolationIfRequested(ServerLevel level) throws Exception {
+        if (!Boolean.parseBoolean(System.getProperty(CREATE_SYSTEM_PROPERTY, "false"))) return;
+
+        Object motorA = level.getBlockEntity(lowerCreateMotorPos());
+        Object motorB = level.getBlockEntity(upperCreateMotorPos());
+        require(motorA != null && motorB != null,
+            "Create creative motor block entities did not initialize in sparse storage");
+
+        Class<?> kineticClass = Class.forName("com.simibubi.create.content.kinetics.base.KineticBlockEntity");
+        require(kineticClass.isInstance(motorA) && kineticClass.isInstance(motorB),
+            "Create creative motor fixture did not produce kinetic block entities");
+
+        Long networkA = (Long) kineticClass.getField("network").get(motorA);
+        Long networkB = (Long) kineticClass.getField("network").get(motorB);
+        require(networkA != null && networkB != null,
+            "Create creative motors did not initialize kinetic networks");
+
+        Method getOrCreateNetwork = kineticClass.getMethod("getOrCreateNetwork");
+        Object objectA = getOrCreateNetwork.invoke(motorA);
+        Object objectB = getOrCreateNetwork.invoke(motorB);
+        require(!networkA.equals(networkB) && objectA != objectB,
+            "Create kinetic network alias: unconnected sparse generators merged"
+                + " motorA=" + lowerCreateMotorPos()
+                + " motorB=" + upperCreateMotorPos()
+                + " packed=" + lowerCreateMotorPos().asLong()
+                + " networkA=" + networkA
+                + " networkB=" + networkB);
+        createMotorNetworkA = networkA;
+        createMotorNetworkB = networkB;
+    }
+
+    private static void verifyCreateKineticReloaded(ServerLevel level) throws Exception {
+        require(createMotorNetworkA != null && createMotorNetworkB != null,
+            "Create kinetic fixture did not capture pre-reload network IDs");
+
+        Object motorA = level.getBlockEntity(lowerCreateMotorPos());
+        Object motorB = level.getBlockEntity(upperCreateMotorPos());
+        require(motorA != null && motorB != null,
+            "Create creative motor block entities disappeared after sparse reload");
+
+        Class<?> kineticClass = Class.forName("com.simibubi.create.content.kinetics.base.KineticBlockEntity");
+        Long reloadedA = (Long) kineticClass.getField("network").get(motorA);
+        Long reloadedB = (Long) kineticClass.getField("network").get(motorB);
+        require(createMotorNetworkA.equals(reloadedA) && createMotorNetworkB.equals(reloadedB),
+            "Create kinetic network IDs changed across sparse reload"
+                + " beforeA=" + createMotorNetworkA + " afterA=" + reloadedA
+                + " beforeB=" + createMotorNetworkB + " afterB=" + reloadedB);
+
+        Method getOrCreateNetwork = kineticClass.getMethod("getOrCreateNetwork");
+        Object objectA = getOrCreateNetwork.invoke(motorA);
+        Object objectB = getOrCreateNetwork.invoke(motorB);
+        require(!reloadedA.equals(reloadedB) && objectA != objectB,
+            "Create kinetic networks merged after sparse reload");
+
+        // Exercise Create's real network teardown/rebuild path. Generator
+        // removeSource() clears speed/network; updateGeneratedRotation() must
+        // recreate the same stable Endless ID and repopulate capacity without
+        // merging the two formerly-colliding roots.
+        Method removeSource = kineticClass.getMethod("removeSource");
+        Class<?> generatingClass =
+            Class.forName("com.simibubi.create.content.kinetics.base.GeneratingKineticBlockEntity");
+        Method updateGeneratedRotation = generatingClass.getMethod("updateGeneratedRotation");
+        removeSource.invoke(motorA);
+        removeSource.invoke(motorB);
+        require(kineticClass.getField("network").get(motorA) == null
+                && kineticClass.getField("network").get(motorB) == null,
+            "Create kinetic teardown did not clear generator network IDs");
+
+        updateGeneratedRotation.invoke(motorA);
+        updateGeneratedRotation.invoke(motorB);
+        Long rebuiltA = (Long) kineticClass.getField("network").get(motorA);
+        Long rebuiltB = (Long) kineticClass.getField("network").get(motorB);
+        require(reloadedA.equals(rebuiltA) && reloadedB.equals(rebuiltB),
+            "Create kinetic IDs changed after network teardown/rebuild"
+                + " expectedA=" + reloadedA + " rebuiltA=" + rebuiltA
+                + " expectedB=" + reloadedB + " rebuiltB=" + rebuiltB);
+
+        Object rebuiltObjectA = getOrCreateNetwork.invoke(motorA);
+        Object rebuiltObjectB = getOrCreateNetwork.invoke(motorB);
+        require(rebuiltObjectA != rebuiltObjectB, "Create kinetic networks merged after rebuild");
+
+        Class<?> networkClass = Class.forName("com.simibubi.create.content.kinetics.KineticNetwork");
+        Method calculateCapacity = networkClass.getMethod("calculateCapacity");
+        float capacityA = ((Number) calculateCapacity.invoke(rebuiltObjectA)).floatValue();
+        float capacityB = ((Number) calculateCapacity.invoke(rebuiltObjectB)).floatValue();
+        require(capacityA > 0 && capacityB > 0,
+            "Create generator capacity was not restored after kinetic rebuild"
+                + " capacityA=" + capacityA + " capacityB=" + capacityB);
+
+        System.out.println(CREATE_KINETIC_PASS_MARKER
+            + " motorA=" + lowerCreateMotorPos() + " networkA=" + rebuiltA
+            + " motorB=" + upperCreateMotorPos() + " networkB=" + rebuiltB
+            + " capacityA=" + capacityA + " capacityB=" + capacityB);
     }
     /**
      * Load and exercise the actual Waystones 1.20.1 classes when the CI
@@ -652,6 +770,7 @@ public final class LiveHighYServerTest {
         if (Boolean.parseBoolean(System.getProperty(CREATE_SYSTEM_PROPERTY, "false"))) {
             require(level.getBlockState(upperCreateRailPos()).is(Blocks.RAIL),
                 "Create schematic rail disappeared after sparse reload");
+            verifyCreateKineticReloaded(level);
             System.out.println(CREATE_PASS_MARKER + " rail=" + upperCreateRailPos());
         }
         if (Boolean.parseBoolean(System.getProperty(WAYSTONES_SYSTEM_PROPERTY, "false"))) {

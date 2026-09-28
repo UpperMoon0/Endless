@@ -9,7 +9,9 @@
     "ClientHandshakePacketListenerMixin",
     "ClientPacketListenerMixin",
     "BlockStatePredictionHandlerMixin",
-    "RenderChunkMixin"
+    "RenderChunkMixin",
+    "compat.CreateArmInteractionPointHandlerMixin",
+    "compat.CreateEjectorTargetHandlerMixin"
   ],
   "mixins": [
     "FriendlyByteBufMixin",
@@ -36,7 +38,11 @@
     "WalkNodeEvaluatorMixin",
     "FlyNodeEvaluatorMixin",
     "accessor.MinecraftVerticalWorldAccessor",
-    "compat.WaystoneBlockBaseMixin"
+    "compat.WaystoneBlockBaseMixin",
+    "compat.CreateGeneratingKineticBlockEntityMixin",
+    "compat.CreateKineticBlockEntityMixin",
+    "compat.CreateDisplayTargetMixin",
+    "compat.CreateLinkBehaviourMixin"
   ],
   "injectors": {
     "defaultRequire": 1

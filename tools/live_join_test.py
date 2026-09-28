@@ -455,9 +455,23 @@ SCENARIOS.append(Scenario(
     required_server_markers=tuple(
         marker for marker in SCENARIOS[0].required_server_markers
         if marker != "ENDLESS_WAYSTONES_SPARSE_PASS"
-    ) + ("ENDLESS_CREATE_SPARSE_PASS",),
+    ) + ("ENDLESS_CREATE_SPARSE_PASS", "ENDLESS_CREATE_KINETIC_PASS"),
     required_client_markers=SCENARIOS[0].required_client_markers,
 ))
+
+SCENARIOS.append(Scenario(
+    id="create-cold-restart",
+    description="Create sparse kinetic IDs survive a fresh dedicated-server JVM restart",
+    server_kind="modded",
+    server_config=MILLION_BUILD_HEIGHT,
+    client_config=VANILLA_BUILD_HEIGHT,
+    expected=MILLION_BUILD_HEIGHT,
+    server_port=25583,
+    cold_restart=True,
+    create=True,
+    required_server_markers=("ENDLESS_CREATE_KINETIC_COLD_RESTART_PASS",),
+))
+
 # New-version runtime gate: exercise the actual sparse engine, network sync,
 # client prediction, rendering, pathfinding, scheduled mechanics and persistence
 # without imposing the 1.20.1-only Waystones compatibility fixture.
@@ -485,9 +499,11 @@ LIVE_CASES = tuple(
     (target, scenario.id)
     for target in LEGACY_TARGETS
     for scenario in SCENARIOS
-    if scenario.id not in ("port-runtime", "same-jvm-rejoin-full-envelope", "create-compat")
+    if scenario.id not in ("port-runtime", "same-jvm-rejoin-full-envelope", "create-compat", "create-cold-restart")
 ) + tuple((target, "port-runtime") for target in PORT_TARGETS) + tuple(
-    (target, "create-compat") for target in CREATE_TARGETS
+    (target, scenario_id)
+    for target in CREATE_TARGETS
+    for scenario_id in ("create-compat", "create-cold-restart")
 ) + tuple(
     (target, scenario_id)
     for target in PORT_REJOIN_TARGETS
@@ -1010,12 +1026,30 @@ def _run_scenario(root: Path, target: str, module: str, scenario: Scenario, time
             )
         return
 
-    # Phase A saves and gracefully stops. Phase B deliberately reuses the same
-    # world directory but starts a brand-new dedicated-server JVM.
-    run_live_session(root, target, module, scenario, timeout, env, ("ENDLESS_COLD_RESTART_PHASE_A_PASS",))
+    # Phase A saves and gracefully stops. A transport failure before any
+    # Endless marker has not created the persistence fixture, so retry it once
+    # from a virgin server/client directory just like ordinary live scenarios.
+    phase_a_markers = ("ENDLESS_COLD_RESTART_PHASE_A_PASS",) + scenario.required_server_markers
+    try:
+        run_live_session(root, target, module, scenario, timeout, env, phase_a_markers)
+    except TransientPreLoginFailure as first_error:
+        print(f"{label}/phase-A: transient pre-login transport failure; retrying once: {first_error}", flush=True)
+        prepare_server(root / module, scenario)
+        prepare_client(root / module, module, scenario)
+        run_live_session(root, target, module, scenario, timeout, env, phase_a_markers)
+
+    # Phase B deliberately reuses the phase-A world but starts a brand-new
+    # dedicated-server JVM. A pre-login transport retry must therefore preserve
+    # the server directory and only reset the client.
     prepare_client(root / module, module, scenario)
     phase_b_env = scenario_env(scenario, "B")
-    run_live_session(root, target, module, scenario, timeout, phase_b_env, ("ENDLESS_COLD_RESTART_PHASE_B_PASS",))
+    phase_b_markers = ("ENDLESS_COLD_RESTART_PHASE_B_PASS",) + scenario.required_server_markers
+    try:
+        run_live_session(root, target, module, scenario, timeout, phase_b_env, phase_b_markers)
+    except TransientPreLoginFailure as first_error:
+        print(f"{label}/phase-B: transient pre-login transport failure; retrying once: {first_error}", flush=True)
+        prepare_client(root / module, module, scenario)
+        run_live_session(root, target, module, scenario, timeout, phase_b_env, phase_b_markers)
 
 
 def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeout: int) -> None:

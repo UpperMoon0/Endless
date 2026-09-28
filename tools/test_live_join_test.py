@@ -23,7 +23,7 @@ class VerificationPolicyTest(unittest.TestCase):
 
     def test_unique_matrix(self):
         self.assertEqual(len(live.SCENARIOS), len({s.id for s in live.SCENARIOS}))
-        self.assertEqual(27, len(live.LIVE_CASES))
+        self.assertEqual(29, len(live.LIVE_CASES))
         self.assertEqual(len(live.LIVE_CASES), len(set(live.LIVE_CASES)))
 
     def test_million_gameplay_cannot_degrade_to_join_only(self):
@@ -64,12 +64,25 @@ class VerificationPolicyTest(unittest.TestCase):
         self.assertTrue(scenario.gameplay)
         self.assertFalse(scenario.waystones)
         self.assertIn("ENDLESS_CREATE_SPARSE_PASS", scenario.required_server_markers)
+        self.assertIn("ENDLESS_CREATE_KINETIC_PASS", scenario.required_server_markers)
         self.assertNotIn("ENDLESS_WAYSTONES_SPARSE_PASS", scenario.required_server_markers)
         create_cases = {case for case in live.LIVE_CASES if case[1] == "create-compat"}
         self.assertEqual(
             {("forge-1.20.1", "create-compat"), ("neoforge-1.21.1", "create-compat")},
             create_cases,
         )
+    def test_create_cold_restart_is_scoped_to_supported_loaders(self):
+        scenario = next(s for s in live.SCENARIOS if s.id == "create-cold-restart")
+        self.assertTrue(scenario.create)
+        self.assertTrue(scenario.cold_restart)
+        self.assertEqual(live.MILLION_BUILD_HEIGHT, scenario.expected)
+        self.assertIn("ENDLESS_CREATE_KINETIC_COLD_RESTART_PASS", scenario.required_server_markers)
+        create_cases = {case for case in live.LIVE_CASES if case[1] == "create-cold-restart"}
+        self.assertEqual(
+            {("forge-1.20.1", "create-cold-restart"), ("neoforge-1.21.1", "create-cold-restart")},
+            create_cases,
+        )
+
     def test_same_jvm_rejoin_is_exact_integrated_lifecycle_gate(self):
         scenario = next(s for s in live.SCENARIOS if s.id == "same-jvm-rejoin")
         self.assertTrue(scenario.integrated_rejoin)
@@ -114,7 +127,7 @@ class VerificationPolicyTest(unittest.TestCase):
                          live.required_client_markers_for("fabric-1.20.1", legacy))
 
     def test_cold_restart_uses_far_envelope(self):
-        scenario = next(s for s in live.SCENARIOS if s.cold_restart)
+        scenario = live.SCENARIO_BY_ID["cold-restart"]
         self.assertEqual(live.FAR_BUILD_HEIGHT, scenario.expected)
 
     def test_windows_graphical_session_selection_is_dynamic(self):
@@ -222,6 +235,29 @@ class OutputEvidenceTest(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "real assertion"):
                     live._run_scenario(root, "fabric-1.20.1", "fabric", scenario, 1)
             self.assertEqual(1, run_session.call_count)
+
+    def test_cold_restart_retries_prelogin_transport_without_destroying_phase_a_world(self):
+        scenario = next(s for s in live.SCENARIOS if s.id == "create-cold-restart")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            effects = [
+                live.TransientPreLoginFailure("phase-a transport"),
+                None,
+                live.TransientPreLoginFailure("phase-b transport"),
+                None,
+            ]
+            with patch.object(live, "prepare_server") as prepare_server, \
+                 patch.object(live, "prepare_client") as prepare_client, \
+                 patch.object(live.subprocess, "run"), \
+                 patch.object(live, "run_live_session", side_effect=effects) as run_session:
+                live._run_scenario(root, "forge-1.20.1", "forge-1.20.1", scenario, 1)
+
+            self.assertEqual(4, run_session.call_count)
+            self.assertEqual(2, prepare_server.call_count)
+            self.assertEqual(4, prepare_client.call_count)
+            self.assertEqual("A", run_session.call_args_list[1].args[5]["ENDLESS_TEST_COLD_RESTART_PHASE"])
+            self.assertEqual("B", run_session.call_args_list[2].args[5]["ENDLESS_TEST_COLD_RESTART_PHASE"])
+            self.assertEqual("B", run_session.call_args_list[3].args[5]["ENDLESS_TEST_COLD_RESTART_PHASE"])
 
     def test_failure_receipt_survives_exception(self):
         with tempfile.TemporaryDirectory() as tmp:

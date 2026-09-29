@@ -109,8 +109,7 @@ public final class LiveCreateContraptionSerializationTest {
             .getMethod("create", Level.class, contraptionType, Direction.class)
             .invoke(null, level, contraption, Direction.NORTH);
         require(carrier != null, "mounted entity initialization failed");
-        CompoundTag saved = (CompoundTag) contraptionType.getMethod("writeNBT", boolean.class)
-            .invoke(contraption, false);
+        CompoundTag saved = LiveCreateNbt.writeContraption(level, contraption);
         Object restored = contraptionType.getMethod("fromNBT", Level.class, CompoundTag.class, boolean.class)
             .invoke(null, level, saved, false);
         require(restored != null, "Contraption.fromNBT returned null");

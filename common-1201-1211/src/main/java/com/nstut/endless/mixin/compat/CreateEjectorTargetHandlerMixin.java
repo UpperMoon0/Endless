@@ -1,6 +1,7 @@
 package com.nstut.endless.mixin.compat;
 
 import com.nstut.endless.compat.create.CreateEjectorCacheKey;
+import java.lang.ref.WeakReference;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -21,15 +22,15 @@ public abstract class CreateEjectorTargetHandlerMixin {
     @Shadow(remap = false) private static BlockPos currentSelection;
     @Shadow(remap = false) private static ItemStack currentItem;
     @Unique private static CreateEjectorCacheKey endless$lastCacheKey;
-    @Unique private static Object endless$lastWorld;
+    @Unique private static WeakReference<Object> endless$lastWorld = new WeakReference<>(null);
 
     @Inject(method = "tick", at = @At("HEAD"), require = 1, remap = false)
     private static void endless$invalidatePackedAlias(CallbackInfo ci) {
         Object world = Minecraft.getInstance().level;
-        if (world != endless$lastWorld) {
+        if (world != endless$lastWorld.get()) {
             currentSelection = null;
             currentItem = null;
-            endless$lastWorld = world;
+            endless$lastWorld = new WeakReference<>(world);
             endless$lastCacheKey = null;
         }
         CreateEjectorCacheKey key = endless$cacheKey();

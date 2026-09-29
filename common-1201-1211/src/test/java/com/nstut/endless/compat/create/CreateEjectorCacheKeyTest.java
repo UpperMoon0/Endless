@@ -53,4 +53,18 @@ class CreateEjectorCacheKeyTest {
         assertNull(CreateEjectorCacheKey.of(null, hit(pos, Direction.UP), false));
         assertNull(CreateEjectorCacheKey.of(world, BlockHitResult.miss(Vec3.ZERO, Direction.UP, pos), false));
     }
+    @Test void releasedWorldInvalidatesEvenOtherwiseIdenticalCachedContext() {
+        Object world = new Object();
+        BlockPos pos = new BlockPos(4, 1_000_000, 7);
+        var a = CreateEjectorCacheKey.of(world, hit(pos, Direction.UP), false);
+        var b = CreateEjectorCacheKey.of(world, hit(pos, Direction.UP), false);
+        assertTrue(a.sameContext(b));
+        // Clear the reference deterministically; no GC timing assumptions.
+        a.world().clear();
+        assertFalse(a.sameContext(b));
+        assertFalse(a.sameContext(a));
+        b.world().clear();
+        assertFalse(a.sameContext(b));
+    }
+
 }

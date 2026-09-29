@@ -13,6 +13,7 @@ import net.minecraft.world.level.storage.DimensionDataStorage;
 import net.minecraft.world.level.storage.LevelResource;
 
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 
 import java.util.HashMap;
@@ -136,7 +137,7 @@ public final class CreateKineticIdData extends SavedData {
     private static CreateKineticIdData newAllocatorOnlyIfAbsent(Path dataFile) {
         // notExists distinguishes a confirmed missing file from inaccessible/unknown
         // status. Do not replace the corrupt file: the operator can restore a backup.
-        if (!Files.notExists(dataFile)) {
+        if (!Files.notExists(dataFile, LinkOption.NOFOLLOW_LINKS)) {
             throw new IllegalStateException("Refusing to reset unreadable Endless/Create kinetic allocator: "
                 + dataFile + "; restore this dimension's allocator from a verified backup");
         }

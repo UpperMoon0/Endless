@@ -68,6 +68,24 @@ public final class CreateKineticStorageProbe {
         System.out.println("ENDLESS_CREATE_ALLOCATOR_FAIL_CLOSED_PASS diskBacked=true cases=4");
     }
 
+    /** A filesystem entry still exists when a symlink's target has disappeared. */
+    public static void verifyDanglingAllocatorRefused(Path folder) throws IOException {
+        SharedConstants.tryDetectVersion();
+        Files.createDirectories(folder);
+        Path dataFile = file(folder);
+        Files.createSymbolicLink(dataFile, Path.of("missing-allocator-target.dat"));
+        DimensionDataStorage storage = storage(folder);
+        boolean refused = false;
+        try {
+            CreateKineticIdData.getOrCreate(storage, dataFile).idForPosition(new BlockPos(10, 1_000_000, 10));
+        } catch (IllegalStateException expected) {
+            refused = expected.getMessage().contains("Refusing to reset");
+        }
+        require(refused, "dangling allocator symlink silently started a new namespace");
+        storage.save();
+        require(Files.isSymbolicLink(dataFile), "dangling allocator link was overwritten");
+    }
+
     private static Path file(Path folder) { return folder.resolve(CreateKineticIdData.DATA_NAME + ".dat"); }
     private static DimensionDataStorage storage(Path folder) { return new DimensionDataStorage(folder.toFile(), null, null); }
     private static void write(Path file, CompoundTag data) throws IOException {

@@ -9,6 +9,12 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.dimension.DimensionType;
+import net.minecraft.world.level.storage.DimensionDataStorage;
+import net.minecraft.world.level.storage.LevelResource;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -37,6 +43,13 @@ public final class CreateKineticIdData extends SavedData {
 
     public static CreateKineticIdData load(CompoundTag tag) {
         CreateKineticIdData data = new CreateKineticIdData();
+        if (!tag.contains("NextSequence", Tag.TAG_LONG) || !tag.contains("Entries", Tag.TAG_LIST)) {
+            throw new IllegalArgumentException("Missing or invalid Endless/Create kinetic allocator fields");
+        }
+        ListTag rawEntries = (ListTag) tag.get("Entries");
+        if (!rawEntries.isEmpty() && rawEntries.getElementType() != Tag.TAG_COMPOUND) {
+            throw new IllegalArgumentException("Invalid Endless/Create kinetic allocator entry list");
+        }
         long persistedNext = tag.getLong("NextSequence");
         if (persistedNext < 0 || persistedNext > MAX_SEQUENCE_EXCLUSIVE) {
             throw new IllegalArgumentException("Invalid Endless/Create kinetic next sequence " + persistedNext);
@@ -47,6 +60,11 @@ public final class CreateKineticIdData extends SavedData {
         long highestSequence = -1;
         for (int i = 0; i < entries.size(); i++) {
             CompoundTag entry = entries.getCompound(i);
+            if (!entry.contains("X", Tag.TAG_INT) || !entry.contains("Y", Tag.TAG_INT)
+                || !entry.contains("Z", Tag.TAG_INT) || !entry.contains("Id", Tag.TAG_LONG)
+                || !EndlessHeights.isOutsideDenseBuildHeight(entry.getInt("Y"))) {
+                throw new IllegalArgumentException("Invalid Endless/Create kinetic allocator position record");
+            }
             PositionKey key = new PositionKey(entry.getInt("X"), entry.getInt("Y"), entry.getInt("Z"));
             long id = entry.getLong("Id");
             long sequence = sequenceForSyntheticId(id);
@@ -88,18 +106,34 @@ public final class CreateKineticIdData extends SavedData {
         if (!EndlessHeights.isOutsideDenseBuildHeight(pos.getY())) {
             throw new IllegalArgumentException("Create synthetic kinetic ID requested inside Endless dense core: " + pos);
         }
-        CreateKineticIdData data = level.getDataStorage().computeIfAbsent(
-            new SavedData.Factory<>(
-                CreateKineticIdData::new,
-                (tag, registries) -> CreateKineticIdData.load(tag),
-                null
-            ),
-            DATA_NAME
-        );
-        return data.idForPosition(pos);
+        Path worldRoot = level.getServer().getWorldPath(LevelResource.ROOT);
+        Path dataFile = DimensionType.getStorageFolder(level.dimension(), worldRoot)
+            .resolve("data").resolve(DATA_NAME + ".dat");
+        return getOrCreate(level.getDataStorage(), dataFile).idForPosition(pos);
     }
 
-    private synchronized long idForPosition(BlockPos pos) {
+    /**
+     * The fallback supplier runs OUTSIDE DimensionDataStorage's catch-and-return-null
+     * boundary. Existing/unreadable storage must never become a fresh ID namespace.
+     * Package visibility also lets disk-backed tests exercise the actual boundary.
+     */
+    static CreateKineticIdData getOrCreate(DimensionDataStorage storage, Path dataFile) {
+        return storage.computeIfAbsent(new SavedData.Factory<>(
+            () -> newAllocatorOnlyIfAbsent(dataFile),
+            (tag, registries) -> load(tag), null), DATA_NAME);
+    }
+
+    private static CreateKineticIdData newAllocatorOnlyIfAbsent(Path dataFile) {
+        // notExists distinguishes a confirmed missing file from inaccessible/unknown
+        // status. Do not replace the corrupt file: the operator can restore a backup.
+        if (!Files.notExists(dataFile)) {
+            throw new IllegalStateException("Refusing to reset unreadable Endless/Create kinetic allocator: "
+                + dataFile + "; restore this dimension's allocator from a verified backup");
+        }
+        return new CreateKineticIdData();
+    }
+
+    synchronized long idForPosition(BlockPos pos) {
         PositionKey key = PositionKey.of(pos);
         Long existing = ids.get(key);
         if (existing != null) {

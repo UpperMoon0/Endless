@@ -38,9 +38,10 @@ import signal
 import subprocess
 import sys
 import threading
+import tempfile
 import time
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 
@@ -696,6 +697,37 @@ def wait_for_live_join_outcome(
     return None
 
 
+
+def wait_for_session_completion(
+    client_output: OutputPump, server_output: OutputPump, timeout: int, label: str,
+    server_markers: tuple[str, ...], client_markers: tuple[str, ...] = (),
+) -> None:
+    """Coordinate shutdown: client PASS alone is never permission to leave early."""
+    deadline = time.monotonic() + timeout
+    missing_server, missing_client = list(server_markers), list(client_markers)
+    while time.monotonic() < deadline:
+        server_history, client_history = list(server_output.history), list(client_output.history)
+        for history, markers, side in (
+            (server_history, SERVER_FATAL_MARKERS, "server"),
+            (client_history, (FAIL_MARKER, PRE_LOGIN_FAIL_MARKER), "client"),
+        ):
+            failure = next((line for line in history if any(m in line for m in markers)), None)
+            if failure is not None:
+                raise RuntimeError(f"{label}: {side} reported failure: {failure.rstrip()}")
+        missing_server = [m for m in server_markers if not any(m in line for line in server_history)]
+        missing_client = [m for m in client_markers if not any(m in line for line in client_history)]
+        if not missing_server and not missing_client:
+            return
+        if any("lost connection:" in line for line in server_history):
+            raise RuntimeError(f"{label}: client disconnected before server/client completion")
+        if client_output.process.poll() is not None or client_output.exhausted():
+            raise RuntimeError(f"{label}: client exited before server/client completion")
+        if server_output.exhausted():
+            raise RuntimeError(f"{label}: server exited before required completion markers")
+        time.sleep(0.1)
+    raise RuntimeError(f"{label}: missing required marker(s): server={missing_server}, client={missing_client}")
+
+
 def command(root: Path, task: str) -> list[str]:
     wrapper = root / ("gradlew.bat" if os.name == "nt" else "gradlew")
     return [
@@ -938,10 +970,10 @@ def run_live_session(
         if PASS_MARKER not in outcome:
             raise RuntimeError(f"{label}: client reported failure: {outcome.rstrip()}")
 
-        if required_server_markers:
-            server_output.wait_until_seen(required_server_markers, min(timeout, 90), SERVER_FATAL_MARKERS)
-        if required_client_markers:
-            client_output.wait_until_seen(required_client_markers, min(timeout, 30), (FAIL_MARKER, PRE_LOGIN_FAIL_MARKER))
+        wait_for_session_completion(
+            client_output, server_output, min(timeout, 90), label,
+            required_server_markers, required_client_markers,
+        )
         print(f"{label}: PASS ({outcome.rstrip()})", flush=True)
         stop_tree(client)
         client = None
@@ -988,6 +1020,46 @@ def run_integrated_rejoin(
         print(f"{label}: PASS ({line.rstrip()})", flush=True)
     finally:
         stop_tree(client)
+
+
+
+def verify_missing_allocator_rejected(
+    root: Path, target: str, module: str, scenario: Scenario, timeout: int,
+) -> None:
+    """Negative control on a disposable phase-A world, restored before real phase B.
+
+    Only the independent persistence mismatch is accepted. Crashes, transport
+    failures, timeout, or a successful phase B cannot satisfy this regression.
+    """
+    world = root / module / "run" / "live-join" / "server" / "live-join-world"
+    allocator = world / "data" / "endless_create_kinetic_ids.dat"
+    if not allocator.is_file() or not (world / "endless-live-create-expected-ids.txt").is_file():
+        raise RuntimeError("Create persistence negative control requires a completed phase-A checkpoint")
+    negative = replace(scenario, id=scenario.id + "-missing-allocator")
+    evidence = root / "build" / "live-join-evidence" / target / negative.id / "phase-B"
+    with tempfile.TemporaryDirectory(prefix="create-allocator-control-", dir=world.parent.parent) as directory:
+        checkpoint = Path(directory) / "world"
+        shutil.copytree(world, checkpoint)
+        try:
+            allocator.unlink()
+            prepare_client(root / module, module, negative)
+            try:
+                run_live_session(root, target, module, negative, timeout, scenario_env(negative, "B"),
+                                 ("ENDLESS_COLD_RESTART_PHASE_B_PASS",) + scenario.required_server_markers)
+            except RuntimeError as error:
+                log = evidence / "server.log"
+                output = log.read_text(encoding="utf-8", errors="replace") if log.is_file() else ""
+                if "ENDLESS_CREATE_PERSISTENCE_MISMATCH" not in output:
+                    raise RuntimeError("Create allocator negative control failed for an unrelated reason") from error
+                if "ENDLESS_COLD_RESTART_PHASE_B_PASS" in output:
+                    raise RuntimeError("Create allocator negative control emitted a contradictory phase-B pass") from error
+                print(f"{target}/{negative.id}: PASS (missing allocator rejected by independent phase-A identities)", flush=True)
+            else:
+                raise RuntimeError("Create allocator negative control unexpectedly passed without persisted allocator")
+        finally:
+            if world.exists():
+                shutil.rmtree(world)
+            shutil.copytree(checkpoint, world)
 
 
 def _run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeout: int) -> None:
@@ -1038,12 +1110,17 @@ def _run_scenario(root: Path, target: str, module: str, scenario: Scenario, time
         prepare_client(root / module, module, scenario)
         run_live_session(root, target, module, scenario, timeout, env, phase_a_markers)
 
+    if scenario.create:
+        verify_missing_allocator_rejected(root, target, module, scenario, timeout)
+
     # Phase B deliberately reuses the phase-A world but starts a brand-new
     # dedicated-server JVM. A pre-login transport retry must therefore preserve
     # the server directory and only reset the client.
     prepare_client(root / module, module, scenario)
     phase_b_env = scenario_env(scenario, "B")
     phase_b_markers = ("ENDLESS_COLD_RESTART_PHASE_B_PASS",) + scenario.required_server_markers
+    if scenario.create:
+        phase_b_markers += ("ENDLESS_CREATE_MIGRATION_PASS", "ENDLESS_CREATE_ALLOCATOR_FAIL_CLOSED_PASS")
     try:
         run_live_session(root, target, module, scenario, timeout, phase_b_env, phase_b_markers)
     except TransientPreLoginFailure as first_error:

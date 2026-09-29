@@ -204,6 +204,32 @@ class OutputEvidenceTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "server reported failure"):
             live.wait_for_live_join_outcome(client, server, 1, "test")
 
+    def test_session_completion_waits_for_server_after_client_pass(self):
+        server = Mock(history=[], process=Mock())
+        client = Mock(history=[live.PASS_MARKER], process=Mock())
+        client.process.poll.return_value = None
+        client.exhausted.return_value = False
+        server.exhausted.return_value = False
+        def complete(_):
+            server.history.append("SERVER_DONE")
+        with patch.object(live.time, "sleep", side_effect=complete) as wait:
+            live.wait_for_session_completion(client, server, 1, "test", ("SERVER_DONE",))
+        wait.assert_called_once()
+
+    def test_client_pass_cannot_hide_disconnect_or_early_exit(self):
+        for disconnected in (True, False):
+            server = Mock(history=["player lost connection: Disconnected"] if disconnected else [])
+            client = Mock(history=[live.PASS_MARKER])
+            client.process.poll.return_value = 0
+            with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
+                live.wait_for_session_completion(client, server, 1, "test", ("SERVER_DONE",))
+
+    def test_completion_failure_wins_over_all_pass_markers(self):
+        server = self.pump("SERVER_DONE\nENDLESS_COLD_RESTART_FAIL broken\n")
+        client = self.pump(live.PASS_MARKER + "\n")
+        with self.assertRaisesRegex(RuntimeError, "server reported failure"):
+            live.wait_for_session_completion(client, server, 1, "test", ("SERVER_DONE",))
+
     def test_integrated_rejoin_has_slow_save_wall_clock_floor(self):
         self.assertGreaterEqual(live.INTEGRATED_REJOIN_MIN_TIMEOUT, 600)
 
@@ -249,6 +275,7 @@ class OutputEvidenceTest(unittest.TestCase):
             with patch.object(live, "prepare_server") as prepare_server, \
                  patch.object(live, "prepare_client") as prepare_client, \
                  patch.object(live.subprocess, "run"), \
+                 patch.object(live, "verify_missing_allocator_rejected"), \
                  patch.object(live, "run_live_session", side_effect=effects) as run_session:
                 live._run_scenario(root, "forge-1.20.1", "forge-1.20.1", scenario, 1)
 
@@ -275,3 +302,31 @@ class OutputEvidenceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AllocatorNegativeControlTest(unittest.TestCase):
+    def test_only_independent_mismatch_is_accepted_and_phase_a_is_restored(self):
+        scenario = live.SCENARIO_BY_ID["create-cold-restart"]
+        for result in ("mismatch", "unrelated", "success"):
+            with self.subTest(result=result), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                world = root / "forge-1.20.1/run/live-join/server/live-join-world"
+                allocator = world / "data/endless_create_kinetic_ids.dat"
+                allocator.parent.mkdir(parents=True)
+                allocator.write_bytes(b"original allocator")
+                (world / "endless-live-create-expected-ids.txt").write_text("2033\n2034\n2032\n")
+                def session(*args):
+                    self.assertFalse(allocator.exists())
+                    if result == "success": return
+                    evidence = root / "build/live-join-evidence/forge-1.20.1/create-cold-restart-missing-allocator/phase-B"
+                    evidence.mkdir(parents=True)
+                    (evidence / "server.log").write_text(
+                        "ENDLESS_CREATE_PERSISTENCE_MISMATCH" if result == "mismatch" else "unrelated crash")
+                    raise RuntimeError("fixture failure")
+                with patch.object(live, "prepare_client"), patch.object(live, "run_live_session", side_effect=session):
+                    if result == "mismatch":
+                        live.verify_missing_allocator_rejected(root, "forge-1.20.1", "forge-1.20.1", scenario, 1)
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, "unrelated reason|unexpectedly passed"):
+                            live.verify_missing_allocator_rejected(root, "forge-1.20.1", "forge-1.20.1", scenario, 1)
+                self.assertEqual(b"original allocator", allocator.read_bytes())

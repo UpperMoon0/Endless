@@ -8,16 +8,17 @@ test alone does not certify real player interaction at large heights.
 
 | Layer | Coverage | Cost control |
 | --- | --- | --- |
-| Core | Both loader builds; JUnit storage, codec, config, logical/dense geometry and migration regressions | One Gradle build |
+| Core | Shared/versioned JUnit storage, codec, config, logical/dense geometry and migration regressions; NeoForge-backed allocator test | `testAllVersions`; loader storage is not mocked |
 | Harness | Scenario selection, marker failures, commit receipts, concurrent-run exclusion and failure evidence | Python standard library, no game boots |
 | Extended gameplay | Commands, boundaries, blocks/fluids/block entities, POIs, lighting, scheduled mechanics, persistence reload, Waystones, navigation, real client place/break and acknowledged prediction | Shared small fixtures at both edges |
 | Million gameplay | The same complete gameplay assertions in `[-1,048,576, 1,048,576)` | Reuses the extended scenario; bounded X/Z and vertical windows |
 | Representation envelope | Sparse access, POIs and page packet/storage round trips near ±8,000,000 | Lightweight smoke, no full-height scans |
 | Cold restart | Blocks, fluids, block entities, redstone, light and POIs near ±8,000,000 after a fresh server JVM | Two launches reuse only that scenario's saved world |
 | Same-JVM rejoin | Automated save/close/reopen in one client JVM on both a migrated legacy Y=1,000,000 save and a fresh +/-8M world at Y=6,000,000; generic block-entity registration, completed render-section membership and visible ordinary solid meshes at distance 12; dense canary preservation | Shell/CI launches the self-driving graphical client; no manual navigation |
+| Create compatibility | Pinned Forge 1.20.1 / Create 6.0.8 and NeoForge 1.21.1 / Create 6.0.11: rails, kinetic identity, independent fresh-JVM persistence, connected legacy migration, and corrupt-storage refusal | Two existing scenarios per supported Create target; extra probes stay inside cold restart |
 | Compatibility baselines | Vanilla-range Endless server and genuine vanilla server, including stale client range reset | No gameplay compatibility dependencies |
 
-The live matrix contains **25 required cells**: 16 Fabric/Forge 1.20.1 cells, three port-runtime cells for Fabric 1.21.1 / NeoForge 1.21.1 / NeoForge 26.1.2, and six same-JVM rejoin cells across all three modern targets. The rejoin pair per modern target covers both the migrated 254-section legacy dense layout at Y=1,000,000 and the exact fresh full-envelope regression at Y=6,000,000 with render distance 12. Each rejoin creates the world, installs multiple vanilla block-entity types, saves and shuts down the integrated server, waits for the exact server thread to release the world lock, reopens the same save in the same client JVM, and requires every block entity to appear in a completed render section without interaction. Block-entity evidence uses full XYZ coordinates rather than vanilla's packed `BlockPos.asLong()` representation. The dense canary must also survive and render again.
+The live matrix contains **29 required cells**: 16 Fabric/Forge 1.20.1 cells, four Create compatibility/cold-restart cells, three port-runtime cells for Fabric 1.21.1 / NeoForge 1.21.1 / NeoForge 26.1.2, and six same-JVM rejoin cells across all three modern targets. The rejoin pair per modern target covers both the migrated 254-section legacy dense layout at Y=1,000,000 and the exact fresh full-envelope regression at Y=6,000,000 with render distance 12. Each rejoin creates the world, installs multiple vanilla block-entity types, saves and shuts down the integrated server, waits for the exact server thread to release the world lock, reopens the same save in the same client JVM, and requires every block entity to appear in a completed render section without interaction. Block-entity evidence uses full XYZ coordinates rather than vanilla's packed `BlockPos.asLong()` representation. The dense canary must also survive and render again.
 
 The harness launches graphical clients itself. Linux uses `xvfb-run` when `DISPLAY` is absent. On Windows, a service-session runner discovers the active logged-in desktop and launches the self-driving client there with Windows session APIs; no keyboard, mouse, menu navigation, or manual client launch is part of the test. The scenario list in `tools/live_join_test.py` generates both the CI matrix and the receipt requirements, preventing the gate from silently omitting a new scenario.
 Missing, extra and stale receipts fail verification. CI cancels superseded PR
@@ -82,18 +83,33 @@ and bounded startup/gameplay deadlines. Across the live placement probes, an
 acknowledged AIR observation gets 40 client ticks to settle before another
 placement is attempted, up to three attempts. Each attempt and the subsequent
 break require fresh prediction acknowledgements; persistent rejection still
-fails. The harness never reruns a failed scenario or weakens required markers.
+fails. The harness never retries a failed assertion or weakens required markers. Only a transport/startup failure before any Endless verification progress can receive one retry; a phase-B retry preserves the saved phase-A world.
+
+## Create review regressions
+
+The Create cold-restart gate first saves two isolated generators whose positions alias under `BlockPos.asLong()`, plus an unused sentinel allocation. Phase A leaves the synthetic network IDs intact in block-entity NBT and writes an independent three-ID checkpoint. The harness makes a disposable copy of that world, removes only the allocator, starts a fresh phase-B JVM, and requires `ENDLESS_CREATE_PERSISTENCE_MISMATCH`. An unrelated crash, timeout, transport error, or successful phase B fails the negative control. The original world is restored in `finally` before the real phase-B launch. Logs for this expected failure are kept under `create-cold-restart-missing-allocator/phase-B`; they are not a passing production launch or a release receipt.
+
+Only after positive phase-B identities match the independent checkpoint does the server run separate legacy-NBT fixtures. A real creative motor, shaft, mechanical press, and second overpowered generator are restored from saved NBT in root-first, follower-first, and late-follower orders. Assertions require identical network objects, complete member/source maps, exact nonzero stress and capacity, and propagated overstress/recovery. Numeric ID uniqueness or nonzero RPM alone cannot pass. Required final markers include `ENDLESS_CREATE_MIGRATION_PASS` and `ENDLESS_CREATE_ALLOCATOR_FAIL_CLOSED_PASS` before `ENDLESS_COLD_RESTART_PHASE_B_PASS`.
+
+Allocator probes write duplicate IDs, missing fields, wrongly typed lists, and truncated compressed NBT to disk, then call the production allocator through `DimensionDataStorage.computeIfAbsent()`, including a repeat after its cached-null read. Allocation must fail and saving must not overwrite the corrupt file. New-file and valid-file controls must succeed. `testAllVersions` runs the 1.21.1 storage test in NeoForge's supported JUnit environment: NeoForge permits a custom SavedData factory without vanilla DFU, whereas Loom's vanilla common-test classpath does not. The live probe repeats the checks in the actual dedicated loader JVM on both Create targets.
+
+Ejector JUnit regressions exercise all hit faces, wrench/placement modes, world identity, reset/MISS, and effective placement-cell aliases where even the raw hit positions do not alias. These are full-coordinate cache-key tests, not captured final GUI trajectory images. Display/redstone copy/relocation coverage, enlarged/imported contraptions, complete Flywheel lighting/culling, and packaged production-launch testing remain separate verification scopes.
+
+Ordinary and high-Y clients report local PASS without disconnecting. The harness shuts them down only after all required client and server markers are present, and fails immediately on an early client exit/disconnect while evidence is missing. The server cold-restart fixture also explicitly rejects a disconnect after it starts. Existing bounded deadlines remain unchanged; there is no assertion retry or longer-timeout workaround.
 
 ## Run locally
 
 From the repository root (use `gradlew.bat` on Windows):
 
 ```sh
-./gradlew build --no-daemon
+./gradlew testAllVersions --no-daemon
+./gradlew :fabric-1.20.1:build :forge-1.20.1:build --no-daemon
 python -m unittest discover -s tools -p 'test_*.py' -v
 python tools/live_join_test.py --target fabric-1.20.1 --scenario extended-server
 python tools/live_join_test.py --target forge-1.20.1 --scenario million-gameplay
 python tools/live_join_test.py --target forge-1.20.1 --scenario full-envelope-gameplay
+python tools/live_join_test.py --target forge-1.20.1 --scenario create-cold-restart
+python tools/live_join_test.py --target neoforge-1.21.1 --scenario create-cold-restart
 python tools/live_join_test.py
 ```
 

@@ -16,7 +16,7 @@ Endless lets you build higher and dig deeper than ever before. In v0.7, you can 
 * **Heightmaps, Lighting and POIs** — Sparse blocks participate in supported height queries, block/sky lighting, and point-of-interest storage without widening vanilla section arrays.
 * **Server-Authoritative Multiplayer** — Servers synchronize the configured logical range and dense layout before sparse world data is used. Extended worlds require Endless v0.7-compatible clients.
 * **Waystones Compatibility** - Development/runtime compatibility coverage is included where matching Waystones artifacts are available; the 1.20.1 sparse placement path is explicitly exercised by the live matrix.
-* **Create Compatibility** - The live matrix explicitly covers Create 6.0.8 on Forge 1.20.1 and Create 6.0.11 on NeoForge 1.21.1, including sparse schematic rails and persistent kinetic-network identity at high Y.
+* **Create Compatibility** - Targeted development-runtime gates cover Create 6.0.8 on Forge 1.20.1 and Create 6.0.11 on NeoForge 1.21.1: sparse schematic rails, saved kinetic identities, and connected legacy-network migration with stress/capacity checks. This is not blanket support for every Create/Flywheel behavior.
 * **Camera-Following Rendering** — The client renders a 512-block vertical window around the camera instead of allocating render chunks for the entire logical build range.
 * **Void Damage at the Boundary** — The below-world kill plane follows your configured minimum and triggers 64 blocks below it.
 
@@ -76,12 +76,15 @@ Worlds upgraded from older Endless versions may retain a wider historical dense 
 
 Played pre-v0.4 worlds are inspected before chunks load. If Endless cannot prove that an old layout can be migrated safely, startup fails closed instead of allowing Minecraft to silently discard sections. Back up important worlds before upgrading.
 
+The per-dimension `data/endless_create_kinetic_ids.dat` file belongs in world backups. An unreadable or invalid existing allocator is refused rather than reset. Restore matching allocator/world data from a verified backup; deleting the allocator to bypass an error can reuse existing network identities.
+
 ## Limitations
 
 * **World generation** — Natural terrain still uses the generator's normal vertical range. Endless adds buildable space; it does not generate terrain millions of blocks high or deep by default.
 * **Rendering distance vertically** — The client keeps a 512-block vertical render window around the camera. Far-away sparse pages remain saved and active server-side but are rendered when the camera approaches them.
 * **Representation envelope** — v0.7 is practically unbounded, not mathematically infinite. The supported logical range is `[-8000000, 8000000)`.
 * **Mod compatibility** — Mods using normal `Level`, `LevelChunk`, `BlockPos`, block entity, tick, POI, heightmap and brightness APIs can work through Endless' routing. Mods that directly pack high-Y positions with `BlockPos.asLong()`, assume `chunk.getSections()` contains every possible Y, or inspect vanilla light storage internals may retain vanilla limits in their own code.
+* **Create verification scope** — Final ejector-preview pixels, all display/redstone copying and relocation workflows, enlarged/imported contraptions, packaged production launches, and complete Flywheel lighting/culling behavior are not certified by the targeted development tests.
 * **Multiplayer clients** — Sparse v0.7 worlds require Endless v0.7-compatible clients; vanilla clients cannot join an extended-range Endless server.
 
 ### Suggestions & Bug Reports

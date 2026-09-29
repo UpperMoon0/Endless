@@ -38,7 +38,7 @@ The ±8,000,000 representation envelope is deliberate. It stays inside Minecraft
 - **Sparse POI Support** — High-Y POIs use dedicated sparse persistence/search instead of widening vanilla SectionStorage loops.
 - **Server-Authoritative Protocol** — The server synchronizes both its configured logical range and internal dense-core layout before chunk/page data is used.
 - **Waystones Compatibility** — Waystones 1.20.1 placement uses the configured logical ceiling and high-Y Waystone block entities/positions travel through the extended storage/network path.
-- **Create Compatibility** — Forge 1.20.1 / Create 6.0.8 and NeoForge 1.21.1 / Create 6.0.11 are explicitly covered for sparse schematic rails and collision-free persistent kinetic generator networks.
+- **Create Compatibility** — Targeted compatibility and development-runtime regression gates for schematic rails and sparse kinetic networks on Forge 1.20.1 / Create 6.0.8 and NeoForge 1.21.1 / Create 6.0.11; this is not a blanket certification of Create or Flywheel.
 - **Camera-Following Rendering** — A 512-block vertical render window follows the player instead of allocating GPU render chunks for millions of blocks.
 - **Fail-Closed Legacy Migration** — The v0.4 migration gate is preserved for old dense-world data.
 
@@ -79,7 +79,11 @@ Mods that use ordinary `Level`, `LevelChunk`, `BlockPos`, block entity, tick, PO
 
 Waystones 1.20.1 is explicitly covered: its placement code normally treats `Level#getHeight()` as an absolute ceiling, while Endless deliberately keeps that accessor dense-core-sized. Endless redirects that Waystones placement check to the configured logical maximum and covers its high-Y block entity/position path in the real client/server compatibility test.
 
-Create is explicitly gated on Forge 1.20.1 (Create 6.0.8) and NeoForge 1.21.1 (Create 6.0.11). Endless redirects Create schematic rail placement away from dense-only section indexing, allocates collision-free persistent kinetic network IDs for sparse generators whose vanilla packed positions alias, and preserves exact high-Y positions in Create display-link/redstone-link state and client interaction caches.
+Create compatibility targets Forge 1.20.1 (Create 6.0.8) and NeoForge 1.21.1 (Create 6.0.11). The development-runtime gates exercise schematic rail placement, distinct sparse generator identities, fresh-JVM persistence against an independent checkpoint, and legacy-NBT reconstruction of two connected generators with a real stress consumer in root-first, follower-first, and late-follower load orders. Migration uses Create's network membership and rotation-propagation lifecycle rather than merely changing an ID field.
+
+Each dimension's `data/endless_create_kinetic_ids.dat` is part of the world backup. Existing unreadable or invalid allocator data stops allocation instead of silently starting a new namespace. Restore the matching allocator and world state from a verified backup; do not delete or replace that file to suppress an error. A genuinely absent allocator is initialized for a new namespace, so deleting an established allocator is not a supported recovery procedure.
+
+Display-link/redstone-link full-position persistence and mechanical-arm/ejector cache changes are targeted source-backed fixes. Ejector key regressions cover the hit cell in wrench mode, the face-adjacent cell in placement mode, packed-Y aliases, and world/mode/reset changes. These checks do not certify final GUI trajectory pixels, comprehensive copy/relocation behavior, packaged production launches, or all Flywheel lighting/culling/cache lifetimes. Default-size contraption local-coordinate reasoning does not cover enlarged or imported contraptions (#14); broader destruction-progress aliasing remains tracked separately (#16).
 
 ## Limitations
 
@@ -112,11 +116,11 @@ Run one loader explicitly:
 ./gradlew runNeoForge2612Server
 ```
 
-Use `./gradlew testAllVersions` for shared/version-specific unit tests. Build release artifacts per Minecraft line (for example `:fabric-1.20.1:build :forge-1.20.1:build`, then the 1.21.1 targets in a separate Gradle invocation); Loom production transforms for different Minecraft mapping sets are intentionally isolated.
+Use `./gradlew testAllVersions` for shared/version-specific unit tests and the NeoForge-backed allocator storage regression. Build release artifacts per Minecraft line (for example `:fabric-1.20.1:build :forge-1.20.1:build`, then the 1.21.1 targets in a separate Gradle invocation); Loom production transforms for different Minecraft mapping sets are intentionally isolated.
 
 The live-join CI matrix starts real Fabric and Forge dedicated servers and clients. The extended scenario uses a configured `[-1024,1024)` logical range over a vanilla-sized dense core, exercises blocks, fluid, block entities, POIs, lighting, persistence, rendering and player travel at both configured sparse edges, executes real `/setblock` commands at and just outside those limits, and loads canonical Waystones+Balm artifacts to verify high-Y Waystone placement/manager/client state.
 
-The release gate contains **25 required live cells**: 16 Fabric/Forge 1.20.1 cells, three port-runtime cells for Fabric 1.21.1 / NeoForge 1.21.1 / NeoForge 26.1.2, and six same-JVM rejoin cells covering all three modern targets. Each modern target tests both a migrated legacy `[-2032,2032)` dense save at Y=1,000,000 and a fresh `[-8,000,000,8,000,000)` world at Y=6,000,000. The reopen oracle validates generic vanilla block entities (chest, ender chest and shulker box) with full XYZ keys and requires them to enter a completed render section after save/close/reopen, without any interaction-triggered refresh. Both modern rejoin scenarios run at render distance 12 and also require visible solid geometry for ordinary blocks in two separate sections, including one without block entities.
+The release gate contains **29 required live cells**: 16 Fabric/Forge 1.20.1 cells, four Create compatibility/cold-restart cells, three port-runtime cells for Fabric 1.21.1 / NeoForge 1.21.1 / NeoForge 26.1.2, and six same-JVM rejoin cells covering all three modern targets. Each modern target tests both a migrated legacy `[-2032,2032)` dense save at Y=1,000,000 and a fresh `[-8,000,000,8,000,000)` world at Y=6,000,000. The reopen oracle validates generic vanilla block entities (chest, ender chest and shulker box) with full XYZ keys and requires them to enter a completed render section after save/close/reopen, without any interaction-triggered refresh. Both modern rejoin scenarios run at render distance 12 and also require visible solid geometry for ordinary blocks in two separate sections, including one without block entities.
 
 ## License
 

@@ -66,6 +66,7 @@ public final class LiveJoinTest {
     private static int upperPersistentRetryTick;
     private static boolean extremeClientDone;
     private static int ticksWithLevel;
+    private static boolean ordinaryClientDone;
 
     private LiveJoinTest() {}
 
@@ -126,7 +127,7 @@ public final class LiveJoinTest {
     }
 
     public static boolean tick() {
-        if (!isArmed() || !preLoginChecked) return false;
+        if (!isArmed() || !preLoginChecked || ordinaryClientDone) return false;
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return false;
         ticksWithLevel++;
@@ -172,7 +173,10 @@ public final class LiveJoinTest {
 
         if (ticksWithLevel < 40) return false;
         pass(levelMin, levelHeight, endlessMin, endlessMax, denseMin, denseMax, logical);
-        mc.stop();
+        // PASS is this client's result, not permission to disconnect. The external
+        // harness owns shutdown after BOTH client and required server markers.
+        // In particular cold-restart preparation advances only with a player online.
+        ordinaryClientDone = true;
         return true;
     }
 

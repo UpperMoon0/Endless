@@ -1,6 +1,12 @@
 package com.nstut.endless.testing;
 
 import com.nstut.endless.compat.create.CreateKineticIdData;
+import com.nstut.endless.compat.create.CreateKineticStorageProbe;
+import net.minecraft.world.level.storage.LevelResource;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.io.IOException;
+import java.util.List;
 import com.nstut.endless.heights.EndlessHeights;
 import com.nstut.endless.vertical.EndlessVerticalEngine;
 import com.nstut.endless.vertical.ExtendedPoiStorage;
@@ -37,7 +43,15 @@ public final class LiveColdRestartServerTest {
 
     public static void tick(MinecraftServer server) {
         String phase = System.getProperty(PHASE_PROPERTY, "").trim();
-        if (done || phase.isEmpty() || server.getPlayerList().getPlayers().isEmpty()) return;
+        if (done || phase.isEmpty()) return;
+        if (server.getPlayerList().getPlayers().isEmpty()) {
+            if (ticks > 0) {
+                done = true;
+                System.out.println(FAIL_MARKER + " phase=" + phase + " error=clientDisconnectedBeforeCompletion");
+                throw new IllegalStateException("cold-restart client disconnected before server completion");
+            }
+            return;
+        }
         ticks++;
         if (ticks < 10) return;
         ServerLevel level = server.overworld();
@@ -51,7 +65,7 @@ public final class LiveColdRestartServerTest {
                 }
                 if (!fixtureReady(level)) return;
                 verify(level);
-                persistLegacyCreateNetworkIdsIfRequested(level);
+                persistCreateExpectedIdsIfRequested(level);
                 ExtendedPoiStorage.flush(level, new ChunkPos(poiPos()));
                 EndlessVerticalEngine.world(level).flushDirty();
                 require(server.saveEverything(true, true, true), "dedicated server saveEverything reported failure");
@@ -65,6 +79,13 @@ public final class LiveColdRestartServerTest {
                 }
                 if (!fixtureReady(level)) return;
                 verify(level);
+                if (Boolean.getBoolean(CREATE_PROPERTY)) {
+                    // Persistence has passed independently; only now construct
+                    // separate legacy-NBT migration and corrupt-storage fixtures.
+                    LiveCreateMigrationTest.run(level);
+                    CreateKineticStorageProbe.run(level.getServer().getWorldPath(LevelResource.ROOT)
+                        .resolve("endless-live-allocator-probes"));
+                }
                 done = true;
                 System.out.println(PHASE_B_PASS + " freshJvm=true");
             } else {
@@ -175,26 +196,42 @@ public final class LiveColdRestartServerTest {
             "cold-restart second Create motor write failed");
     }
 
-    private static void persistLegacyCreateNetworkIdsIfRequested(ServerLevel level) {
-        if (!Boolean.parseBoolean(System.getProperty(CREATE_PROPERTY, "false"))) return;
+    private static Path expectedIdsFile(ServerLevel level) {
+        return level.getServer().getWorldPath(LevelResource.ROOT).resolve("endless-live-create-expected-ids.txt");
+    }
+
+    private static void persistCreateExpectedIdsIfRequested(ServerLevel level) throws IOException {
+        if (!Boolean.getBoolean(CREATE_PROPERTY)) return;
+        // Independent oracle, not allocator state and not regenerated in phase B.
+        // Leave the actual synthetic IDs in the motors' saved NBT unchanged.
+        Files.write(expectedIdsFile(level), List.of(
+            Long.toString(CreateKineticIdData.idFor(level, createMotorA())),
+            Long.toString(CreateKineticIdData.idFor(level, createMotorB())),
+            Long.toString(CreateKineticIdData.idFor(level, createSentinelPos()))));
+        System.out.println("ENDLESS_CREATE_EXPECTED_IDENTITIES_SAVED independent=true legacyOverwrite=false");
+    }
+
+    private static void verifyExpectedIds(ServerLevel level, long networkA, long networkB,
+                                         long allocatedA, long allocatedB) {
+        if (!"B".equalsIgnoreCase(System.getProperty(PHASE_PROPERTY, ""))) return;
         try {
-            var motorA = level.getBlockEntity(createMotorA());
-            var motorB = level.getBlockEntity(createMotorB());
-            require(motorA != null && motorB != null,
-                "legacy Create migration fixture block entities missing before save");
-            Class<?> kineticClass = Class.forName("com.simibubi.create.content.kinetics.base.KineticBlockEntity");
-            long legacyPackedId = createMotorA().asLong();
-            require(legacyPackedId == createMotorB().asLong(),
-                "legacy Create migration fixture no longer collides");
-            kineticClass.getField("network").set(motorA, legacyPackedId);
-            kineticClass.getField("network").set(motorB, legacyPackedId);
-            motorA.setChanged();
-            motorB.setChanged();
-            System.out.println("ENDLESS_CREATE_LEGACY_NETWORK_FIXTURE_SAVED id=" + legacyPackedId);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("could not prepare legacy Create network migration fixture", e);
+            List<String> expected = Files.readAllLines(expectedIdsFile(level));
+            require(expected.size() == 3, "ENDLESS_CREATE_PERSISTENCE_MISMATCH invalid independent identity checkpoint");
+            long expectedA = Long.parseLong(expected.get(0));
+            long expectedB = Long.parseLong(expected.get(1));
+            long expectedSentinel = Long.parseLong(expected.get(2));
+            require(networkA == expectedA && networkB == expectedB
+                    && allocatedA == expectedA && allocatedB == expectedB
+                    && CreateKineticIdData.idFor(level, createSentinelPos()) == expectedSentinel,
+                "ENDLESS_CREATE_PERSISTENCE_MISMATCH phase-A identities changed"
+                    + " expected=" + expectedA + "/" + expectedB
+                    + " network=" + networkA + "/" + networkB
+                    + " allocator=" + allocatedA + "/" + allocatedB);
+        } catch (IOException | NumberFormatException e) {
+            throw new IllegalStateException("ENDLESS_CREATE_PERSISTENCE_MISMATCH independent identity checkpoint unreadable", e);
         }
     }
+
     private static void verifyCreateIfRequested(ServerLevel level) {
         if (!Boolean.parseBoolean(System.getProperty(CREATE_PROPERTY, "false"))) return;
         try {
@@ -212,6 +249,7 @@ public final class LiveColdRestartServerTest {
 
             long allocatedA = CreateKineticIdData.idFor(level, createMotorA());
             long allocatedB = CreateKineticIdData.idFor(level, createMotorB());
+            verifyExpectedIds(level, networkA, networkB, allocatedA, allocatedB);
             require(networkA.longValue() == allocatedA && networkB.longValue() == allocatedB,
                 "cold-restart Create SavedData identity does not match persisted block-entity networks"
                     + " networkA=" + networkA + " allocatedA=" + allocatedA

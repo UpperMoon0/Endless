@@ -1023,6 +1023,21 @@ def run_integrated_rejoin(
 
 
 
+def cold_restart_server_markers(scenario: Scenario, phase: str) -> tuple[str, ...]:
+    if not scenario.cold_restart or phase not in ("A", "B"):
+        raise ValueError("cold-restart evidence requires phase A or B of a cold-restart scenario")
+    markers = (f"ENDLESS_COLD_RESTART_PHASE_{phase}_PASS",) + scenario.required_server_markers
+    if phase == "B" and scenario.create:
+        markers += (
+            "ENDLESS_CREATE_MIGRATION_PASS",
+            "ENDLESS_CREATE_ALLOCATOR_FAIL_CLOSED_PASS",
+            "ENDLESS_CREATE_CONTRAPTION_2047_CONTROL_PASS",
+            # Expected upstream defect, NOT a successful serialization assertion.
+            "ENDLESS_CREATE_DEFAULT_CONTRAPTION_LIMITATION_CONFIRMED",
+        )
+    return markers
+
+
 def verify_missing_allocator_rejected(
     root: Path, target: str, module: str, scenario: Scenario, timeout: int,
 ) -> None:
@@ -1045,7 +1060,7 @@ def verify_missing_allocator_rejected(
             prepare_client(root / module, module, negative)
             try:
                 run_live_session(root, target, module, negative, timeout, scenario_env(negative, "B"),
-                                 ("ENDLESS_COLD_RESTART_PHASE_B_PASS",) + scenario.required_server_markers)
+                                 cold_restart_server_markers(scenario, "B"))
             except RuntimeError as error:
                 log = evidence / "server.log"
                 output = log.read_text(encoding="utf-8", errors="replace") if log.is_file() else ""
@@ -1101,7 +1116,7 @@ def _run_scenario(root: Path, target: str, module: str, scenario: Scenario, time
     # Phase A saves and gracefully stops. A transport failure before any
     # Endless marker has not created the persistence fixture, so retry it once
     # from a virgin server/client directory just like ordinary live scenarios.
-    phase_a_markers = ("ENDLESS_COLD_RESTART_PHASE_A_PASS",) + scenario.required_server_markers
+    phase_a_markers = cold_restart_server_markers(scenario, "A")
     try:
         run_live_session(root, target, module, scenario, timeout, env, phase_a_markers)
     except TransientPreLoginFailure as first_error:
@@ -1118,9 +1133,7 @@ def _run_scenario(root: Path, target: str, module: str, scenario: Scenario, time
     # the server directory and only reset the client.
     prepare_client(root / module, module, scenario)
     phase_b_env = scenario_env(scenario, "B")
-    phase_b_markers = ("ENDLESS_COLD_RESTART_PHASE_B_PASS",) + scenario.required_server_markers
-    if scenario.create:
-        phase_b_markers += ("ENDLESS_CREATE_MIGRATION_PASS", "ENDLESS_CREATE_ALLOCATOR_FAIL_CLOSED_PASS")
+    phase_b_markers = cold_restart_server_markers(scenario, "B")
     try:
         run_live_session(root, target, module, scenario, timeout, phase_b_env, phase_b_markers)
     except TransientPreLoginFailure as first_error:
@@ -1141,6 +1154,19 @@ def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeo
         "required_server_markers": scenario.required_server_markers,
         "required_client_markers": required_client_markers_for(target, scenario),
     }
+    if scenario.cold_restart:
+        result["required_server_markers_by_phase"] = {
+            phase: cold_restart_server_markers(scenario, phase) for phase in ("A", "B")
+        }
+    if scenario.cold_restart and scenario.create:
+        result["known_limitations"] = [{
+            "issue": 14,
+            "marker": "ENDLESS_CREATE_DEFAULT_CONTRAPTION_LIMITATION_CONFIRMED",
+            "default_cap": 2048,
+            "before_local_y": 2048,
+            "after_local_y": -2048,
+            "serializer_fixed": False,
+        }]
     try:
         _run_scenario(root, target, module, scenario, timeout)
         result["status"] = "pass"

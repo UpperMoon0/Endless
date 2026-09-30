@@ -7,6 +7,16 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CreateKineticIdDataTest {
+    @Test void provisionalAndGeneratorIdentitiesAreSeparateAtTheSameFullPosition() {
+        var data = new CreateKineticIdData();
+        var pos = new BlockPos(10, 1_000_000, 10);
+        long root = data.idForPosition(pos);
+        long follower = data.idForFollowerPosition(pos);
+        assertNotEquals(root, follower);
+        assertEquals(root, data.idForPosition(pos));
+        assertEquals(follower, data.idForFollowerPosition(pos));
+    }
+
     @Test void syntheticIdsAreOutsideEveryLegalHorizontalPosition() {
         Set<Long> ids = new HashSet<>();
         for (long sequence = 0; sequence < 8192; sequence++) {

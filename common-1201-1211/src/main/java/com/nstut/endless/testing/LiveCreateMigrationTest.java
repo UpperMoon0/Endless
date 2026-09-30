@@ -264,7 +264,26 @@ public final class LiveCreateMigrationTest {
         require(((Number) call(followerNet, "getSize")).intValue() == 3
             && number(call(followerNet, "calculateCapacity")) == 512f
             && number(call(followerNet, "calculateStress")) == 64f, "legacy unloaded totals changed");
-        System.out.println("ENDLESS_CREATE_UNAVAILABLE_SOURCE_PASS sourceLoaded=false separated=true membership=true oldEncodingCounterexample=true");
+        // A modern network can outlive the generator formerly at this position.
+        // Provisional allocation must not reuse that root's allocator entry.
+        setNetwork.invoke(follower, new Object[]{null});
+        level.removeBlockEntity(followerPos);
+        long formerGenerator = CreateKineticIdData.idFor(level, followerPos);
+        setNetwork.invoke(owner, Long.valueOf(formerGenerator));
+        Object retained = call(owner, "getOrCreateNetwork");
+        float retainedCapacity = number(call(retained, "calculateCapacity"));
+        int retainedSize = ((Number) call(retained, "getSize")).intValue();
+        follower = LiveCreateNbt.load(level, followerPos, shaft, saved);
+        level.setBlockEntity(follower); call(follower, "initialize");
+        require(!Long.valueOf(formerGenerator).equals(field(follower, "network"))
+            && call(follower, "getOrCreateNetwork") != retained,
+            "provisional follower reused a former generator's live identity");
+        require(retainedCapacity == number(call(retained, "calculateCapacity"))
+            && retainedSize == ((Number) call(retained, "getSize")).intValue()
+            && !((Map<?, ?>) field(retained, "members")).containsKey(follower),
+            "former generator network was contaminated by provisional admission");
+        require(!level.isLoaded(source), "former-generator separation loaded the source");
+        System.out.println("ENDLESS_CREATE_UNAVAILABLE_SOURCE_PASS sourceLoaded=false separated=true membership=true oldEncodingCounterexample=true formerGeneratorSeparated=true");
         Class.forName("com.simibubi.create.content.kinetics.base.KineticBlockEntity")
             .getMethod("setNetwork", Long.class).invoke(follower, new Object[]{null});
         level.setBlock(followerPos, Blocks.AIR.defaultBlockState(), 2);

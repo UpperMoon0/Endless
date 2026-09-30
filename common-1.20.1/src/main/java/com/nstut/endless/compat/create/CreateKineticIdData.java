@@ -47,6 +47,10 @@ public final class CreateKineticIdData extends SavedData {
 
     private final Map<PositionKey, Long> ids = new HashMap<>();
     private final Map<Long, PositionKey> positionsById = new HashMap<>();
+    // A retained generator network must never become a provisional network
+    // after a different kinetic block is restored at the same position.
+    private final Map<PositionKey, Long> followerIds = new HashMap<>();
+    private final Set<Long> provisionalIds = new HashSet<>();
     private long nextSequence;
 
     public CreateKineticIdData() {
@@ -83,7 +87,8 @@ public final class CreateKineticIdData extends SavedData {
             PositionKey key = new PositionKey(entry.getInt("X"), entry.getInt("Y"), entry.getInt("Z"));
             long id = entry.getLong("Id");
             long sequence = sequenceForSyntheticId(id);
-            Long previous = data.ids.putIfAbsent(key, id);
+            boolean follower = entry.getBoolean("Follower");
+            Long previous = (follower ? data.followerIds : data.ids).putIfAbsent(key, id);
             if (previous != null && previous.longValue() != id) {
                 throw new IllegalArgumentException("Conflicting Endless/Create kinetic IDs for " + key);
             }
@@ -91,6 +96,7 @@ public final class CreateKineticIdData extends SavedData {
                 throw new IllegalArgumentException("Duplicate Endless/Create kinetic ID " + id);
             }
             data.positionsById.put(id, key);
+            if (follower) data.provisionalIds.add(id);
             highestSequence = Math.max(highestSequence, sequence);
         }
 
@@ -106,18 +112,21 @@ public final class CreateKineticIdData extends SavedData {
         tag.putInt("Namespace", NAMESPACE_VERSION);
         tag.putLong("NextSequence", nextSequence);
         ListTag entries = new ListTag();
-        for (Map.Entry<PositionKey, Long> mapping : ids.entrySet()) {
-            CompoundTag entry = new CompoundTag();
-            PositionKey key = mapping.getKey();
-            entry.putInt("X", key.x());
-            entry.putInt("Y", key.y());
-            entry.putInt("Z", key.z());
-            entry.putLong("Id", mapping.getValue());
-            if (!EndlessHeights.isOutsideDenseBuildHeight(key.y())) entry.putBoolean("Follower", true);
-            entries.add(entry);
-        }
+        saveEntries(entries, ids, false);
+        saveEntries(entries, followerIds, true);
         tag.put("Entries", entries);
         return tag;
+    }
+
+    private static void saveEntries(ListTag entries, Map<PositionKey, Long> mappings, boolean follower) {
+        for (Map.Entry<PositionKey, Long> mapping : mappings.entrySet()) {
+            CompoundTag entry = new CompoundTag();
+            PositionKey key = mapping.getKey();
+            entry.putInt("X", key.x()); entry.putInt("Y", key.y()); entry.putInt("Z", key.z());
+            entry.putLong("Id", mapping.getValue());
+            if (follower) entry.putBoolean("Follower", true);
+            entries.add(entry);
+        }
     }
 
     public static long idFor(ServerLevel level, BlockPos pos) {
@@ -129,18 +138,21 @@ public final class CreateKineticIdData extends SavedData {
 
     /** Unresolved followers may cross the dense core on their way to a sparse root. */
     public static long idForUnresolvedFollower(ServerLevel level, BlockPos pos) {
-        return dataFor(level).idForPosition(pos);
+        return dataFor(level).idForFollowerPosition(pos);
     }
 
     /** Only saved admissions from the same legacy root consume unloaded totals. */
     public static boolean replacesLegacyId(ServerLevel level, long synthetic, long legacy) {
-        PositionKey root = dataFor(level).positionsById.get(synthetic);
-        return root != null && new BlockPos(root.x(), root.y(), root.z()).asLong() == legacy;
+        CreateKineticIdData data = dataFor(level);
+        PositionKey root = data.positionsById.get(synthetic);
+        return !data.provisionalIds.contains(synthetic) && root != null
+            && new BlockPos(root.x(), root.y(), root.z()).asLong() == legacy;
     }
 
     /** Full-position ownership, including interrupted chunk saves. */
     public static boolean belongsTo(ServerLevel level, long id, BlockPos pos) {
-        return PositionKey.of(pos).equals(dataFor(level).positionsById.get(id));
+        CreateKineticIdData data = dataFor(level);
+        return !data.provisionalIds.contains(id) && PositionKey.of(pos).equals(data.positionsById.get(id));
     }
 
     private static CreateKineticIdData dataFor(ServerLevel level) {
@@ -171,8 +183,16 @@ public final class CreateKineticIdData extends SavedData {
     }
 
     synchronized long idForPosition(BlockPos pos) {
+        return allocate(pos, ids, false);
+    }
+
+    synchronized long idForFollowerPosition(BlockPos pos) {
+        return allocate(pos, followerIds, true);
+    }
+
+    private long allocate(BlockPos pos, Map<PositionKey, Long> mappings, boolean follower) {
         PositionKey key = PositionKey.of(pos);
-        Long existing = ids.get(key);
+        Long existing = mappings.get(key);
         if (existing != null) {
             return existing;
         }
@@ -181,8 +201,9 @@ public final class CreateKineticIdData extends SavedData {
         }
 
         long id = syntheticIdForSequence(nextSequence++);
-        ids.put(key, id);
+        mappings.put(key, id);
         positionsById.put(id, key);
+        if (follower) provisionalIds.add(id);
         setDirty();
         return id;
     }

@@ -363,6 +363,30 @@ public final class LiveCreateMigrationTest {
         }
         assertIsolatedAliases(followers, baseCapacity);
         require(!level.isLoaded(roots[0]), "pending restart loaded source chunks");
+        if (baseY == 0) {
+            // A loaded intermediate with zero theoretical speed must still use
+            // native validation cleanup, even if its own upstream chunk is absent.
+            BlockPos absent = roots[0].north(16);
+            require(!level.isLoaded(absent), "stopped-source ancestor unexpectedly loaded");
+            level.setBlock(roots[0], shaft, 18); level.removeBlockEntity(roots[0]);
+            CompoundTag stoppedTag = pending[0].copy();
+            CompoundTag upstream = new CompoundTag();
+            upstream.putInt("X", absent.getX()); upstream.putInt("Y", absent.getY()); upstream.putInt("Z", absent.getZ());
+            stoppedTag.put("Source", upstream); stoppedTag.putFloat("Speed", 0f);
+            stoppedTag.getCompound("Network").putLong("Id", roots[0].asLong());
+            BlockEntity stopped = LiveCreateNbt.load(level, roots[0], shaft, stoppedTag);
+            level.setBlockEntity(stopped);
+            tickAll(new BlockEntity[]{followers[0]}, false, 260);
+            require(field(followers[0], "source") == null && field(followers[0], "network") == null
+                && number(call(followers[0], "getSpeed")) == 0f,
+                "pending identity blocked native stopped-source cleanup");
+            require(!LiveCreateNbt.save(level, followers[0]).contains("EndlessLegacyNetworkId"), "stopped-source marker retained");
+            retire(stopped); level.removeBlockEntity(roots[0]);
+            level.setBlock(roots[0], Blocks.AIR.defaultBlockState(), 18);
+            level.removeBlockEntity(positions[0]);
+            followers[0] = LiveCreateNbt.load(level, positions[0], shaft, pending[0]);
+            level.setBlockEntity(followers[0]);
+        }
         BlockEntity[] generators = new BlockEntity[2];
         for (int i = 0; i < 2; i++) {
             level.setBlock(roots[i], motor, 18); level.removeBlockEntity(roots[i]);

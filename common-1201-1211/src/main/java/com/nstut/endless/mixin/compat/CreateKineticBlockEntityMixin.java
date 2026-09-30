@@ -163,10 +163,12 @@ public abstract class CreateKineticBlockEntityMixin implements CreateKineticNetw
         if (endless$alignSourceNetwork()) attachKinetics();
     }
 
-    @Inject(method = "validateKinetics", at = @At("HEAD"), cancellable = true, require = 1, remap = false)
+    @Inject(method = "validateKinetics", at = @At("HEAD"), require = 1, remap = false)
     private void endless$holdUnresolvedIdentity(CallbackInfo ci) {
         if (endless$alignSourceNetwork()) attachKinetics();
-        if (endless$isolateUnresolved()) ci.cancel();
+        endless$isolateUnresolved();
+        // Native validation already returns for an unloaded immediate source.
+        // Keep its cleanup when a loaded source has actually stopped rotating.
     }
 
     @Unique

@@ -19,3 +19,5 @@ Endless 0.7
 - Preserve newer Create follower accounting across interrupted chunk saves with a pending legacy marker.
 - Refuse ambiguous version-2 draft kinetic allocator files; version 3 records generator/provisional roles separately.
 - License Endless under MIT.
+- Preserve native client block-entity packet callbacks at sparse heights so Create updates Flywheel shaft rotation when speeds change. Add a required 600-shaft start/reverse/stop/restart renderer-data regression on both supported Create loaders.
+- Settle acknowledged persistent-placement page updates in the live client tests, including updates arriving between a retry decision and redispatch. Keep bounded retries and fresh-ack requirements.

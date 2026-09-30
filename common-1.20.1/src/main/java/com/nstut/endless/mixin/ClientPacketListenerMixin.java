@@ -7,7 +7,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.core.BlockPos;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundLoginPacket;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -38,10 +37,15 @@ public class ClientPacketListenerMixin {
      * Sparse page snapshots install section state outside LevelChunk's dense
      * section array. When a player enters such a page, the following vanilla
      * block-entity data packet therefore has no pre-created client block entity
-     * to update. Create and fully register it first, then apply the vanilla
-     * update tag.
+     * to update. Create and fully register it on the client thread, then let
+     * the native handler deliver the packet. Mod callbacks distinguish client
+     * updates from disk loads (Create uses this to refresh rotating visuals).
      */
-    @Inject(method = "handleBlockEntityData", at = @At("HEAD"), cancellable = true)
+    // The native thread guard precedes this first position lookup. Do not
+    // touch sparse chunks on the network thread or bypass loader callbacks.
+    @Inject(method = "handleBlockEntityData", at = @At(value = "INVOKE",
+        target = "Lnet/minecraft/network/protocol/game/ClientboundBlockEntityDataPacket;getPos()Lnet/minecraft/core/BlockPos;"),
+        require = 1)
     private void endless$handleSparseBlockEntity(ClientboundBlockEntityDataPacket packet, CallbackInfo ci) {
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
@@ -71,15 +75,10 @@ public class ClientPacketListenerMixin {
             chunk.addAndRegisterBlockEntity(blockEntity);
         }
 
-        CompoundTag tag = packet.getTag();
-        if (tag != null) {
-            blockEntity.load(tag);
-        }
         // A page rebuild may be queued before this later BE packet is handled.
         // Bypass ClientLevel#setBlocksDirty's state-difference filter so the
         // render snapshot is guaranteed to include the newly registered BE.
         minecraft.levelRenderer.setBlocksDirty(
             pos.getX(), pos.getY(), pos.getZ(), pos.getX(), pos.getY(), pos.getZ());
-        ci.cancel();
     }
 }

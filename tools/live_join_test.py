@@ -457,7 +457,7 @@ SCENARIOS.append(Scenario(
         marker for marker in SCENARIOS[0].required_server_markers
         if marker != "ENDLESS_WAYSTONES_SPARSE_PASS"
     ) + ("ENDLESS_CREATE_SPARSE_PASS", "ENDLESS_CREATE_KINETIC_PASS"),
-    required_client_markers=SCENARIOS[0].required_client_markers,
+    required_client_markers=SCENARIOS[0].required_client_markers + ("ENDLESS_CREATE_ROTATION_SYNC_PASS",),
 ))
 
 SCENARIOS.append(Scenario(

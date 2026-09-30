@@ -65,6 +65,7 @@ class VerificationPolicyTest(unittest.TestCase):
         self.assertFalse(scenario.waystones)
         self.assertIn("ENDLESS_CREATE_SPARSE_PASS", scenario.required_server_markers)
         self.assertIn("ENDLESS_CREATE_KINETIC_PASS", scenario.required_server_markers)
+        self.assertIn("ENDLESS_CREATE_ROTATION_SYNC_PASS", scenario.required_client_markers)
         self.assertNotIn("ENDLESS_WAYSTONES_SPARSE_PASS", scenario.required_server_markers)
         create_cases = {case for case in live.LIVE_CASES if case[1] == "create-compat"}
         self.assertEqual(
@@ -212,6 +213,17 @@ class OutputEvidenceTest(unittest.TestCase):
         pump = self.pump("joined\n")
         with self.assertRaisesRegex(RuntimeError, "missing required"):
             pump.wait_until_seen(("render pass",), 1)
+
+    def test_create_completion_requires_rendered_rotation_evidence(self):
+        scenario = live.SCENARIO_BY_ID["create-compat"]
+        server = self.pump("\n".join(scenario.required_server_markers) + "\n")
+        client = self.pump("\n".join(marker for marker in scenario.required_client_markers
+                                    if marker != "ENDLESS_CREATE_ROTATION_SYNC_PASS")
+                           + "\n" + live.PASS_MARKER + "\n")
+        with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
+            live.wait_for_session_completion(client, server, 1, "test",
+                                             scenario.required_server_markers,
+                                             scenario.required_client_markers)
 
     def test_failure_wins_over_pass_in_history(self):
         pump = self.pump("PASS\nFAIL\n")

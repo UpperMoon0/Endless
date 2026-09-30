@@ -24,6 +24,8 @@ public final class CreateKineticStorageProbe {
         var original = new BlockPos(10, 1_000_000, 10);
         var unrelated = new BlockPos(50, 2_000_000, 50);
         long originalId = seed.idForPosition(original);
+        var denseFollower = new BlockPos(10, 0, 10);
+        long followerId = seed.idForPosition(denseFollower);
         CompoundTag valid = seed.save(new CompoundTag());
 
         Path newFolder = Files.createTempDirectory(scratch, "new-");
@@ -33,6 +35,8 @@ public final class CreateKineticStorageProbe {
         write(file(validFolder), valid);
         var loaded = CreateKineticIdData.getOrCreate(storage(validFolder), file(validFolder));
         require(loaded.idForPosition(original) == originalId, "valid allocator lost identity");
+        require(loaded.idForPosition(denseFollower) == followerId, "dense provisional follower lost persisted identity");
+        require(followerId != originalId, "dense provisional identity collided with sparse root");
         require(loaded.idForPosition(unrelated) != originalId, "valid allocator reused an ID");
 
         for (String mode : new String[]{"duplicate", "missing-fields", "wrong-list-type", "old-namespace", "truncated"}) {

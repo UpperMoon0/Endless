@@ -8,6 +8,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
@@ -75,13 +76,14 @@ public final class CreateKineticMigration {
             Object old = Api.GET.invoke(root);
             Map<Object, Map<Long, Object>> worlds = (Map<Object, Map<Long, Object>>) Api.NETWORKS.get(null);
             Map<Long, Object> networks = worlds.get(level);
-            if (networks.containsKey(stableId)) {
-                throw new IllegalStateException("Create kinetic migration target already has another network");
+            if (!(level instanceof ServerLevel server)
+                || !CreateKineticIdData.belongsTo(server, stableId, root.getBlockPos())) {
+                throw new IllegalStateException("Create kinetic migration target is not owned by this root");
             }
             // Legacy packed IDs can name multiple disconnected roots. Never move
             // every member solely because it shares that Long key. Follow exact
-            // loaded Source positions; unresolved followers stay in the legacy map
-            // until their source becomes available and the admission hook aligns them.
+            // loaded Source positions; unresolved followers are isolated by the
+            // admission hooks until their full source chain becomes available.
             List<BlockEntity> connected = new ArrayList<>();
             connected.add(root);
             Map<Object, Float> members = (Map<Object, Float>) Api.MEMBERS.get(old);
@@ -90,11 +92,18 @@ public final class CreateKineticMigration {
                     connected.add((BlockEntity) candidate);
                 }
             }
-            Object target = Api.NEW_NETWORK.newInstance();
-            Long targetId = stableId;
-            Api.ID.set(target, targetId);
-            networks.put(stableId, target);
-            Api.INIT.invoke(target, savedCapacity, savedStress, savedSize);
+            Object target = networks.get(stableId);
+            if (target == null) {
+                target = Api.NEW_NETWORK.newInstance();
+                Api.ID.set(target, Long.valueOf(stableId));
+                networks.put(stableId, target);
+            }
+            // A follower chunk may have saved S while the root still saved L.
+            // Its restored aggregate already includes the root; never reseed it.
+            Long targetId = (Long) Api.ID.get(target);
+            if (!Api.INITIALIZED.getBoolean(target)) {
+                Api.INIT.invoke(target, savedCapacity, savedStress, savedSize);
+            }
             for (BlockEntity member : connected) {
                 float lastCapacity = Api.LAST_CAPACITY.getFloat(member);
                 float lastStress = Api.LAST_STRESS.getFloat(member);

@@ -25,6 +25,10 @@ public final class LiveCreateMigrationTest {
             }
             verifyAliasedLegacyRoots(level);
             verifyUnavailableSource(level);
+            verifyInterruptedSave(level);
+            verifyUnresolvedAliases(level, false, 1_000_000);
+            verifyUnresolvedAliases(level, true, 1_000_000);
+            verifyUnresolvedAliases(level, false, 0);
             System.out.println("ENDLESS_CREATE_MIGRATION_PASS orders=follower-first,root-first,late-follower,late-partial-follower generators=2 realConsumer=true");
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("Create connected legacy-network regression failed", e);
@@ -225,12 +229,14 @@ public final class LiveCreateMigrationTest {
         BlockEntity follower = LiveCreateNbt.load(level, followerPos, shaft, saved);
         level.setBlockEntity(follower);
         // Negative control: reproduce the old encoding with the real Create API.
-        // The unavailable source prevents our alignment hooks from intervening;
-        // native initialize must admit this follower to the unrelated old owner.
+        // Call the pinned native network API directly as the negative control;
+        // normal initialize now isolates unresolved followers before admission.
         Class<?> kinetic = Class.forName("com.simibubi.create.content.kinetics.base.KineticBlockEntity");
         var setNetwork = kinetic.getMethod("setNetwork", Long.class);
         setNetwork.invoke(owner, Long.valueOf(oldCollisionId));
-        call(follower, "initialize");
+        Object raw = call(follower, "getOrCreateNetwork");
+        raw.getClass().getMethod("addSilently", kinetic, float.class, float.class)
+            .invoke(raw, follower, 0f, 0f);
         Object colliding = call(owner, "getOrCreateNetwork");
         require(call(follower, "getOrCreateNetwork") == colliding
             && ((Map<?, ?>) field(colliding, "members")).containsKey(follower),
@@ -263,6 +269,145 @@ public final class LiveCreateMigrationTest {
             .getMethod("setNetwork", Long.class).invoke(follower, new Object[]{null});
         level.setBlock(followerPos, Blocks.AIR.defaultBlockState(), 2);
         level.setBlock(ownerPos, Blocks.AIR.defaultBlockState(), 3);
+    }
+
+    private static void verifyInterruptedSave(ServerLevel level) throws ReflectiveOperationException {
+        BlockPos rootPos = new BlockPos(14, 1_000_000, 2);
+        BlockPos followerPos = rootPos.south();
+        BlockState motor = block("creative_motor").setValue(BlockStateProperties.FACING, Direction.SOUTH);
+        BlockState shaft = block("shaft").setValue(BlockStateProperties.AXIS, Direction.Axis.Z);
+        level.setBlock(rootPos, motor, 3); level.setBlock(followerPos, shaft, 3);
+        BlockEntity root = level.getBlockEntity(rootPos), follower = level.getBlockEntity(followerPos);
+        tickAll(new BlockEntity[]{root, follower}, false, 5);
+        Long stable = (Long) field(root, "network");
+        CompoundTag rootNbt = LiveCreateNbt.save(level, root);
+        CompoundTag followerNbt = LiveCreateNbt.save(level, follower);
+        // Exact interrupted-save state: allocator and follower S saved, root L
+        // stale. The follower snapshot also retains an unloaded consumer.
+        followerNbt.getCompound("Network").putFloat("Stress", 64f);
+        followerNbt.getCompound("Network").putInt("Size", 3);
+        rootNbt.getCompound("Network").putLong("Id", rootPos.asLong());
+        rootNbt.getCompound("Network").putFloat("Stress", 32f);
+        rootNbt.getCompound("Network").putInt("Size", 2);
+        level.getDataStorage().save();
+        retire(root); retire(follower);
+        level.removeBlockEntity(rootPos); level.removeBlockEntity(followerPos);
+        follower = LiveCreateNbt.load(level, followerPos, shaft, followerNbt);
+        level.setBlockEntity(follower);
+        call(follower, "initialize");
+        Object restored = call(follower, "getOrCreateNetwork");
+        require(((Number) call(restored, "getSize")).intValue() == 3, "follower did not restore its snapshot");
+        root = LiveCreateNbt.load(level, rootPos, motor, rootNbt);
+        level.setBlockEntity(root);
+        call(root, "initialize");
+        require(stable.equals(field(root, "network")) && call(root, "getOrCreateNetwork") == restored,
+            "interrupted-save root failed to reuse its allocator-owned target");
+        require(((Map<?, ?>) field(restored, "members")).size() == 2
+            && ((Number) call(restored, "getSize")).intValue() == 3
+            && number(call(restored, "calculateStress")) == 64f,
+            "root reseeded or doubled the already restored target aggregate");
+        require(number(call(restored, "calculateCapacity")) == followerNbt.getCompound("Network").getFloat("Capacity"),
+            "interrupted-save migration lost target capacity");
+        call(root, "initialize"); call(follower, "initialize");
+        require(((Number) call(restored, "getSize")).intValue() == 3, "repeated admission consumed unloaded members twice");
+        System.out.println("ENDLESS_CREATE_INTERRUPTED_SAVE_PASS followerFirst=true targetReused=true aggregatePreserved=true");
+        retire(root); retire(follower);
+        level.setBlock(rootPos, Blocks.AIR.defaultBlockState(), 18);
+        level.setBlock(followerPos, Blocks.AIR.defaultBlockState(), 18);
+    }
+
+    private static void verifyUnresolvedAliases(ServerLevel level, boolean reverse, int baseY) throws ReflectiveOperationException {
+        BlockState motor = block("creative_motor").setValue(BlockStateProperties.FACING, Direction.SOUTH);
+        BlockState shaft = block("shaft").setValue(BlockStateProperties.AXIS, Direction.Axis.Z);
+        BlockPos templatePos = new BlockPos(14, 1_000_000, 2);
+        level.setBlock(templatePos, motor, 18);
+        BlockEntity template = level.getBlockEntity(templatePos);
+        call(template, "tick"); call(template, "tick");
+        CompoundTag motorNbt = LiveCreateNbt.save(level, template);
+        float baseCapacity = motorNbt.getCompound("Network").getFloat("Capacity");
+        require(baseCapacity > 0, "unresolved-alias fixture has no generator capacity");
+        retire(template); level.setBlock(templatePos, Blocks.AIR.defaultBlockState(), 18);
+        int z = baseY == 0 ? 49167 : reverse ? 32783 : 16399;
+        BlockPos[] roots = {new BlockPos(0, baseY, z), new BlockPos(0, baseY + 4096, z)};
+        BlockPos[] positions = {roots[0].south(), roots[1].south()};
+        require(roots[0].asLong() == roots[1].asLong(), "unresolved roots must alias");
+        require(!level.isLoaded(roots[0]), "unresolved source chunk already loaded");
+        BlockEntity[] followers = new BlockEntity[2];
+        CompoundTag[] pending = new CompoundTag[2];
+        for (int step = 0; step < 2; step++) {
+            int i = reverse ? 1 - step : step;
+            level.setBlock(positions[i], shaft, 18);
+            CompoundTag tag = LiveCreateNbt.save(level, level.getBlockEntity(positions[i]));
+            CompoundTag source = new CompoundTag();
+            source.putInt("X", roots[i].getX()); source.putInt("Y", roots[i].getY()); source.putInt("Z", roots[i].getZ());
+            tag.put("Source", source); tag.putFloat("Speed", 16f);
+            CompoundTag totals = new CompoundTag();
+            totals.putLong("Id", roots[i].asLong()); totals.putFloat("Capacity", baseCapacity + i * 512f);
+            totals.putFloat("Stress", 64f + i * 64f); totals.putInt("Size", 3 + i * 2);
+            tag.put("Network", totals);
+            level.removeBlockEntity(positions[i]);
+            followers[i] = LiveCreateNbt.load(level, positions[i], shaft, tag);
+            level.setBlockEntity(followers[i]);
+            call(followers[i], "tick"); call(followers[i], "tick");
+            require(!level.isLoaded(roots[i]), "unresolved admission loaded the source chunk");
+        }
+        assertIsolatedAliases(followers, baseCapacity);
+        // Persist and reconstruct both provisional BEs while sources stay absent.
+        for (int i = 0; i < 2; i++) {
+            pending[i] = LiveCreateNbt.save(level, followers[i]);
+            require(pending[i].getLong("EndlessLegacyNetworkId") == roots[i].asLong(), "pending legacy ID not persisted");
+            retire(followers[i]); level.removeBlockEntity(positions[i]);
+            followers[i] = LiveCreateNbt.load(level, positions[i], shaft, pending[i]);
+            level.setBlockEntity(followers[i]);
+            call(followers[i], "initialize"); call(followers[i], "tick");
+        }
+        assertIsolatedAliases(followers, baseCapacity);
+        require(!level.isLoaded(roots[0]), "pending restart loaded source chunks");
+        BlockEntity[] generators = new BlockEntity[2];
+        for (int i = 0; i < 2; i++) {
+            level.setBlock(roots[i], motor, 18); level.removeBlockEntity(roots[i]);
+            CompoundTag tag = motorNbt.copy();
+            tag.put("Network", pending[i].getCompound("Network").copy());
+            tag.getCompound("Network").putLong("Id", roots[i].asLong());
+            tag.getCompound("Network").putFloat("AddedCapacity", motorNbt.getCompound("Network").getFloat("AddedCapacity"));
+            generators[i] = LiveCreateNbt.load(level, roots[i], motor, tag);
+            level.setBlockEntity(generators[i]);
+        }
+        // Follower admission resolves exact loaded roots before either root ticks.
+        tickAll(new BlockEntity[]{followers[0], followers[1], generators[0], generators[1]}, reverse, 260);
+        assertIsolatedAliases(followers, baseCapacity);
+        for (int i = 0; i < 2; i++) {
+            Object net = call(followers[i], "getOrCreateNetwork");
+            require(net == call(generators[i], "getOrCreateNetwork") && ((Map<?, ?>) field(net, "members")).size() == 2,
+                "resolved follower failed to join its exact root");
+            require(!LiveCreateNbt.save(level, followers[i]).contains("EndlessLegacyNetworkId"), "resolved marker retained");
+            retire(followers[i]); retire(generators[i]);
+            level.setBlock(roots[i], Blocks.AIR.defaultBlockState(), 18);
+            level.setBlock(positions[i], Blocks.AIR.defaultBlockState(), 18);
+        }
+        System.out.println("ENDLESS_CREATE_UNRESOLVED_ALIASES_PASS baseY=" + baseY + " reverse=" + reverse
+            + " sourceLoaded=false independentTotals=true pendingRestart=true exactRootRejoined=true");
+    }
+
+    private static void assertIsolatedAliases(BlockEntity[] followers, float baseCapacity) throws ReflectiveOperationException {
+        Object first = call(followers[0], "getOrCreateNetwork"), second = call(followers[1], "getOrCreateNetwork");
+        require(first != second && !field(followers[0], "network").equals(field(followers[1], "network")),
+            "source-unavailable legacy aliases share a network");
+        for (int i = 0; i < 2; i++) {
+            Object net = i == 0 ? first : second;
+            require(((Map<?, ?>) field(net, "members")).containsKey(followers[i])
+                && !((Map<?, ?>) field(net, "members")).containsKey(followers[1 - i]), "aliased membership mixed");
+            require(((Number) call(net, "getSize")).intValue() == 3 + i * 2
+                && number(call(net, "calculateCapacity")) == baseCapacity + i * 512f
+                && number(call(net, "calculateStress")) == 64f + i * 64f,
+                "aliased saved aggregates mixed or unloaded admission doubled");
+            require(number(call(followers[i], "getSpeed")) == 16f, "isolated follower speed changed");
+        }
+    }
+
+    private static void retire(BlockEntity entity) throws ReflectiveOperationException {
+        Class.forName("com.simibubi.create.content.kinetics.base.KineticBlockEntity")
+            .getMethod("setNetwork", Long.class).invoke(entity, new Object[]{null});
     }
 
     private static Object assertConnected(BlockEntity[] entities) throws ReflectiveOperationException {

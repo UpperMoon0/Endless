@@ -94,6 +94,7 @@ class VerificationPolicyTest(unittest.TestCase):
         self.assertEqual(1, live.cold_restart_server_markers(scenario, "B").count(limitation))
         for marker in ("ENDLESS_CREATE_MIGRATION_PASS", "ENDLESS_CREATE_PARTIAL_MIGRATION_PASS",
                        "ENDLESS_CREATE_UNAVAILABLE_SOURCE_PASS", "ENDLESS_CREATE_ALIASED_LEGACY_ROOTS_PASS",
+                       "ENDLESS_CREATE_INTERRUPTED_SAVE_PASS", "ENDLESS_CREATE_UNRESOLVED_ALIASES_PASS",
                        "ENDLESS_CREATE_ALLOCATOR_FAIL_CLOSED_PASS",
                        "ENDLESS_CREATE_KINETIC_COLD_RESTART_PASS", "ENDLESS_COLD_RESTART_PHASE_B_PASS"):
             self.assertIn(marker, live.cold_restart_server_markers(scenario, "B"))
@@ -329,7 +330,8 @@ class OutputEvidenceTest(unittest.TestCase):
         scenario = live.SCENARIO_BY_ID["create-cold-restart"]
         markers = live.cold_restart_server_markers(scenario, "B")
         for missing in ("ENDLESS_CREATE_PARTIAL_MIGRATION_PASS", "ENDLESS_CREATE_UNAVAILABLE_SOURCE_PASS",
-                        "ENDLESS_CREATE_ALIASED_LEGACY_ROOTS_PASS"):
+                        "ENDLESS_CREATE_ALIASED_LEGACY_ROOTS_PASS",
+                        "ENDLESS_CREATE_INTERRUPTED_SAVE_PASS", "ENDLESS_CREATE_UNRESOLVED_ALIASES_PASS"):
             server = self.pump("\n".join(marker for marker in markers if marker != missing) + "\n")
             client = self.pump(live.PASS_MARKER + "\n")
             with self.assertRaisesRegex(RuntimeError, "before server/client completion"):

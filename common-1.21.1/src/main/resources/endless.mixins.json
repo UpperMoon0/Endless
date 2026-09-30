@@ -47,6 +47,7 @@
     "compat.WaystoneBlockBaseMixin",
     "compat.CreateGeneratingKineticBlockEntityMixin",
     "compat.CreateKineticBlockEntityMixin",
+    "compat.CreateKineticNbtMixin",
     "compat.CreateDisplayTargetMixin",
     "compat.CreateLinkBehaviourMixin"
   ],

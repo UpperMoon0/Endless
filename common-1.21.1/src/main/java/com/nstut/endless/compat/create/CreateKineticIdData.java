@@ -68,7 +68,7 @@ public final class CreateKineticIdData extends SavedData {
             CompoundTag entry = entries.getCompound(i);
             if (!entry.contains("X", Tag.TAG_INT) || !entry.contains("Y", Tag.TAG_INT)
                 || !entry.contains("Z", Tag.TAG_INT) || !entry.contains("Id", Tag.TAG_LONG)
-                || !EndlessHeights.isOutsideDenseBuildHeight(entry.getInt("Y"))) {
+                || (!EndlessHeights.isOutsideDenseBuildHeight(entry.getInt("Y")) && !entry.getBoolean("Follower"))) {
                 throw new IllegalArgumentException("Invalid Endless/Create kinetic allocator position record");
             }
             PositionKey key = new PositionKey(entry.getInt("X"), entry.getInt("Y"), entry.getInt("Z"));
@@ -104,6 +104,7 @@ public final class CreateKineticIdData extends SavedData {
             entry.putInt("Y", key.y());
             entry.putInt("Z", key.z());
             entry.putLong("Id", mapping.getValue());
+            if (!EndlessHeights.isOutsideDenseBuildHeight(key.y())) entry.putBoolean("Follower", true);
             entries.add(entry);
         }
         tag.put("Entries", entries);
@@ -117,10 +118,20 @@ public final class CreateKineticIdData extends SavedData {
         return dataFor(level).idForPosition(pos);
     }
 
+    /** Unresolved followers may cross the dense core on their way to a sparse root. */
+    public static long idForUnresolvedFollower(ServerLevel level, BlockPos pos) {
+        return dataFor(level).idForPosition(pos);
+    }
+
     /** Only saved admissions from the same legacy root consume unloaded totals. */
     public static boolean replacesLegacyId(ServerLevel level, long synthetic, long legacy) {
         PositionKey root = dataFor(level).positionsById.get(synthetic);
         return root != null && new BlockPos(root.x(), root.y(), root.z()).asLong() == legacy;
+    }
+
+    /** Full-position ownership, including interrupted chunk saves. */
+    public static boolean belongsTo(ServerLevel level, long id, BlockPos pos) {
+        return PositionKey.of(pos).equals(dataFor(level).positionsById.get(id));
     }
 
     private static CreateKineticIdData dataFor(ServerLevel level) {

@@ -18,6 +18,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.levelgen.Heightmap;
 
@@ -62,10 +63,11 @@ public final class LiveJoinTest {
     private static int lowerBreakAckBaseline;
     private static int upperBreakAckBaseline;
     private static int upperPersistentPlacementAttempts;
-    private static int upperPersistentAckBaseline;
+    private static final LivePlacementSettlement upperPersistentPlacement = new LivePlacementSettlement();
     private static int upperPersistentRetryTick;
     private static boolean extremeClientDone;
     private static int ticksWithLevel;
+    private static boolean ordinaryClientDone;
 
     private LiveJoinTest() {}
 
@@ -126,7 +128,7 @@ public final class LiveJoinTest {
     }
 
     public static boolean tick() {
-        if (!isArmed() || !preLoginChecked) return false;
+        if (!isArmed() || !preLoginChecked || ordinaryClientDone) return false;
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return false;
         ticksWithLevel++;
@@ -172,7 +174,10 @@ public final class LiveJoinTest {
 
         if (ticksWithLevel < 40) return false;
         pass(levelMin, levelHeight, endlessMin, endlessMax, denseMin, denseMax, logical);
-        mc.stop();
+        // PASS is this client's result, not permission to disconnect. The external
+        // harness owns shutdown after BOTH client and required server markers.
+        // In particular cold-restart preparation advances only with a player online.
+        ordinaryClientDone = true;
         return true;
     }
 
@@ -225,6 +230,8 @@ public final class LiveJoinTest {
             printRenderMarkerOnce(upper, true);
             boolean waystones = !WAYSTONES_TEST || waystoneStatus(level);
             if (lowerExtremeSeen && upperInteractionDone && upper.ok() && waystones) {
+                if (Boolean.getBoolean("endless.liveJoinCreateTest")
+                    && !LiveCreateClientSyncTest.tick(mc)) return false;
                 System.out.println(UPPER_EXTREME_PASS_MARKER
                     + " playerY=" + playerY
                     + " blockY=" + LiveHighYServerTest.upperY()
@@ -352,6 +359,16 @@ public final class LiveJoinTest {
         if (upper && stage == 3) {
             BlockPos persistentSupport = LiveHighYServerTest.upperPersistentSupportPos();
             BlockPos persistentTarget = LiveHighYServerTest.upperPersistentTargetPos();
+            BlockState persistentState = level.getBlockState(persistentTarget);
+            // A delayed authoritative update can arrive after a retry decision
+            // but before another dispatch. Settle the acknowledged attempt first.
+            if (upperPersistentPlacementAttempts > 0 && upperPersistentPlacement.poll(ticksWithLevel,
+                LivePredictionProbe.count(persistentTarget), persistentState.is(Blocks.STONE),
+                persistentState.isAir()) == LivePlacementSettlement.Result.ACCEPTED) {
+                System.out.println("ENDLESS_CLIENT_PERSISTENT_PLACEMENT_PASS target=" + persistentTarget
+                    + " attempts=" + upperPersistentPlacementAttempts + " acknowledged=true");
+                return true;
+            }
             if (ticksWithLevel < upperPersistentRetryTick
                 || !level.getBlockState(persistentSupport).is(Blocks.DEEPSLATE)
                 || !level.getBlockState(persistentTarget).isAir()
@@ -359,7 +376,7 @@ public final class LiveJoinTest {
                 return false;
             }
 
-            upperPersistentAckBaseline = LivePredictionProbe.count(persistentTarget);
+            upperPersistentPlacement.dispatched(LivePredictionProbe.count(persistentTarget));
             BlockHitResult hit = new BlockHitResult(
                 Vec3.atCenterOf(persistentSupport), Direction.UP, persistentSupport, false);
             InteractionResult result = mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
@@ -381,19 +398,20 @@ public final class LiveJoinTest {
         }
         if (upper && stage == 4) {
             BlockPos persistentTarget = LiveHighYServerTest.upperPersistentTargetPos();
-            if (LivePredictionProbe.count(persistentTarget) <= upperPersistentAckBaseline) return false;
-            if (!level.getBlockState(persistentTarget).is(Blocks.STONE)) {
-                if (upperPersistentPlacementAttempts < 3) {
-                    System.out.println("ENDLESS_CLIENT_PERSISTENT_PLACEMENT_RETRY target=" + persistentTarget
-                        + " attempt=" + upperPersistentPlacementAttempts
-                        + " state=" + level.getBlockState(persistentTarget));
-                    upperPersistentRetryTick = ticksWithLevel + 5;
-                    upperInteractionStage = 3;
-                    return false;
-                }
+            BlockState persistentState = level.getBlockState(persistentTarget);
+            LivePlacementSettlement.Result settled = upperPersistentPlacement.poll(ticksWithLevel,
+                LivePredictionProbe.count(persistentTarget), persistentState.is(Blocks.STONE), persistentState.isAir());
+            if (settled == LivePlacementSettlement.Result.WAIT) return false;
+            if (settled == LivePlacementSettlement.Result.RETRY) {
+                System.out.println("ENDLESS_CLIENT_PERSISTENT_PLACEMENT_RETRY target=" + persistentTarget
+                    + " attempt=" + upperPersistentPlacementAttempts + " state=" + persistentState);
+                upperPersistentRetryTick = ticksWithLevel + 5;
+                upperInteractionStage = 3;
+                return false;
+            }
+            if (settled == LivePlacementSettlement.Result.REJECTED) {
                 fail("persistentPlacementRejected", " target=" + persistentTarget
-                    + " attempts=" + upperPersistentPlacementAttempts
-                    + " state=" + level.getBlockState(persistentTarget));
+                    + " attempts=" + upperPersistentPlacementAttempts + " state=" + persistentState);
                 mc.stop();
                 return false;
             }

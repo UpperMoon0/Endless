@@ -15,6 +15,12 @@ allprojects {
     repositories {
         mavenLocal()
         mavenCentral()
+        maven { url = uri('https://maven.createmod.net') }
+        maven { url = uri('https://maven.ithundxr.dev/snapshots') }
+        maven {
+            url = uri('https://maven.ithundxr.dev/mirror')
+            content { includeGroup 'com.tterrag.registrate' }
+        }
         maven {
             url = uri('https://maven.twelveiterations.com/repository/maven-public/')
             content {
@@ -42,6 +48,15 @@ def depVersionsFor(String mcVer) {
 }
 
 subprojects {
+    if (project.name.startsWith('fabric-') || project.name.startsWith('forge-')
+        || project.name.startsWith('neoforge-')) {
+        tasks.withType(Jar).configureEach {
+            from(rootProject.file('LICENSE.txt')) {
+                rename { 'LICENSE-endless.txt' }
+            }
+        }
+    }
+
     if (project.name == 'common' || project.name == 'neoforge-1.21.1' || project.name == 'neoforge-26.1.2') {
         return
     }
@@ -118,5 +133,5 @@ runTargets.each { taskName, target ->
 tasks.register('testAllVersions') {
     group = 'verification'
     description = 'Runs shared and Minecraft-version-specific unit tests.'
-    dependsOn ':common:test', ':common-1.20.1:test', ':common-1.21.1:test'
+    dependsOn ':common:test', ':common-1.20.1:test', ':common-1.21.1:test', ':neoforge-1.21.1:test'
 }

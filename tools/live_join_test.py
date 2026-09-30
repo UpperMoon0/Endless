@@ -38,9 +38,10 @@ import signal
 import subprocess
 import sys
 import threading
+import tempfile
 import time
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 
@@ -310,6 +311,7 @@ class Scenario:
     cold_restart: bool = False
     gameplay: bool = False
     waystones: bool = False
+    create: bool = False
     integrated_rejoin: bool = False
     integrated_target_y: int = 1_000_000
     integrated_legacy_layout: bool = True
@@ -441,6 +443,36 @@ SCENARIOS.append(Scenario(
     render_distance=12,
 ))
 
+SCENARIOS.append(Scenario(
+    id="create-compat",
+    description="actual Create schematic placement and sparse persistence at million-scale Y",
+    server_kind="modded",
+    server_config=MILLION_BUILD_HEIGHT,
+    client_config=VANILLA_BUILD_HEIGHT,
+    expected=MILLION_BUILD_HEIGHT,
+    server_port=25582,
+    gameplay=True,
+    create=True,
+    required_server_markers=tuple(
+        marker for marker in SCENARIOS[0].required_server_markers
+        if marker != "ENDLESS_WAYSTONES_SPARSE_PASS"
+    ) + ("ENDLESS_CREATE_SPARSE_PASS", "ENDLESS_CREATE_KINETIC_PASS"),
+    required_client_markers=SCENARIOS[0].required_client_markers + ("ENDLESS_CREATE_ROTATION_SYNC_PASS",),
+))
+
+SCENARIOS.append(Scenario(
+    id="create-cold-restart",
+    description="Create sparse kinetic IDs survive a fresh dedicated-server JVM restart",
+    server_kind="modded",
+    server_config=MILLION_BUILD_HEIGHT,
+    client_config=VANILLA_BUILD_HEIGHT,
+    expected=MILLION_BUILD_HEIGHT,
+    server_port=25583,
+    cold_restart=True,
+    create=True,
+    required_server_markers=("ENDLESS_CREATE_KINETIC_COLD_RESTART_PASS",),
+))
+
 # New-version runtime gate: exercise the actual sparse engine, network sync,
 # client prediction, rendering, pathfinding, scheduled mechanics and persistence
 # without imposing the 1.20.1-only Waystones compatibility fixture.
@@ -463,12 +495,17 @@ SCENARIOS.append(Scenario(
 LEGACY_TARGETS = ("fabric-1.20.1", "forge-1.20.1")
 PORT_TARGETS = ("fabric-1.21.1", "neoforge-1.21.1", "neoforge-26.1.2")
 PORT_REJOIN_TARGETS = ("fabric-1.21.1", "neoforge-1.21.1", "neoforge-26.1.2")
+CREATE_TARGETS = ("forge-1.20.1", "neoforge-1.21.1")
 LIVE_CASES = tuple(
     (target, scenario.id)
     for target in LEGACY_TARGETS
     for scenario in SCENARIOS
-    if scenario.id not in ("port-runtime", "same-jvm-rejoin-full-envelope")
+    if scenario.id not in ("port-runtime", "same-jvm-rejoin-full-envelope", "create-compat", "create-cold-restart")
 ) + tuple((target, "port-runtime") for target in PORT_TARGETS) + tuple(
+    (target, scenario_id)
+    for target in CREATE_TARGETS
+    for scenario_id in ("create-compat", "create-cold-restart")
+) + tuple(
     (target, scenario_id)
     for target in PORT_REJOIN_TARGETS
     for scenario_id in ("same-jvm-rejoin", "same-jvm-rejoin-full-envelope")
@@ -658,6 +695,37 @@ def wait_for_live_join_outcome(
 
         time.sleep(0.1)
     return None
+
+
+
+def wait_for_session_completion(
+    client_output: OutputPump, server_output: OutputPump, timeout: int, label: str,
+    server_markers: tuple[str, ...], client_markers: tuple[str, ...] = (),
+) -> None:
+    """Coordinate shutdown: client PASS alone is never permission to leave early."""
+    deadline = time.monotonic() + timeout
+    missing_server, missing_client = list(server_markers), list(client_markers)
+    while time.monotonic() < deadline:
+        server_history, client_history = list(server_output.history), list(client_output.history)
+        for history, markers, side in (
+            (server_history, SERVER_FATAL_MARKERS, "server"),
+            (client_history, (FAIL_MARKER, PRE_LOGIN_FAIL_MARKER), "client"),
+        ):
+            failure = next((line for line in history if any(m in line for m in markers)), None)
+            if failure is not None:
+                raise RuntimeError(f"{label}: {side} reported failure: {failure.rstrip()}")
+        missing_server = [m for m in server_markers if not any(m in line for line in server_history)]
+        missing_client = [m for m in client_markers if not any(m in line for line in client_history)]
+        if not missing_server and not missing_client:
+            return
+        if any("lost connection:" in line for line in server_history):
+            raise RuntimeError(f"{label}: client disconnected before server/client completion")
+        if client_output.process.poll() is not None or client_output.exhausted():
+            raise RuntimeError(f"{label}: client exited before server/client completion")
+        if server_output.exhausted():
+            raise RuntimeError(f"{label}: server exited before required completion markers")
+        time.sleep(0.1)
+    raise RuntimeError(f"{label}: missing required marker(s): server={missing_server}, client={missing_client}")
 
 
 def command(root: Path, task: str) -> list[str]:
@@ -861,6 +929,7 @@ def scenario_env(scenario: Scenario, cold_phase: str = "") -> dict[str, str]:
     env["ENDLESS_TEST_PRESEED_STALE"] = "true" if scenario.id == "baseline-no-endless" else "false"
     env["ENDLESS_TEST_EXTREME"] = "true" if scenario.gameplay else "false"
     env["ENDLESS_TEST_WAYSTONES"] = "true" if scenario.waystones else "false"
+    env["ENDLESS_TEST_CREATE"] = "true" if scenario.create else "false"
     env["ENDLESS_TEST_FAR"] = "true" if scenario.id == "far-envelope" else "false"
     env["ENDLESS_TEST_COLD_RESTART_PHASE"] = cold_phase
     env["ENDLESS_TEST_SAME_JVM_REJOIN"] = "true" if scenario.integrated_rejoin else "false"
@@ -901,10 +970,10 @@ def run_live_session(
         if PASS_MARKER not in outcome:
             raise RuntimeError(f"{label}: client reported failure: {outcome.rstrip()}")
 
-        if required_server_markers:
-            server_output.wait_until_seen(required_server_markers, min(timeout, 90), SERVER_FATAL_MARKERS)
-        if required_client_markers:
-            client_output.wait_until_seen(required_client_markers, min(timeout, 30), (FAIL_MARKER, PRE_LOGIN_FAIL_MARKER))
+        wait_for_session_completion(
+            client_output, server_output, min(timeout, 90), label,
+            required_server_markers, required_client_markers,
+        )
         print(f"{label}: PASS ({outcome.rstrip()})", flush=True)
         stop_tree(client)
         client = None
@@ -953,6 +1022,65 @@ def run_integrated_rejoin(
         stop_tree(client)
 
 
+
+def cold_restart_server_markers(scenario: Scenario, phase: str) -> tuple[str, ...]:
+    if not scenario.cold_restart or phase not in ("A", "B"):
+        raise ValueError("cold-restart evidence requires phase A or B of a cold-restart scenario")
+    markers = (f"ENDLESS_COLD_RESTART_PHASE_{phase}_PASS",) + scenario.required_server_markers
+    if phase == "B" and scenario.create:
+        markers += (
+            "ENDLESS_CREATE_MIGRATION_PASS",
+            "ENDLESS_CREATE_PARTIAL_MIGRATION_PASS",
+            "ENDLESS_CREATE_UNAVAILABLE_SOURCE_PASS",
+            "ENDLESS_CREATE_ALIASED_LEGACY_ROOTS_PASS",
+            "ENDLESS_CREATE_INTERRUPTED_SAVE_PASS", "ENDLESS_CREATE_MARKED_INTERRUPTED_SAVE_PASS", "ENDLESS_CREATE_UNRESOLVED_ALIASES_PASS",
+            "ENDLESS_CREATE_ALLOCATOR_FAIL_CLOSED_PASS",
+            "ENDLESS_CREATE_CONTRAPTION_2047_CONTROL_PASS",
+            # Expected upstream defect, NOT a successful serialization assertion.
+            "ENDLESS_CREATE_DEFAULT_CONTRAPTION_LIMITATION_CONFIRMED",
+        )
+    return markers
+
+
+def verify_missing_allocator_rejected(
+    root: Path, target: str, module: str, scenario: Scenario, timeout: int,
+) -> None:
+    """Negative control on a disposable phase-A world, restored before real phase B.
+
+    Only the independent persistence mismatch is accepted. Crashes, transport
+    failures, timeout, or a successful phase B cannot satisfy this regression.
+    """
+    world = root / module / "run" / "live-join" / "server" / "live-join-world"
+    allocator = world / "data" / "endless_create_kinetic_ids.dat"
+    if not allocator.is_file() or not (world / "endless-live-create-expected-ids.txt").is_file():
+        raise RuntimeError("Create persistence negative control requires a completed phase-A checkpoint")
+    negative = replace(scenario, id=scenario.id + "-missing-allocator")
+    evidence = root / "build" / "live-join-evidence" / target / negative.id / "phase-B"
+    with tempfile.TemporaryDirectory(prefix="create-allocator-control-", dir=world.parent.parent) as directory:
+        checkpoint = Path(directory) / "world"
+        shutil.copytree(world, checkpoint)
+        try:
+            allocator.unlink()
+            prepare_client(root / module, module, negative)
+            try:
+                run_live_session(root, target, module, negative, timeout, scenario_env(negative, "B"),
+                                 cold_restart_server_markers(scenario, "B"))
+            except RuntimeError as error:
+                log = evidence / "server.log"
+                output = log.read_text(encoding="utf-8", errors="replace") if log.is_file() else ""
+                if "ENDLESS_CREATE_PERSISTENCE_MISMATCH" not in output:
+                    raise RuntimeError("Create allocator negative control failed for an unrelated reason") from error
+                if "ENDLESS_COLD_RESTART_PHASE_B_PASS" in output:
+                    raise RuntimeError("Create allocator negative control emitted a contradictory phase-B pass") from error
+                print(f"{target}/{negative.id}: PASS (missing allocator rejected by independent phase-A identities)", flush=True)
+            else:
+                raise RuntimeError("Create allocator negative control unexpectedly passed without persisted allocator")
+        finally:
+            if world.exists():
+                shutil.rmtree(world)
+            shutil.copytree(checkpoint, world)
+
+
 def _run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeout: int) -> None:
     label = f"{target}/{scenario.id}"
     print(f"Preparing {label}: {scenario.description}", flush=True)
@@ -989,12 +1117,33 @@ def _run_scenario(root: Path, target: str, module: str, scenario: Scenario, time
             )
         return
 
-    # Phase A saves and gracefully stops. Phase B deliberately reuses the same
-    # world directory but starts a brand-new dedicated-server JVM.
-    run_live_session(root, target, module, scenario, timeout, env, ("ENDLESS_COLD_RESTART_PHASE_A_PASS",))
+    # Phase A saves and gracefully stops. A transport failure before any
+    # Endless marker has not created the persistence fixture, so retry it once
+    # from a virgin server/client directory just like ordinary live scenarios.
+    phase_a_markers = cold_restart_server_markers(scenario, "A")
+    try:
+        run_live_session(root, target, module, scenario, timeout, env, phase_a_markers)
+    except TransientPreLoginFailure as first_error:
+        print(f"{label}/phase-A: transient pre-login transport failure; retrying once: {first_error}", flush=True)
+        prepare_server(root / module, scenario)
+        prepare_client(root / module, module, scenario)
+        run_live_session(root, target, module, scenario, timeout, env, phase_a_markers)
+
+    if scenario.create:
+        verify_missing_allocator_rejected(root, target, module, scenario, timeout)
+
+    # Phase B deliberately reuses the phase-A world but starts a brand-new
+    # dedicated-server JVM. A pre-login transport retry must therefore preserve
+    # the server directory and only reset the client.
     prepare_client(root / module, module, scenario)
     phase_b_env = scenario_env(scenario, "B")
-    run_live_session(root, target, module, scenario, timeout, phase_b_env, ("ENDLESS_COLD_RESTART_PHASE_B_PASS",))
+    phase_b_markers = cold_restart_server_markers(scenario, "B")
+    try:
+        run_live_session(root, target, module, scenario, timeout, phase_b_env, phase_b_markers)
+    except TransientPreLoginFailure as first_error:
+        print(f"{label}/phase-B: transient pre-login transport failure; retrying once: {first_error}", flush=True)
+        prepare_client(root / module, module, scenario)
+        run_live_session(root, target, module, scenario, timeout, phase_b_env, phase_b_markers)
 
 
 def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeout: int) -> None:
@@ -1009,6 +1158,19 @@ def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeo
         "required_server_markers": scenario.required_server_markers,
         "required_client_markers": required_client_markers_for(target, scenario),
     }
+    if scenario.cold_restart:
+        result["required_server_markers_by_phase"] = {
+            phase: cold_restart_server_markers(scenario, phase) for phase in ("A", "B")
+        }
+    if scenario.cold_restart and scenario.create:
+        result["known_limitations"] = [{
+            "issue": 14,
+            "marker": "ENDLESS_CREATE_DEFAULT_CONTRAPTION_LIMITATION_CONFIRMED",
+            "default_cap": 2048,
+            "before_local_y": 2048,
+            "after_local_y": -2048,
+            "serializer_fixed": False,
+        }]
     try:
         _run_scenario(root, target, module, scenario, timeout)
         result["status"] = "pass"

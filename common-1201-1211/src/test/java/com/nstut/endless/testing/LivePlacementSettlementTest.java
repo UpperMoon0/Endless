@@ -7,6 +7,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class LivePlacementSettlementTest {
     @Test
+    void delayedStoneAfterRetryDecisionSettlesPreviousAcknowledgedAttempt() {
+        LivePlacementSettlement placement = new LivePlacementSettlement();
+        placement.dispatched(4);
+        assertEquals(WAIT, placement.poll(10, 5, false, true));
+        assertEquals(RETRY, placement.poll(50, 5, false, true));
+        // The caller yields before dispatching again; the page update arrives.
+        assertEquals(ACCEPTED, placement.poll(55, 5, true, false));
+        assertEquals(1, placement.attempts());
+    }
+
+    @Test
     void transientAirAfterAcknowledgementCanSettleWithoutAnotherDispatch() {
         LivePlacementSettlement placement = new LivePlacementSettlement();
         placement.dispatched(0);

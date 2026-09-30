@@ -3,6 +3,7 @@ sourceSets.main.java {
     srcDir rootProject.file('common-1201-1211/src/main/java')
 }
 sourceSets.test.java.srcDir rootProject.file('common-1201-1211/src/test/java')
+sourceSets.test.java.srcDir rootProject.file('create-runtime-tests/src/test/java')
 
 architectury {
     common project.enabled_platforms.split(',')

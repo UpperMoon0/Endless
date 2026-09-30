@@ -1,4 +1,4 @@
-﻿import io
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -23,7 +23,7 @@ class VerificationPolicyTest(unittest.TestCase):
 
     def test_unique_matrix(self):
         self.assertEqual(len(live.SCENARIOS), len({s.id for s in live.SCENARIOS}))
-        self.assertEqual(25, len(live.LIVE_CASES))
+        self.assertEqual(29, len(live.LIVE_CASES))
         self.assertEqual(len(live.LIVE_CASES), len(set(live.LIVE_CASES)))
 
     def test_million_gameplay_cannot_degrade_to_join_only(self):
@@ -58,6 +58,52 @@ class VerificationPolicyTest(unittest.TestCase):
         for target in live.PORT_TARGETS:
             self.assertIn((target, "port-runtime"), live.LIVE_CASES)
 
+    def test_create_compat_is_scoped_to_supported_loaders(self):
+        scenario = next(s for s in live.SCENARIOS if s.id == "create-compat")
+        self.assertTrue(scenario.create)
+        self.assertTrue(scenario.gameplay)
+        self.assertFalse(scenario.waystones)
+        self.assertIn("ENDLESS_CREATE_SPARSE_PASS", scenario.required_server_markers)
+        self.assertIn("ENDLESS_CREATE_KINETIC_PASS", scenario.required_server_markers)
+        self.assertIn("ENDLESS_CREATE_ROTATION_SYNC_PASS", scenario.required_client_markers)
+        self.assertNotIn("ENDLESS_WAYSTONES_SPARSE_PASS", scenario.required_server_markers)
+        create_cases = {case for case in live.LIVE_CASES if case[1] == "create-compat"}
+        self.assertEqual(
+            {("forge-1.20.1", "create-compat"), ("neoforge-1.21.1", "create-compat")},
+            create_cases,
+        )
+    def test_create_cold_restart_is_scoped_to_supported_loaders(self):
+        scenario = next(s for s in live.SCENARIOS if s.id == "create-cold-restart")
+        self.assertTrue(scenario.create)
+        self.assertTrue(scenario.cold_restart)
+        self.assertEqual(live.MILLION_BUILD_HEIGHT, scenario.expected)
+        self.assertIn("ENDLESS_CREATE_KINETIC_COLD_RESTART_PASS", scenario.required_server_markers)
+        create_cases = {case for case in live.LIVE_CASES if case[1] == "create-cold-restart"}
+        self.assertEqual(
+            {("forge-1.20.1", "create-cold-restart"), ("neoforge-1.21.1", "create-cold-restart")},
+            create_cases,
+        )
+
+    def test_default_contraption_characterization_is_required_only_in_create_phase_b(self):
+        scenario = live.SCENARIO_BY_ID["create-cold-restart"]
+        control = "ENDLESS_CREATE_CONTRAPTION_2047_CONTROL_PASS"
+        limitation = "ENDLESS_CREATE_DEFAULT_CONTRAPTION_LIMITATION_CONFIRMED"
+        for marker in (control, limitation):
+            self.assertIn(marker, live.cold_restart_server_markers(scenario, "B"))
+            self.assertNotIn(marker, live.cold_restart_server_markers(scenario, "A"))
+            self.assertNotIn(marker, live.cold_restart_server_markers(live.SCENARIO_BY_ID["cold-restart"], "B"))
+        self.assertEqual(1, live.cold_restart_server_markers(scenario, "B").count(limitation))
+        for marker in ("ENDLESS_CREATE_MIGRATION_PASS", "ENDLESS_CREATE_PARTIAL_MIGRATION_PASS",
+                       "ENDLESS_CREATE_UNAVAILABLE_SOURCE_PASS", "ENDLESS_CREATE_ALIASED_LEGACY_ROOTS_PASS",
+                       "ENDLESS_CREATE_INTERRUPTED_SAVE_PASS", "ENDLESS_CREATE_MARKED_INTERRUPTED_SAVE_PASS", "ENDLESS_CREATE_UNRESOLVED_ALIASES_PASS",
+                       "ENDLESS_CREATE_ALLOCATOR_FAIL_CLOSED_PASS",
+                       "ENDLESS_CREATE_KINETIC_COLD_RESTART_PASS", "ENDLESS_COLD_RESTART_PHASE_B_PASS"):
+            self.assertIn(marker, live.cold_restart_server_markers(scenario, "B"))
+        with self.assertRaises(ValueError):
+            live.cold_restart_server_markers(scenario, "C")
+        with self.assertRaises(ValueError):
+            live.cold_restart_server_markers(live.SCENARIO_BY_ID["create-compat"], "B")
+
     def test_same_jvm_rejoin_is_exact_integrated_lifecycle_gate(self):
         scenario = next(s for s in live.SCENARIOS if s.id == "same-jvm-rejoin")
         self.assertTrue(scenario.integrated_rejoin)
@@ -78,11 +124,12 @@ class VerificationPolicyTest(unittest.TestCase):
             self.assertIn((target, scenario.id), live.LIVE_CASES)
 
     def test_scenario_environment_does_not_leak(self):
-        with patch.dict(live.os.environ, {"ENDLESS_TEST_WAYSTONES": "true", "ENDLESS_TEST_EXTREME": "true"}):
+        with patch.dict(live.os.environ, {"ENDLESS_TEST_WAYSTONES": "true", "ENDLESS_TEST_CREATE": "true", "ENDLESS_TEST_EXTREME": "true"}):
             for s in live.SCENARIOS:
                 env = live.scenario_env(s)
                 self.assertEqual(str(s.gameplay).lower(), env["ENDLESS_TEST_EXTREME"])
                 self.assertEqual(str(s.waystones).lower(), env["ENDLESS_TEST_WAYSTONES"])
+                self.assertEqual(str(s.create).lower(), env["ENDLESS_TEST_CREATE"])
                 self.assertEqual(str(s.id == "far-envelope").lower(), env["ENDLESS_TEST_FAR"])
                 self.assertEqual("", env["ENDLESS_TEST_COLD_RESTART_PHASE"])
                 self.assertEqual(str(s.integrated_rejoin).lower(), env["ENDLESS_TEST_SAME_JVM_REJOIN"])
@@ -101,7 +148,7 @@ class VerificationPolicyTest(unittest.TestCase):
                          live.required_client_markers_for("fabric-1.20.1", legacy))
 
     def test_cold_restart_uses_far_envelope(self):
-        scenario = next(s for s in live.SCENARIOS if s.cold_restart)
+        scenario = live.SCENARIO_BY_ID["cold-restart"]
         self.assertEqual(live.FAR_BUILD_HEIGHT, scenario.expected)
 
     def test_windows_graphical_session_selection_is_dynamic(self):
@@ -167,6 +214,17 @@ class OutputEvidenceTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "missing required"):
             pump.wait_until_seen(("render pass",), 1)
 
+    def test_create_completion_requires_rendered_rotation_evidence(self):
+        scenario = live.SCENARIO_BY_ID["create-compat"]
+        server = self.pump("\n".join(scenario.required_server_markers) + "\n")
+        client = self.pump("\n".join(marker for marker in scenario.required_client_markers
+                                    if marker != "ENDLESS_CREATE_ROTATION_SYNC_PASS")
+                           + "\n" + live.PASS_MARKER + "\n")
+        with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
+            live.wait_for_session_completion(client, server, 1, "test",
+                                             scenario.required_server_markers,
+                                             scenario.required_client_markers)
+
     def test_failure_wins_over_pass_in_history(self):
         pump = self.pump("PASS\nFAIL\n")
         with self.assertRaisesRegex(RuntimeError, "reported failure"):
@@ -177,6 +235,32 @@ class OutputEvidenceTest(unittest.TestCase):
         client = self.pump(live.PASS_MARKER + "\n")
         with self.assertRaisesRegex(RuntimeError, "server reported failure"):
             live.wait_for_live_join_outcome(client, server, 1, "test")
+
+    def test_session_completion_waits_for_server_after_client_pass(self):
+        server = Mock(history=[], process=Mock())
+        client = Mock(history=[live.PASS_MARKER], process=Mock())
+        client.process.poll.return_value = None
+        client.exhausted.return_value = False
+        server.exhausted.return_value = False
+        def complete(_):
+            server.history.append("SERVER_DONE")
+        with patch.object(live.time, "sleep", side_effect=complete) as wait:
+            live.wait_for_session_completion(client, server, 1, "test", ("SERVER_DONE",))
+        wait.assert_called_once()
+
+    def test_client_pass_cannot_hide_disconnect_or_early_exit(self):
+        for disconnected in (True, False):
+            server = Mock(history=["player lost connection: Disconnected"] if disconnected else [])
+            client = Mock(history=[live.PASS_MARKER])
+            client.process.poll.return_value = 0
+            with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
+                live.wait_for_session_completion(client, server, 1, "test", ("SERVER_DONE",))
+
+    def test_completion_failure_wins_over_all_pass_markers(self):
+        server = self.pump("SERVER_DONE\nENDLESS_COLD_RESTART_FAIL broken\n")
+        client = self.pump(live.PASS_MARKER + "\n")
+        with self.assertRaisesRegex(RuntimeError, "server reported failure"):
+            live.wait_for_session_completion(client, server, 1, "test", ("SERVER_DONE",))
 
     def test_integrated_rejoin_has_slow_save_wall_clock_floor(self):
         self.assertGreaterEqual(live.INTEGRATED_REJOIN_MIN_TIMEOUT, 600)
@@ -210,6 +294,78 @@ class OutputEvidenceTest(unittest.TestCase):
                     live._run_scenario(root, "fabric-1.20.1", "fabric", scenario, 1)
             self.assertEqual(1, run_session.call_count)
 
+    def test_cold_restart_retries_prelogin_transport_without_destroying_phase_a_world(self):
+        scenario = next(s for s in live.SCENARIOS if s.id == "create-cold-restart")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            effects = [
+                live.TransientPreLoginFailure("phase-a transport"),
+                None,
+                live.TransientPreLoginFailure("phase-b transport"),
+                None,
+            ]
+            with patch.object(live, "prepare_server") as prepare_server, \
+                 patch.object(live, "prepare_client") as prepare_client, \
+                 patch.object(live.subprocess, "run"), \
+                 patch.object(live, "verify_missing_allocator_rejected"), \
+                 patch.object(live, "run_live_session", side_effect=effects) as run_session:
+                live._run_scenario(root, "forge-1.20.1", "forge-1.20.1", scenario, 1)
+
+            self.assertEqual(4, run_session.call_count)
+            self.assertEqual(2, prepare_server.call_count)
+            self.assertEqual(4, prepare_client.call_count)
+            self.assertEqual("A", run_session.call_args_list[1].args[5]["ENDLESS_TEST_COLD_RESTART_PHASE"])
+            self.assertEqual("B", run_session.call_args_list[2].args[5]["ENDLESS_TEST_COLD_RESTART_PHASE"])
+            self.assertEqual("B", run_session.call_args_list[3].args[5]["ENDLESS_TEST_COLD_RESTART_PHASE"])
+
+    def test_both_loader_cold_restarts_enforce_default_contraption_evidence(self):
+        scenario = live.SCENARIO_BY_ID["create-cold-restart"]
+        for target in ("forge-1.20.1", "neoforge-1.21.1"):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as tmp:
+                with patch.object(live, "prepare_server"), patch.object(live, "prepare_client"), \
+                     patch.object(live.subprocess, "run"), patch.object(live, "verify_missing_allocator_rejected"), \
+                     patch.object(live, "run_live_session") as run_session:
+                    live._run_scenario(Path(tmp), target, target, scenario, 1)
+                self.assertEqual(2, run_session.call_count)
+                self.assertEqual(live.cold_restart_server_markers(scenario, "B"), run_session.call_args.args[6])
+
+    def test_missing_default_contraption_marker_cannot_pass_completion(self):
+        scenario = live.SCENARIO_BY_ID["create-cold-restart"]
+        markers = live.cold_restart_server_markers(scenario, "B")
+        limitation = "ENDLESS_CREATE_DEFAULT_CONTRAPTION_LIMITATION_CONFIRMED"
+        server = self.pump("\n".join(marker for marker in markers if marker != limitation) + "\n")
+        client = self.pump(live.PASS_MARKER + "\n")
+        with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
+            live.wait_for_session_completion(client, server, 1, "test", markers)
+
+    def test_missing_kinetic_accounting_evidence_cannot_pass_completion(self):
+        scenario = live.SCENARIO_BY_ID["create-cold-restart"]
+        markers = live.cold_restart_server_markers(scenario, "B")
+        for missing in ("ENDLESS_CREATE_PARTIAL_MIGRATION_PASS", "ENDLESS_CREATE_UNAVAILABLE_SOURCE_PASS",
+                        "ENDLESS_CREATE_ALIASED_LEGACY_ROOTS_PASS",
+                        "ENDLESS_CREATE_INTERRUPTED_SAVE_PASS", "ENDLESS_CREATE_MARKED_INTERRUPTED_SAVE_PASS", "ENDLESS_CREATE_UNRESOLVED_ALIASES_PASS"):
+            server = self.pump("\n".join(marker for marker in markers if marker != missing) + "\n")
+            client = self.pump(live.PASS_MARKER + "\n")
+            with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
+                live.wait_for_session_completion(client, server, 1, "test", markers)
+
+    def test_cold_restart_receipt_explicitly_labels_unfixed_default_contraption(self):
+        scenario = live.SCENARIO_BY_ID["create-cold-restart"]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(live.subprocess, "check_output", side_effect=["abc123\n", ""]), \
+                 patch.object(live, "_run_scenario"):
+                live.run_scenario(root, "forge-1.20.1", "forge-1.20.1", scenario, 1)
+            result = json.loads(next(root.rglob("result.json")).read_text())
+            self.assertEqual("pass", result["status"])
+            self.assertEqual(list(live.cold_restart_server_markers(scenario, "B")),
+                             result["required_server_markers_by_phase"]["B"])
+            limitation = result["known_limitations"][0]
+            self.assertEqual(14, limitation["issue"])
+            self.assertFalse(limitation["serializer_fixed"])
+            self.assertEqual(2048, limitation["before_local_y"])
+            self.assertEqual(-2048, limitation["after_local_y"])
+
     def test_failure_receipt_survives_exception(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -222,6 +378,34 @@ class OutputEvidenceTest(unittest.TestCase):
             self.assertTrue(result["dirty"])
             self.assertEqual("abc123", result["head"])
             self.assertIn("test crash", result["error"])
+
+
+class AllocatorNegativeControlTest(unittest.TestCase):
+    def test_only_independent_mismatch_is_accepted_and_phase_a_is_restored(self):
+        scenario = live.SCENARIO_BY_ID["create-cold-restart"]
+        for result in ("mismatch", "unrelated", "success"):
+            with self.subTest(result=result), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                world = root / "forge-1.20.1/run/live-join/server/live-join-world"
+                allocator = world / "data/endless_create_kinetic_ids.dat"
+                allocator.parent.mkdir(parents=True)
+                allocator.write_bytes(b"original allocator")
+                (world / "endless-live-create-expected-ids.txt").write_text("2033\n2034\n2032\n")
+                def session(*args):
+                    self.assertFalse(allocator.exists())
+                    if result == "success": return
+                    evidence = root / "build/live-join-evidence/forge-1.20.1/create-cold-restart-missing-allocator/phase-B"
+                    evidence.mkdir(parents=True)
+                    (evidence / "server.log").write_text(
+                        "ENDLESS_CREATE_PERSISTENCE_MISMATCH" if result == "mismatch" else "unrelated crash")
+                    raise RuntimeError("fixture failure")
+                with patch.object(live, "prepare_client"), patch.object(live, "run_live_session", side_effect=session):
+                    if result == "mismatch":
+                        live.verify_missing_allocator_rejected(root, "forge-1.20.1", "forge-1.20.1", scenario, 1)
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, "unrelated reason|unexpectedly passed"):
+                            live.verify_missing_allocator_rejected(root, "forge-1.20.1", "forge-1.20.1", scenario, 1)
+                self.assertEqual(b"original allocator", allocator.read_bytes())
 
 
 if __name__ == "__main__":

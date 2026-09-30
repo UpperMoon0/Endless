@@ -48,6 +48,15 @@ def depVersionsFor(String mcVer) {
 }
 
 subprojects {
+    if (project.name.startsWith('fabric-') || project.name.startsWith('forge-')
+        || project.name.startsWith('neoforge-')) {
+        tasks.withType(Jar).configureEach {
+            from(rootProject.file('LICENSE.txt')) {
+                rename { 'LICENSE-endless.txt' }
+            }
+        }
+    }
+
     if (project.name == 'common' || project.name == 'neoforge-1.21.1' || project.name == 'neoforge-26.1.2') {
         return
     }

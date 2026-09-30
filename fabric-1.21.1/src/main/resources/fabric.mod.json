@@ -5,7 +5,7 @@
   "name": "Endless",
   "description": "Sparse practical infinite build height with persistent high-Y world state.",
   "authors": ["NsTut"],
-  "license": "All-Rights-Reserved",
+  "license": "MIT",
   "icon": "assets/endless/icon.png",
   "environment": "*",
   "entrypoints": {

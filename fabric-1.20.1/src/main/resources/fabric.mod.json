@@ -9,7 +9,7 @@
     "homepage": "https://github.com/UpperMoon0/Endless",
     "issues": "https://github.com/UpperMoon0/Endless/issues"
   },
-  "license": "All-Rights-Reserved",
+  "license": "MIT",
   "icon": "assets/endless/icon.png",
   "environment": "*",
   "entrypoints": {

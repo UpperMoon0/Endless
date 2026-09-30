@@ -211,6 +211,11 @@ public abstract class CreateKineticBlockEntityMixin implements CreateKineticNetw
         BlockEntity self = (BlockEntity) (Object) this;
         if (!EndlessLogicalHeights.isActive() || !endless$savedLegacyNetwork || network == null || source == null
             || !(self.getLevel() instanceof ServerLevel server)) return false;
+        // A saved stable S already has unambiguous generator ownership. Its
+        // pending legacy marker only means the source chain needs reconciliation;
+        // moving it to F would hide its newer aggregate from a stale root L.
+        // Still hold propagation until the exact source chain is available.
+        if (endless$hasStableSavedIdentity(server)) return true;
         // The packed legacy ID cannot tell which of the Y-period aliases owns
         // an unavailable source. Persist one private identity per full position,
         // retaining the original ID for later unloaded-contribution admission.
@@ -225,13 +230,24 @@ public abstract class CreateKineticBlockEntityMixin implements CreateKineticNetw
     @Unique
     private boolean endless$alignSourceNetwork() {
         BlockEntity self = (BlockEntity) (Object) this;
-        if (!EndlessLogicalHeights.isActive() || !(self.getLevel() instanceof ServerLevel)
+        if (!EndlessLogicalHeights.isActive() || !(self.getLevel() instanceof ServerLevel server)
             || source == null || network == null) return false;
         if (!endless$savedLegacyNetwork
             && !EndlessVerticalEngine.isExtendedY(self.getLevel(), self.getBlockPos().getY())) return false;
+        // Restore S before source resolution can prepare a loaded stale root L.
+        // addSilently is idempotent, including tick-before-initialize admission.
+        if (!endless$initialized && endless$savedLegacyNetwork && endless$hasStableSavedIdentity(server)) {
+            CreateKineticMigration.restoreBeforePropagation(self);
+        }
         Long resolved = endless$resolvedSourceNetwork();
         if (resolved == null) return false;
         return endless$acceptResolvedNetwork(resolved);
+    }
+
+    @Unique
+    private boolean endless$hasStableSavedIdentity(ServerLevel server) {
+        return network != null && endless$legacyId != null
+            && CreateKineticIdData.replacesLegacyId(server, network, endless$legacyId);
     }
 
     @Override @Unique

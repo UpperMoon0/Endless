@@ -28,7 +28,7 @@ public final class CreateKineticStorageProbe {
         long followerId = seed.idForFollowerPosition(denseFollower);
         long samePositionFollower = seed.idForFollowerPosition(original);
         require(samePositionFollower != originalId, "provisional identity reused a former generator ID");
-        CompoundTag valid = seed.save(new CompoundTag());
+        CompoundTag valid = snapshot(seed);
 
         Path newFolder = Files.createTempDirectory(scratch, "new-");
         var fresh = CreateKineticIdData.getOrCreate(storage(newFolder), file(newFolder));
@@ -42,12 +42,22 @@ public final class CreateKineticStorageProbe {
         require(followerId != originalId, "dense provisional identity collided with sparse root");
         require(loaded.idForPosition(unrelated) != originalId, "valid allocator reused an ID");
 
-        for (String mode : new String[]{"duplicate", "missing-fields", "wrong-list-type", "old-namespace", "truncated"}) {
+        for (String mode : new String[]{"duplicate", "missing-fields", "wrong-list-type", "old-namespace", "v2-unmarked-follower", "v2-marked-follower", "truncated"}) {
             Path folder = Files.createTempDirectory(scratch, mode + "-");
             CompoundTag invalid = valid.copy();
             if (mode.equals("old-namespace")) {
                 invalid.remove("Namespace");
                 invalid.getList("Entries", 10).getCompound(0).putLong("Id", 2032L);
+            } else if (mode.startsWith("v2-")) {
+                // Exact ambiguous draft shape: sparse provisional ID, Namespace=2,
+                // and no Follower field. Even later marked v2 files must be refused.
+                var draft = new CreateKineticIdData();
+                draft.idForFollowerPosition(original);
+                invalid = snapshot(draft);
+                invalid.putInt("Namespace", 2);
+                if (mode.equals("v2-unmarked-follower")) {
+                    invalid.getList("Entries", 10).getCompound(0).remove("Follower");
+                }
             } else if (mode.equals("duplicate")) {
                 CompoundTag duplicate = invalid.getList("Entries", 10).getCompound(0).copy();
                 duplicate.putInt("X", 11);
@@ -75,7 +85,7 @@ public final class CreateKineticStorageProbe {
             storage.save();
             require(Arrays.equals(originalBytes, Files.readAllBytes(dataFile)), "corrupt allocator was overwritten");
         }
-        System.out.println("ENDLESS_CREATE_ALLOCATOR_FAIL_CLOSED_PASS diskBacked=true cases=5");
+        System.out.println("ENDLESS_CREATE_ALLOCATOR_FAIL_CLOSED_PASS diskBacked=true cases=7 namespaceV2Refused=true");
     }
 
     /** A filesystem entry still exists when a symlink's target has disappeared. */
@@ -95,6 +105,8 @@ public final class CreateKineticStorageProbe {
         storage.save();
         require(Files.isSymbolicLink(dataFile), "dangling allocator link was overwritten");
     }
+
+    static CompoundTag snapshot(CreateKineticIdData data) { return data.save(new CompoundTag()); }
 
     private static Path file(Path folder) { return folder.resolve(CreateKineticIdData.DATA_NAME + ".dat"); }
     private static DimensionDataStorage storage(Path folder) { return new DimensionDataStorage(folder.toFile(), DataFixers.getDataFixer()); }

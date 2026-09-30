@@ -81,7 +81,7 @@ Waystones 1.20.1 is explicitly covered: its placement code normally treats `Leve
 
 Create compatibility targets Forge 1.20.1 (Create 6.0.8) and NeoForge 1.21.1 (Create 6.0.11). The development-runtime gates exercise schematic rail placement, distinct sparse generator identities, fresh-JVM persistence against an independent checkpoint, and legacy-NBT reconstruction of two connected generators with a real stress consumer in root-first, follower-first, and late-follower load orders. Migration preserves Create's unloaded stress/capacity/member accounting. Interrupted saves reuse the allocator-owned root network already restored by a follower. Legacy followers whose full Source chain is unavailable receive separate persistent provisional identities and save `EndlessLegacyNetworkId` until they can rejoin their exact root; provisional identities do not propagate to neighbours. Generator and provisional allocations remain distinct even at the same full position. The runtime gate covers two aliased unresolved branches in both admission orders, pending-NBT reconstruction, and later root reconciliation.
 
-Each dimension's `data/endless_create_kinetic_ids.dat` is part of the world backup. Existing unreadable or invalid allocator data stops allocation instead of silently starting a new namespace. Namespace version 2 uses packed X=30,000,000, outside vanilla's legal horizontal bounds at every Y. Unsafe unversioned allocator files from earlier v0.7 drafts are refused unchanged and require the matching draft build or explicit offline migration. Restore the matching allocator and world state from a verified backup; do not delete or replace that file to suppress an error. A genuinely absent allocator is initialized for a new namespace, so deleting an established allocator is not a supported recovery procedure.
+Each dimension's `data/endless_create_kinetic_ids.dat` is part of the world backup. Existing unreadable or invalid allocator data stops allocation instead of silently starting a new namespace. Namespace version 3 uses packed X=30,000,000, outside vanilla's legal horizontal bounds at every Y. Unsafe unversioned and version-2 allocator files from earlier v0.7 drafts are refused unchanged (version 2 did not reliably distinguish provisional followers from generator ownership) and require the matching draft build or explicit offline migration. Restore the matching allocator and world state from a verified backup; do not delete or replace that file to suppress an error. A genuinely absent allocator is initialized for a new namespace, so deleting an established allocator is not a supported recovery procedure.
 
 Display-link/redstone-link full-position persistence and mechanical-arm/ejector cache changes are targeted source-backed fixes. Ejector key regressions cover the hit cell in wrench mode, the face-adjacent cell in placement mode, packed-Y aliases, and world/mode/reset changes. These checks do not certify final GUI trajectory pixels, comprehensive copy/relocation behavior, packaged production launches, or all Flywheel lighting/culling/cache lifetimes. Contraption serialization has a confirmed default-configuration limitation, detailed below; broader destruction-progress aliasing remains tracked separately (#16).
 
@@ -130,7 +130,7 @@ The release gate contains **29 required live cells**: 16 Fabric/Forge 1.20.1 cel
 
 ## License
 
-All Rights Reserved
+[MIT](LICENSE.txt)
 
 ## Author
 

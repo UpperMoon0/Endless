@@ -26,6 +26,9 @@ public final class LiveCreateMigrationTest {
             verifyAliasedLegacyRoots(level);
             verifyUnavailableSource(level);
             verifyInterruptedSave(level);
+            verifyMarkedInterruptedSave(level, false);
+            verifyMarkedInterruptedSave(level, true);
+            System.out.println("ENDLESS_CREATE_MARKED_INTERRUPTED_SAVE_PASS unavailableSource=true pendingRestart=true staleRoot=true initializeAndTick=true");
             verifyUnresolvedAliases(level, false, 1_000_000);
             verifyUnresolvedAliases(level, true, 1_000_000);
             verifyUnresolvedAliases(level, false, 0);
@@ -330,6 +333,78 @@ public final class LiveCreateMigrationTest {
         call(root, "initialize"); call(follower, "initialize");
         require(((Number) call(restored, "getSize")).intValue() == 3, "repeated admission consumed unloaded members twice");
         System.out.println("ENDLESS_CREATE_INTERRUPTED_SAVE_PASS followerFirst=true targetReused=true aggregatePreserved=true");
+        retire(root); retire(follower);
+        level.setBlock(rootPos, Blocks.AIR.defaultBlockState(), 18);
+        level.setBlock(followerPos, Blocks.AIR.defaultBlockState(), 18);
+    }
+
+    private static void verifyMarkedInterruptedSave(ServerLevel level, boolean tickFirst) throws ReflectiveOperationException {
+        BlockState motor = block("creative_motor").setValue(BlockStateProperties.FACING, Direction.SOUTH);
+        BlockState shaft = block("shaft").setValue(BlockStateProperties.AXIS, Direction.Axis.Z);
+        BlockPos templatePos = new BlockPos(14, 1_000_000, 2);
+        level.setBlock(templatePos, motor, 18);
+        BlockEntity template = level.getBlockEntity(templatePos);
+        call(template, "tick"); call(template, "tick");
+        CompoundTag rootNbt = LiveCreateNbt.save(level, template);
+        float rootCapacity = rootNbt.getCompound("Network").getFloat("Capacity");
+        require(rootCapacity > 0, "interrupted-save template has no capacity");
+        retire(template); level.setBlock(templatePos, Blocks.AIR.defaultBlockState(), 18);
+
+        // The follower's chunk saved after migration; the root chunk still has L.
+        // Keep the direct source in a genuinely unloaded chunk, across its border.
+        BlockPos rootPos = new BlockPos(0, 1_000_000, tickFirst ? 81935 : 65551);
+        BlockPos followerPos = rootPos.south();
+        require(!level.isLoaded(rootPos), "interrupted-save source already loaded");
+        long stable = CreateKineticIdData.idFor(level, rootPos);
+        level.getDataStorage().save();
+        level.setBlock(followerPos, shaft, 18);
+        CompoundTag followerNbt = LiveCreateNbt.save(level, level.getBlockEntity(followerPos));
+        CompoundTag source = new CompoundTag();
+        source.putInt("X", rootPos.getX()); source.putInt("Y", rootPos.getY()); source.putInt("Z", rootPos.getZ());
+        followerNbt.put("Source", source); followerNbt.putFloat("Speed", 16f);
+        CompoundTag totals = new CompoundTag();
+        totals.putLong("Id", stable); totals.putFloat("Capacity", rootCapacity + 512f);
+        totals.putFloat("Stress", 256f); totals.putInt("Size", 3);
+        followerNbt.put("Network", totals);
+        followerNbt.putLong("EndlessLegacyNetworkId", rootPos.asLong());
+        level.removeBlockEntity(followerPos);
+        BlockEntity follower = LiveCreateNbt.load(level, followerPos, shaft, followerNbt);
+        level.setBlockEntity(follower);
+        call(follower, tickFirst ? "tick" : "initialize");
+        tickAll(new BlockEntity[]{follower}, false, 260);
+        require(!level.isLoaded(rootPos), "marked follower loaded its missing source");
+        // Another save/reload while unresolved must retain both the aggregate and marker.
+        CompoundTag pending = LiveCreateNbt.save(level, follower);
+        require(pending.getLong("EndlessLegacyNetworkId") == rootPos.asLong(), "pending marker lost before root loaded");
+        retire(follower); level.removeBlockEntity(followerPos);
+        follower = LiveCreateNbt.load(level, followerPos, shaft, pending);
+        level.setBlockEntity(follower); call(follower, "initialize");
+        require(!level.isLoaded(rootPos), "pending restart loaded the source");
+        Object restored = call(follower, "getOrCreateNetwork");
+
+        rootNbt.getCompound("Network").putLong("Id", rootPos.asLong());
+        rootNbt.getCompound("Network").putFloat("Stress", 128f);
+        rootNbt.getCompound("Network").putInt("Size", 2);
+        level.setBlock(rootPos, motor, 18); level.removeBlockEntity(rootPos);
+        BlockEntity root = LiveCreateNbt.load(level, rootPos, motor, rootNbt);
+        level.setBlockEntity(root);
+        call(root, "initialize");
+        tickAll(new BlockEntity[]{root, follower}, false, 260);
+        Object resolved = call(root, "getOrCreateNetwork");
+        require(((Number) call(resolved, "getSize")).intValue() == 3
+            && number(call(resolved, "calculateStress")) == 256f
+            && number(call(resolved, "calculateCapacity")) == rootCapacity + 512f,
+            "marked interrupted-save lost newer follower totals: size=" + call(resolved, "getSize")
+                + " stress=" + call(resolved, "calculateStress") + " capacity=" + call(resolved, "calculateCapacity"));
+        require(Long.valueOf(stable).equals(field(root, "network")) && resolved == restored
+            && resolved == call(follower, "getOrCreateNetwork")
+            && ((Map<?, ?>) field(resolved, "members")).size() == 2,
+            "marked interrupted-save failed to reuse stable membership");
+        call(root, "initialize"); call(follower, "initialize");
+        require(((Number) call(resolved, "getSize")).intValue() == 3
+            && number(call(resolved, "calculateStress")) == 256f,
+            "marked interrupted-save repeated admission changed totals");
+        require(!LiveCreateNbt.save(level, follower).contains("EndlessLegacyNetworkId"), "resolved interrupted-save marker retained");
         retire(root); retire(follower);
         level.setBlock(rootPos, Blocks.AIR.defaultBlockState(), 18);
         level.setBlock(followerPos, Blocks.AIR.defaultBlockState(), 18);

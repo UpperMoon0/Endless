@@ -43,7 +43,9 @@ public final class CreateKineticIdData extends SavedData {
     private static final int SEQUENCE_BITS = 38;
     private static final long MAX_SEQUENCE_EXCLUSIVE = 1L << SEQUENCE_BITS;
     private static final long NAMESPACE_PREFIX = (long) RESERVED_X << SEQUENCE_BITS;
-    private static final int NAMESPACE_VERSION = 2;
+    // Version 2 also wrote provisional sparse followers without a role flag.
+    // Those records cannot be distinguished from generator ownership.
+    private static final int NAMESPACE_VERSION = 3;
 
     private final Map<PositionKey, Long> ids = new HashMap<>();
     private final Map<Long, PositionKey> positionsById = new HashMap<>();

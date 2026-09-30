@@ -16,3 +16,6 @@ Endless 0.7
 - Documented the 29-cell live gate, allocator backup/recovery requirements, and limits of development launches and source-backed client-cache coverage. Version 0.7 remains the pending release; no historical release is rewritten.
 - Keep ejector world-context references weak because Create does not tick that handler outside an active world; disconnected worlds are not retained by the compatibility cache. Treat a dangling allocator symlink as existing unreadable state, not a new namespace.
 - Added a required real mounted-assembly / entity-initialization / writeNBT-to-fromNBT boundary characterization on both supported Create loaders: 2,047 payload blocks preserve every local block/state; the default 2,048 payload case explicitly confirms the known +2048 to -2048 shift. A passing limitation characterization is not a serializer-safety claim.
+- Preserve newer Create follower accounting across interrupted chunk saves with a pending legacy marker.
+- Refuse ambiguous version-2 draft kinetic allocator files; version 3 records generator/provisional roles separately.
+- License Endless under MIT.

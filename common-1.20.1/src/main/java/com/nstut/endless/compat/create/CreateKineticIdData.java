@@ -1,6 +1,5 @@
 package com.nstut.endless.compat.create;
 
-import com.nstut.endless.config.EndlessConfig;
 import com.nstut.endless.heights.EndlessHeights;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -25,12 +24,10 @@ import java.util.Set;
  * Persistent per-dimension allocator for Create generator network IDs outside
  * Endless' dense core.
  *
- * <p>Vanilla 1.20.1 packs Y into the low 12 bits of BlockPos longs. Endless'
- * persisted dense envelope is [-2032, 2032), so packed Y codes 2032..2063 are
- * unreachable by every dense generator: positive dense Y occupies 0..2031 and
- * negative dense Y occupies 2064..4095. We reserve exactly that 32-code gap.
- * The other 52 packed bits plus five reserved-Y selector bits provide 2^57
- * collision-free synthetic IDs. Exhaustion fails closed instead of wrapping.</p>
+ * <p>Both pinned vanilla versions reject world X >= 30,000,000. Their
+ * BlockPos packing uses 26 X bits, so fixing the packed X to 30,000,000
+ * leaves 38 sequence bits disjoint from every legal dense or sparse position.
+ * Exhaustion fails closed; old draft Y-gap allocators are explicitly refused.</p>
  *
  * <p>The mapping is keyed by the full uncompressed world position rather than
  * stored in Create block-entity NBT. That matters because schematics and moving
@@ -40,13 +37,16 @@ import java.util.Set;
 public final class CreateKineticIdData extends SavedData {
     public static final String DATA_NAME = "endless_create_kinetic_ids";
 
-    private static final int RESERVED_Y_FIRST = EndlessConfig.DENSE_MAX_BUILD_HEIGHT;
-    private static final int RESERVED_Y_COUNT = 32;
-    private static final int RESERVED_SLOT_BITS = 5;
-    private static final long MAX_SEQUENCE_EXCLUSIVE = 1L << 57;
-    private static final long PACKED_Y_MASK = (1L << BlockPos.PACKED_Y_LENGTH) - 1L;
+    // Level.isInWorldBoundsHorizontal rejects X >= 30,000,000 on both targets.
+    // BlockPos packs X into the top 26 bits; all 38 remaining bits are free.
+    private static final int RESERVED_X = 30_000_000;
+    private static final int SEQUENCE_BITS = 38;
+    private static final long MAX_SEQUENCE_EXCLUSIVE = 1L << SEQUENCE_BITS;
+    private static final long NAMESPACE_PREFIX = (long) RESERVED_X << SEQUENCE_BITS;
+    private static final int NAMESPACE_VERSION = 2;
 
     private final Map<PositionKey, Long> ids = new HashMap<>();
+    private final Map<Long, PositionKey> positionsById = new HashMap<>();
     private long nextSequence;
 
     public CreateKineticIdData() {
@@ -55,6 +55,9 @@ public final class CreateKineticIdData extends SavedData {
 
     public static CreateKineticIdData load(CompoundTag tag) {
         CreateKineticIdData data = new CreateKineticIdData();
+        if (!tag.contains("Namespace", Tag.TAG_INT) || tag.getInt("Namespace") != NAMESPACE_VERSION) {
+            throw new IllegalArgumentException("Unsupported pre-release Endless/Create kinetic namespace; use the matching draft build or migrate offline");
+        }
         if (!tag.contains("NextSequence", Tag.TAG_LONG) || !tag.contains("Entries", Tag.TAG_LIST)) {
             throw new IllegalArgumentException("Missing or invalid Endless/Create kinetic allocator fields");
         }
@@ -87,6 +90,7 @@ public final class CreateKineticIdData extends SavedData {
             if (!usedIds.add(id) && (previous == null || previous.longValue() != id)) {
                 throw new IllegalArgumentException("Duplicate Endless/Create kinetic ID " + id);
             }
+            data.positionsById.put(id, key);
             highestSequence = Math.max(highestSequence, sequence);
         }
 
@@ -99,6 +103,7 @@ public final class CreateKineticIdData extends SavedData {
 
     @Override
     public CompoundTag save(CompoundTag tag) {
+        tag.putInt("Namespace", NAMESPACE_VERSION);
         tag.putLong("NextSequence", nextSequence);
         ListTag entries = new ListTag();
         for (Map.Entry<PositionKey, Long> mapping : ids.entrySet()) {
@@ -118,10 +123,20 @@ public final class CreateKineticIdData extends SavedData {
         if (!EndlessHeights.isOutsideDenseBuildHeight(pos.getY())) {
             throw new IllegalArgumentException("Create synthetic kinetic ID requested inside Endless dense core: " + pos);
         }
+        return dataFor(level).idForPosition(pos);
+    }
+
+    /** Only saved admissions from the same legacy root consume unloaded totals. */
+    public static boolean replacesLegacyId(ServerLevel level, long synthetic, long legacy) {
+        PositionKey root = dataFor(level).positionsById.get(synthetic);
+        return root != null && new BlockPos(root.x(), root.y(), root.z()).asLong() == legacy;
+    }
+
+    private static CreateKineticIdData dataFor(ServerLevel level) {
         Path worldRoot = level.getServer().getWorldPath(LevelResource.ROOT);
         Path dataFile = DimensionType.getStorageFolder(level.dimension(), worldRoot)
             .resolve("data").resolve(DATA_NAME + ".dat");
-        return getOrCreate(level.getDataStorage(), dataFile).idForPosition(pos);
+        return getOrCreate(level.getDataStorage(), dataFile);
     }
 
     /**
@@ -156,6 +171,7 @@ public final class CreateKineticIdData extends SavedData {
 
         long id = syntheticIdForSequence(nextSequence++);
         ids.put(key, id);
+        positionsById.put(id, key);
         setDirty();
         return id;
     }
@@ -164,26 +180,25 @@ public final class CreateKineticIdData extends SavedData {
         if (sequence < 0 || sequence >= MAX_SEQUENCE_EXCLUSIVE) {
             throw new IllegalArgumentException("Synthetic Create kinetic sequence out of range: " + sequence);
         }
-        long upper52 = sequence >>> RESERVED_SLOT_BITS;
-        long yCode = RESERVED_Y_FIRST + (sequence & (RESERVED_Y_COUNT - 1L));
-        return (upper52 << BlockPos.PACKED_Y_LENGTH) | yCode;
+        return NAMESPACE_PREFIX | sequence;
+    }
+
+    public static boolean isSyntheticId(long id) {
+        return (id >>> SEQUENCE_BITS) == RESERVED_X;
     }
 
     private static long sequenceForSyntheticId(long id) {
-        long yCode = id & PACKED_Y_MASK;
-        if (yCode < RESERVED_Y_FIRST || yCode >= RESERVED_Y_FIRST + RESERVED_Y_COUNT) {
+        if (!isSyntheticId(id)) {
             throw new IllegalArgumentException("Invalid Endless/Create synthetic kinetic ID " + id);
         }
-        long upper52 = id >>> BlockPos.PACKED_Y_LENGTH;
-        return (upper52 << RESERVED_SLOT_BITS) | (yCode - RESERVED_Y_FIRST);
+        return id & (MAX_SEQUENCE_EXCLUSIVE - 1);
     }
 
     private static void verifyNamespaceContract() {
-        if (BlockPos.PACKED_Y_LENGTH != 12
-            || EndlessConfig.DENSE_MIN_BUILD_HEIGHT != -2032
-            || EndlessConfig.DENSE_MAX_BUILD_HEIGHT != 2032
-            || RESERVED_Y_FIRST + RESERVED_Y_COUNT != 2064) {
-            throw new IllegalStateException("Endless/Create kinetic ID namespace no longer matches BlockPos/dense-core layout");
+        BlockPos first = BlockPos.of(NAMESPACE_PREFIX);
+        BlockPos last = BlockPos.of(NAMESPACE_PREFIX | (MAX_SEQUENCE_EXCLUSIVE - 1));
+        if (BlockPos.PACKED_Y_LENGTH != 12 || first.getX() != RESERVED_X || last.getX() != RESERVED_X) {
+            throw new IllegalStateException("Endless/Create kinetic namespace no longer matches BlockPos packing");
         }
     }
 

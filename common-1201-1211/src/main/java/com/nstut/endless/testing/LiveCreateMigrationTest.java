@@ -1,6 +1,7 @@
 package com.nstut.endless.testing;
 
 import java.lang.reflect.Field;
+import com.nstut.endless.compat.create.CreateKineticIdData;
 import java.util.Map;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -19,10 +20,12 @@ public final class LiveCreateMigrationTest {
 
     public static void run(ServerLevel level) {
         try {
-            for (String order : new String[]{"follower-first", "root-first", "late-follower"}) {
+            for (String order : new String[]{"follower-first", "root-first", "late-follower", "late-partial-follower"}) {
                 verifyOrder(level, order);
             }
-            System.out.println("ENDLESS_CREATE_MIGRATION_PASS orders=follower-first,root-first,late-follower generators=2 realConsumer=true");
+            verifyAliasedLegacyRoots(level);
+            verifyUnavailableSource(level);
+            System.out.println("ENDLESS_CREATE_MIGRATION_PASS orders=follower-first,root-first,late-follower,late-partial-follower generators=2 realConsumer=true");
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("Create connected legacy-network regression failed", e);
         }
@@ -30,8 +33,9 @@ public final class LiveCreateMigrationTest {
 
     private static void verifyOrder(ServerLevel level, String order) throws ReflectiveOperationException {
         boolean followerFirst = !"root-first".equals(order);
-        boolean lateFollower = "late-follower".equals(order);
-        BlockPos root = new BlockPos(lateFollower ? 6 : followerFirst ? 2 : 4, 1_000_000, 2);
+        boolean lateFollower = order.startsWith("late-");
+        boolean partialFollower = "late-partial-follower".equals(order);
+        BlockPos root = new BlockPos(partialFollower ? 10 : lateFollower ? 6 : followerFirst ? 2 : 4, 1_000_000, 2);
         BlockPos[] positions = {root, root.south(), root.south(2), root.south(3)};
         BlockState[] states = {
             block("creative_motor").setValue(BlockStateProperties.FACING, Direction.SOUTH),
@@ -72,6 +76,7 @@ public final class LiveCreateMigrationTest {
             for (int i = 1; i < positions.length; i++) level.setBlock(positions[i], Blocks.AIR.defaultBlockState(), 2);
         }
         for (int i = 0; i < entities.length; i++) {
+            if (partialFollower && i == 1) continue; // admitted before the root tick below
             if (lateFollower && i > 0) {
                 level.setBlock(positions[i], states[i], 2);
                 level.removeBlockEntity(positions[i]);
@@ -81,9 +86,25 @@ public final class LiveCreateMigrationTest {
             level.setBlockEntity(entities[i]);
             require(Long.valueOf(legacy).equals(field(entities[i], "network")), "legacy ID was not restored");
             if (lateFollower && i == 0) {
+                if (partialFollower) {
+                    level.setBlock(positions[1], states[1], 2);
+                    level.removeBlockEntity(positions[1]);
+                    entities[1] = LiveCreateNbt.load(level, positions[1], states[1], saved[1]);
+                    level.setBlockEntity(entities[1]);
+                }
                 call(entities[0], "tick");
                 call(entities[0], "tick");
                 require(!Long.valueOf(legacy).equals(field(entities[0], "network")), "root did not migrate before followers loaded");
+                Object partial = call(entities[0], "getOrCreateNetwork");
+                CompoundTag totals = saved[0].getCompound("Network");
+                require(((Number) call(partial, "getSize")).intValue() == totals.getInt("Size"),
+                    "partial-load migration lost unloaded members");
+                require(Math.abs(number(call(partial, "calculateStress")) - totals.getFloat("Stress")) < .01f,
+                    "partial-load migration lost unloaded stress");
+                require(Math.abs(number(call(partial, "calculateCapacity")) - totals.getFloat("Capacity")) < .01f,
+                    "partial-load migration lost unloaded capacity");
+                System.out.println("ENDLESS_CREATE_PARTIAL_MIGRATION_PASS members=" + totals.getInt("Size")
+                    + " unloadedConsumer=true unloadedGenerator=true order=" + order);
             }
         }
         tickAll(entities, followerFirst, 260);
@@ -107,6 +128,141 @@ public final class LiveCreateMigrationTest {
         assertConnected(entities);
         System.out.println("ENDLESS_CREATE_CONNECTED_MIGRATION_ORDER_PASS order="
             + order + " members=4 sources=2 stressRecovery=true");
+    }
+
+    private static void verifyAliasedLegacyRoots(ServerLevel level) throws ReflectiveOperationException {
+        BlockPos firstPos = new BlockPos(12, 1_000_000, 2);
+        BlockPos secondPos = firstPos.above(4096);
+        require(firstPos.asLong() == secondPos.asLong(), "fixture roots must share a legacy packed ID");
+        BlockState state = block("creative_motor").setValue(BlockStateProperties.FACING, Direction.SOUTH);
+        BlockEntity[] roots = new BlockEntity[2];
+        CompoundTag[] saved = new CompoundTag[2];
+        BlockPos[] positions = {firstPos, secondPos};
+        Class<?> kinetic = Class.forName("com.simibubi.create.content.kinetics.base.KineticBlockEntity");
+        for (int i = 0; i < 2; i++) {
+            level.setBlock(positions[i], state, 3);
+            roots[i] = level.getBlockEntity(positions[i]);
+            call(roots[i], "tick"); call(roots[i], "tick");
+            saved[i] = LiveCreateNbt.save(level, roots[i]);
+            saved[i].getCompound("Network").putLong("Id", firstPos.asLong());
+            kinetic.getMethod("setNetwork", Long.class).invoke(roots[i], new Object[]{null});
+            level.removeBlockEntity(positions[i]);
+            roots[i] = LiveCreateNbt.load(level, positions[i], state, saved[i]);
+            level.setBlockEntity(roots[i]);
+        }
+        // Reproduce a foreign member already admitted to the shared legacy map.
+        Object legacyNet = call(roots[1], "getOrCreateNetwork");
+        CompoundTag totals = saved[1].getCompound("Network");
+        legacyNet.getClass().getMethod("initFromTE", float.class, float.class, int.class)
+            .invoke(legacyNet, totals.getFloat("Capacity"), totals.getFloat("Stress"), totals.getInt("Size"));
+        legacyNet.getClass().getMethod("addSilently", kinetic, float.class, float.class)
+            .invoke(legacyNet, roots[1], number(field(roots[1], "lastCapacityProvided")), number(field(roots[1], "lastStressApplied")));
+        call(roots[0], "initialize");
+        require(Long.valueOf(firstPos.asLong()).equals(field(roots[1], "network")),
+            "migration stole a disconnected aliased root");
+        call(roots[1], "initialize");
+        Object first = call(roots[0], "getOrCreateNetwork");
+        Object second = call(roots[1], "getOrCreateNetwork");
+        require(first != second && !field(roots[0], "network").equals(field(roots[1], "network")),
+            "aliased legacy roots failed to separate");
+        for (int i = 0; i < 2; i++) {
+            Object net = call(roots[i], "getOrCreateNetwork");
+            require(((Number) call(net, "getSize")).intValue() == 1
+                && ((Map<?, ?>) field(net, "members")).size() == 1,
+                "aliased root migration retained foreign membership");
+            require(number(call(net, "calculateCapacity")) == saved[i].getCompound("Network").getFloat("Capacity"),
+                "aliased root migration lost its saved capacity");
+            kinetic.getMethod("setNetwork", Long.class).invoke(roots[i], new Object[]{null});
+            level.setBlock(positions[i], Blocks.AIR.defaultBlockState(), 2);
+        }
+        System.out.println("ENDLESS_CREATE_ALIASED_LEGACY_ROOTS_PASS separated=true exactSourceChains=true");
+    }
+
+    private static void verifyUnavailableSource(ServerLevel level) throws ReflectiveOperationException {
+        // The owner is a real modern generator. The restored shaft is in a loaded
+        // adjacent chunk while its immediate source/root chunk was never requested.
+        // Reserve a sequence whose OLD Y-gap encoding names an unloaded legal
+        // root. Keep the live allocator's prior entries; never reset its state.
+        Field cacheField = level.getDataStorage().getClass().getDeclaredField("cache");
+        cacheField.setAccessible(true);
+        Object allocator = ((Map<?, ?>) cacheField.get(level.getDataStorage())).get(CreateKineticIdData.DATA_NAME);
+        require(allocator != null, "fixture needs the existing live allocator");
+        Field next = allocator.getClass().getDeclaredField("nextSequence");
+        next.setAccessible(true);
+        long sequence = Math.max(1L << 17, (next.getLong(allocator) + 511L) & ~511L);
+        next.setLong(allocator, sequence);
+        BlockPos ownerPos = new BlockPos(8, 1_000_000, 2);
+        BlockState motor = block("creative_motor").setValue(BlockStateProperties.FACING, Direction.SOUTH);
+        level.setBlock(ownerPos, Blocks.AIR.defaultBlockState(), 18);
+        level.setBlock(ownerPos, motor, 3);
+        BlockEntity owner = level.getBlockEntity(ownerPos);
+        call(owner, "tick");
+        call(owner, "tick");
+        Object ownerNet = call(owner, "getOrCreateNetwork");
+        Long ownerId = (Long) field(owner, "network");
+        // Old encoding: ((sequence >>> 5) << 12) | (2032 + (sequence & 31)).
+        long oldCollisionId = ((sequence >>> 5) << 12) | (2032 + (sequence & 31));
+        BlockPos root = BlockPos.of(oldCollisionId);
+        BlockPos source = root.south(15);
+        BlockPos followerPos = root.south(16);
+        require(!level.isLoaded(source), "source-unavailable fixture source chunk already loaded");
+        BlockState shaft = block("shaft").setValue(BlockStateProperties.AXIS, Direction.Axis.Z);
+        // Flag 16 suppresses shape-neighbour reads across the chunk boundary;
+        // otherwise fixture placement itself loads the deliberately absent source.
+        level.setBlock(followerPos, shaft, 18);
+        require(!level.isLoaded(source), "fixture placement loaded its source chunk");
+        BlockEntity initial = level.getBlockEntity(followerPos);
+        CompoundTag saved = LiveCreateNbt.save(level, initial);
+        CompoundTag sourceTag = new CompoundTag();
+        sourceTag.putInt("X", source.getX()); sourceTag.putInt("Y", source.getY()); sourceTag.putInt("Z", source.getZ());
+        saved.put("Source", sourceTag);
+        saved.putFloat("Speed", 16f);
+        CompoundTag legacy = new CompoundTag();
+        legacy.putLong("Id", root.asLong()); legacy.putFloat("Capacity", 512f);
+        legacy.putFloat("Stress", 64f); legacy.putInt("Size", 3);
+        saved.put("Network", legacy);
+        level.removeBlockEntity(followerPos);
+        BlockEntity follower = LiveCreateNbt.load(level, followerPos, shaft, saved);
+        level.setBlockEntity(follower);
+        // Negative control: reproduce the old encoding with the real Create API.
+        // The unavailable source prevents our alignment hooks from intervening;
+        // native initialize must admit this follower to the unrelated old owner.
+        Class<?> kinetic = Class.forName("com.simibubi.create.content.kinetics.base.KineticBlockEntity");
+        var setNetwork = kinetic.getMethod("setNetwork", Long.class);
+        setNetwork.invoke(owner, Long.valueOf(oldCollisionId));
+        call(follower, "initialize");
+        Object colliding = call(owner, "getOrCreateNetwork");
+        require(call(follower, "getOrCreateNetwork") == colliding
+            && ((Map<?, ?>) field(colliding, "members")).containsKey(follower),
+            "old encoding negative control failed to reproduce wrong-network admission");
+        require(!level.isLoaded(source), "negative control loaded its source chunk");
+        setNetwork.invoke(follower, new Object[]{null});
+        level.removeBlockEntity(followerPos);
+        setNetwork.invoke(owner, ownerId);
+        call(owner, "tick");
+        ownerNet = call(owner, "getOrCreateNetwork");
+        float ownerCapacity = number(call(ownerNet, "calculateCapacity"));
+        int ownerSize = ((Number) call(ownerNet, "getSize")).intValue();
+        follower = LiveCreateNbt.load(level, followerPos, shaft, saved);
+        level.setBlockEntity(follower);
+        call(follower, "initialize");
+        require(!level.isLoaded(source), "legacy follower admission loaded its source chunk");
+        Object followerNet = call(follower, "getOrCreateNetwork");
+        require(followerNet != ownerNet, "source-unavailable legacy follower joined modern owner");
+        require(CreateKineticIdData.isSyntheticId(ownerId) && ownerId.longValue() != oldCollisionId,
+            "modern owner retained the old legal-position collision");
+        require(!((Map<?, ?>) field(ownerNet, "members")).containsKey(follower), "modern membership contaminated");
+        require(ownerSize == ((Number) call(ownerNet, "getSize")).intValue()
+            && ownerCapacity == number(call(ownerNet, "calculateCapacity")), "modern owner totals changed");
+        require(((Map<?, ?>) field(followerNet, "members")).containsKey(follower), "legacy follower not admitted");
+        require(((Number) call(followerNet, "getSize")).intValue() == 3
+            && number(call(followerNet, "calculateCapacity")) == 512f
+            && number(call(followerNet, "calculateStress")) == 64f, "legacy unloaded totals changed");
+        System.out.println("ENDLESS_CREATE_UNAVAILABLE_SOURCE_PASS sourceLoaded=false separated=true membership=true oldEncodingCounterexample=true");
+        Class.forName("com.simibubi.create.content.kinetics.base.KineticBlockEntity")
+            .getMethod("setNetwork", Long.class).invoke(follower, new Object[]{null});
+        level.setBlock(followerPos, Blocks.AIR.defaultBlockState(), 2);
+        level.setBlock(ownerPos, Blocks.AIR.defaultBlockState(), 3);
     }
 
     private static Object assertConnected(BlockEntity[] entities) throws ReflectiveOperationException {

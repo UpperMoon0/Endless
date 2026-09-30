@@ -35,10 +35,13 @@ public final class CreateKineticStorageProbe {
         require(loaded.idForPosition(original) == originalId, "valid allocator lost identity");
         require(loaded.idForPosition(unrelated) != originalId, "valid allocator reused an ID");
 
-        for (String mode : new String[]{"duplicate", "missing-fields", "wrong-list-type", "truncated"}) {
+        for (String mode : new String[]{"duplicate", "missing-fields", "wrong-list-type", "old-namespace", "truncated"}) {
             Path folder = Files.createTempDirectory(scratch, mode + "-");
             CompoundTag invalid = valid.copy();
-            if (mode.equals("duplicate")) {
+            if (mode.equals("old-namespace")) {
+                invalid.remove("Namespace");
+                invalid.getList("Entries", 10).getCompound(0).putLong("Id", 2032L);
+            } else if (mode.equals("duplicate")) {
                 CompoundTag duplicate = invalid.getList("Entries", 10).getCompound(0).copy();
                 duplicate.putInt("X", 11);
                 invalid.getList("Entries", 10).add(duplicate);
@@ -65,7 +68,7 @@ public final class CreateKineticStorageProbe {
             storage.save();
             require(Arrays.equals(originalBytes, Files.readAllBytes(dataFile)), "corrupt allocator was overwritten");
         }
-        System.out.println("ENDLESS_CREATE_ALLOCATOR_FAIL_CLOSED_PASS diskBacked=true cases=4");
+        System.out.println("ENDLESS_CREATE_ALLOCATOR_FAIL_CLOSED_PASS diskBacked=true cases=5");
     }
 
     /** A filesystem entry still exists when a symlink's target has disappeared. */

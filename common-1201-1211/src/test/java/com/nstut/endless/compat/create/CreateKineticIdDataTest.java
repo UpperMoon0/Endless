@@ -2,33 +2,30 @@ package com.nstut.endless.compat.create;
 
 import net.minecraft.core.BlockPos;
 import org.junit.jupiter.api.Test;
-
 import java.util.HashSet;
 import java.util.Set;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class CreateKineticIdDataTest {
-
-    @Test
-    void syntheticIdsUseOnlyDenseCorePackedYGapAndStayUnique() {
+    @Test void syntheticIdsAreOutsideEveryLegalHorizontalPosition() {
         Set<Long> ids = new HashSet<>();
-        long yMask = (1L << BlockPos.PACKED_Y_LENGTH) - 1L;
-
-        for (long sequence = 0; sequence < 4096; sequence++) {
+        for (long sequence = 0; sequence < 8192; sequence++) {
             long id = CreateKineticIdData.syntheticIdForSequence(sequence);
-            long yCode = id & yMask;
-            assertTrue(yCode >= 2032 && yCode < 2064);
-            assertTrue(ids.add(id), "synthetic ID repeated for sequence " + sequence);
+            assertEquals(30_000_000, BlockPos.of(id).getX());
+            assertTrue(CreateKineticIdData.isSyntheticId(id));
+            assertTrue(ids.add(id));
         }
+        assertEquals(30_000_000, BlockPos.of(CreateKineticIdData.syntheticIdForSequence((1L << 38) - 1)).getX());
+        assertThrows(IllegalArgumentException.class, () -> CreateKineticIdData.syntheticIdForSequence(1L << 38));
+        assertThrows(IllegalArgumentException.class, () -> CreateKineticIdData.syntheticIdForSequence(-1));
     }
 
-    @Test
-    void firstReservedCycleCarriesSequenceInYSelector() {
-        long yMask = (1L << BlockPos.PACKED_Y_LENGTH) - 1L;
-        for (long sequence = 0; sequence < 32; sequence++) {
-            assertEquals(2032 + sequence, CreateKineticIdData.syntheticIdForSequence(sequence) & yMask);
-        }
+    @Test void sparseLegacyPositionsAndHorizontalBoundariesCannotBeSynthetic() {
+        for (int x : new int[]{-30_000_000, -29_999_999, -1, 0, 29_999_999})
+            for (int z : new int[]{-30_000_000, 0, 29_999_999})
+                for (int y : new int[]{-8_000_000, -2048, 2032, 2048, 2063, 7_999_999})
+                    assertFalse(CreateKineticIdData.isSyntheticId(new BlockPos(x, y, z).asLong()));
+        assertEquals(2032, new BlockPos(0, 2032, 0).asLong());
+        assertNotEquals(2032, CreateKineticIdData.syntheticIdForSequence(0));
     }
 }

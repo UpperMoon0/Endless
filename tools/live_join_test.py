@@ -1030,6 +1030,9 @@ def cold_restart_server_markers(scenario: Scenario, phase: str) -> tuple[str, ..
     if phase == "B" and scenario.create:
         markers += (
             "ENDLESS_CREATE_MIGRATION_PASS",
+            "ENDLESS_CREATE_PARTIAL_MIGRATION_PASS",
+            "ENDLESS_CREATE_UNAVAILABLE_SOURCE_PASS",
+            "ENDLESS_CREATE_ALIASED_LEGACY_ROOTS_PASS",
             "ENDLESS_CREATE_ALLOCATOR_FAIL_CLOSED_PASS",
             "ENDLESS_CREATE_CONTRAPTION_2047_CONTROL_PASS",
             # Expected upstream defect, NOT a successful serialization assertion.

@@ -92,7 +92,9 @@ class VerificationPolicyTest(unittest.TestCase):
             self.assertNotIn(marker, live.cold_restart_server_markers(scenario, "A"))
             self.assertNotIn(marker, live.cold_restart_server_markers(live.SCENARIO_BY_ID["cold-restart"], "B"))
         self.assertEqual(1, live.cold_restart_server_markers(scenario, "B").count(limitation))
-        for marker in ("ENDLESS_CREATE_MIGRATION_PASS", "ENDLESS_CREATE_ALLOCATOR_FAIL_CLOSED_PASS",
+        for marker in ("ENDLESS_CREATE_MIGRATION_PASS", "ENDLESS_CREATE_PARTIAL_MIGRATION_PASS",
+                       "ENDLESS_CREATE_UNAVAILABLE_SOURCE_PASS", "ENDLESS_CREATE_ALIASED_LEGACY_ROOTS_PASS",
+                       "ENDLESS_CREATE_ALLOCATOR_FAIL_CLOSED_PASS",
                        "ENDLESS_CREATE_KINETIC_COLD_RESTART_PASS", "ENDLESS_COLD_RESTART_PHASE_B_PASS"):
             self.assertIn(marker, live.cold_restart_server_markers(scenario, "B"))
         with self.assertRaises(ValueError):
@@ -322,6 +324,16 @@ class OutputEvidenceTest(unittest.TestCase):
         client = self.pump(live.PASS_MARKER + "\n")
         with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
             live.wait_for_session_completion(client, server, 1, "test", markers)
+
+    def test_missing_kinetic_accounting_evidence_cannot_pass_completion(self):
+        scenario = live.SCENARIO_BY_ID["create-cold-restart"]
+        markers = live.cold_restart_server_markers(scenario, "B")
+        for missing in ("ENDLESS_CREATE_PARTIAL_MIGRATION_PASS", "ENDLESS_CREATE_UNAVAILABLE_SOURCE_PASS",
+                        "ENDLESS_CREATE_ALIASED_LEGACY_ROOTS_PASS"):
+            server = self.pump("\n".join(marker for marker in markers if marker != missing) + "\n")
+            client = self.pump(live.PASS_MARKER + "\n")
+            with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
+                live.wait_for_session_completion(client, server, 1, "test", markers)
 
     def test_cold_restart_receipt_explicitly_labels_unfixed_default_contraption(self):
         scenario = live.SCENARIO_BY_ID["create-cold-restart"]

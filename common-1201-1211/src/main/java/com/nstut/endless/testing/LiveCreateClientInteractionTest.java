@@ -1,5 +1,7 @@
 package com.nstut.endless.testing;
 
+import com.nstut.endless.compat.create.CreateLogicalGeometry;
+import com.nstut.endless.heights.EndlessHeights;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.List;
@@ -37,6 +39,11 @@ public final class LiveCreateClientInteractionTest {
                 verifyArms(mc, y);
                 verifyEjectors(mc, y);
             }
+            require(!CreateLogicalGeometry.isAreaLoaded(mc.level, new BlockPos(1_000_000, 320, 1_000_000), 6),
+                "arm loaded-area fix admitted unloaded chunks");
+            require(!CreateLogicalGeometry.isAreaLoaded(mc.level,
+                new BlockPos(7, EndlessHeights.getMinBuildHeight() - 16, 7), 6),
+                "arm loaded-area fix admitted outside logical envelope");
             done = true;
             System.out.println(PASS + " armInputs=true nativeSelections=true alias4096=true ejectorTargets=true denseAndPageBoundaries=true");
         } finally {

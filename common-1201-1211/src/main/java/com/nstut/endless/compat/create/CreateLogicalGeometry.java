@@ -15,7 +15,7 @@ public final class CreateLogicalGeometry {
     private CreateLogicalGeometry() {}
     /** Preserve unloaded-neighbour refusal without vanilla's dense-Y early rejection. */
     public static boolean isAreaLoaded(Level level, BlockPos center, int range) {
-        if (!EndlessLogicalHeights.isActive()) return level.isAreaLoaded(center, range);
+        if (!EndlessLogicalHeights.isActive()) return level.hasChunksAt(center.offset(-range, -range, -range), center.offset(range, range, range));
         if ((long) center.getY() + range < EndlessHeights.getMinBuildHeight()
             || (long) center.getY() - range >= EndlessHeights.getMaxBuildHeight()) return false;
         for (int x = (center.getX() - range) >> 4; x <= (center.getX() + range) >> 4; x++)

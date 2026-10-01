@@ -148,7 +148,7 @@ public final class LiveCreateExpandedMachinesTest {
                 tick(List.of(motor, (BlockEntity) controller), 10);
                 require(number(call(controller, "getSpeed")) == (piston ? -64f : 64f),
                     id + " fixture lacks a real powered network");
-                invokeDeclared(controller, "assemble");
+                if (!Boolean.TRUE.equals(field(controller, "running"))) invokeDeclared(controller, "assemble");
                 Object moving = field(controller, "movedContraption");
                 require(moving instanceof net.minecraft.world.entity.Entity && Boolean.TRUE.equals(field(controller, "running")),
                     id + " did not assemble at seam " + seam);

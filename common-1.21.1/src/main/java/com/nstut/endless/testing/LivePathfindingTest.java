@@ -93,6 +93,10 @@ public final class LivePathfindingTest {
             walker.setPos(7.5D, floor + 2.0D, 12.5D);
             requirePath(walker.getNavigation().createPath(start, 0), start, "step down");
 
+            BlockPos sealed = new BlockPos(1, floor + 1, 12);
+            boolean sparse = EndlessHeights.isOutsideDenseBuildHeight(floor);
+            if (sparse) require(level.getPathTypeCache().getOrCompute(level, sealed) != PathType.BLOCKED,
+                "open sparse cell was classified as blocked before mutation");
             // A sealed destination must not be certified as reachable.
             for (int x = 0; x <= 2; x++) {
                 for (int z = 11; z <= 13; z++) {
@@ -101,7 +105,14 @@ public final class LivePathfindingTest {
                     }
                 }
             }
-            BlockPos sealed = new BlockPos(1, floor + 1, 12);
+            if (sparse) {
+                // Exercise the actual page writer independently of chunk update status:
+                // cache an open cell, then close it without sendBlockUpdated.
+                com.nstut.endless.vertical.EndlessVerticalEngine.world(level).setBlockState(sealed, Blocks.AIR.defaultBlockState());
+                require(level.getPathTypeCache().getOrCompute(level, sealed) != PathType.BLOCKED, "sparse reopen retained blocked cache");
+                com.nstut.endless.vertical.EndlessVerticalEngine.world(level).setBlockState(sealed, Blocks.STONE.defaultBlockState());
+                require(level.getPathTypeCache().getOrCompute(level, sealed) == PathType.BLOCKED, "sparse closure retained open cache");
+            }
             // Set overload deliberately avoids GroundPathNavigation's solid-target normalization.
             Path blocked = walker.getNavigation().createPath(Set.of(sealed), 0);
             require(blocked == null || !blocked.canReach(), "sealed destination reported reachable at " + sealed);

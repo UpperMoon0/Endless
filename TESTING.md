@@ -155,4 +155,6 @@ Phase A requires `ENDLESS_CREATE_MOVING_RESTART_PREPARED`: six real world entiti
 
 The graphical lanes require `ENDLESS_CREATE_DESTRUCTION_POSITIONS_PASS`. Native water-wheel structural crack events must create separate primary and extra entries for simultaneous positions 4,096 blocks apart, preserve independent stages, reconstruct exact render positions and remove only the intended breaker. Updating, retargeting onto a vanilla block, cancelling and coordinate-key cleanup are checked. World replacement clears the renderer-local key map; unit coverage checks mutable-key snapshots and clear/reuse behavior.
 
+The 1.21.1 navigation gate also caches an open sparse cell, closes it, reopens it through the sparse page writer, and closes it again without a vanilla update callback. The native cache must report each current state and navigation must refuse the sealed destination. Sparse writes invalidate the native cache even before the dense chunk reaches BLOCK_TICKING.
+
 These gates still do not establish complete train riding/signals/schedules, passenger collision, all moving actor workflows, portable storage, survival generator/fluid/logistics recipes, or complete Flywheel lighting/culling and unload/revisit behavior. Native train packet round trips are not an in-game train ride. No seamless-all-features claim is made.

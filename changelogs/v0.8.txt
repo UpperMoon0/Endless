@@ -10,3 +10,4 @@ Create expanded-height compatibility:
 - Keep mining cracks and Create multi-position cracks separate at packed-Y aliases; clean them up on update, retarget, removal and world replacement.
 - Require restored moving entities, mounted inventories, drill actors and controller linkage across a fresh server JVM.
 - Require native client selection packets, normal-tick arm inventory transfers and ejector delivery in survival mode at packed aliases.
+- Invalidate Minecraft 1.21.1 navigation classification caches on sparse writes, including mutations before the dense chunk starts ticking.

@@ -118,6 +118,10 @@ public final class MinecraftVerticalWorld {
 
         markDirty(pagePos);
         invalidateForBlockChange(pos);
+        // ServerLevel normally invalidates this cache in sendBlockUpdated, but
+        // Level skips that callback before the dense chunk is BLOCK_TICKING.
+        // Sparse writes must invalidate even during page/startup mutations.
+        if (level instanceof ServerLevel serverLevel) serverLevel.getPathTypeCache().invalidate(pos);
         return old;
     }
 

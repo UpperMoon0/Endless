@@ -125,8 +125,13 @@ public final class LiveCreateExpandedMachinesTest {
             BlockState state = block(id);
             if (!pulley) state = state.setValue(BlockStateProperties.FACING, Direction.UP);
             BlockPos payload = pulley ? controllerPos.below() : controllerPos.above();
-            BlockState[] originals = new BlockState[18];
-            for (int i = 0; i < originals.length; i++) originals[i] = level.getBlockState(new BlockPos(12, seam - 10 + i, 7));
+            Map<BlockPos, BlockState> originals = new java.util.LinkedHashMap<>();
+            // Clear the movement corridor and sticky neighbours: bedrock at the
+            // dense floor is an intentional assembly blocker, not a height failure.
+            for (int x = 11; x <= 13; x++) for (int z = 6; z <= 8; z++)
+                for (int y = seam - 10; y < seam + 8; y++) {
+                    BlockPos pos = new BlockPos(x, y, z); originals.put(pos, level.getBlockState(pos));
+                }
             Direction.Axis driveAxis = (Direction.Axis) state.getBlock().getClass()
                 .getMethod("getRotationAxis", BlockState.class).invoke(state.getBlock(), state);
             Direction drive = Direction.get(Direction.AxisDirection.POSITIVE, driveAxis);
@@ -134,7 +139,7 @@ public final class LiveCreateExpandedMachinesTest {
             BlockState motorOriginal = level.getBlockState(motorPos);
             Object controller = null;
             try {
-                for (int i = 0; i < originals.length; i++) level.setBlock(new BlockPos(12, seam - 10 + i, 7), Blocks.AIR.defaultBlockState(), 18);
+                for (BlockPos pos : originals.keySet()) level.setBlock(pos, Blocks.AIR.defaultBlockState(), 18);
                 level.setBlock(controllerPos, state, 18);
                 if (piston) for (int i = 1; i <= 4; i++)
                     level.setBlock(controllerPos.below(i), block("piston_extension_pole")
@@ -170,15 +175,16 @@ public final class LiveCreateExpandedMachinesTest {
                     id + " moving payload changed on NBT round trip");
                 invokeDeclared(controller, "disassemble");
                 int payloadCount = 0;
-                for (int i = 0; i < originals.length; i++) if (level.getBlockState(new BlockPos(12, seam - 10 + i, 7)).is(Blocks.SLIME_BLOCK)) payloadCount++;
+                for (BlockPos pos : originals.keySet()) if (level.getBlockState(pos).is(Blocks.SLIME_BLOCK)) payloadCount++;
                 require(payloadCount == 1, id + " lost or duplicated its payload on disassembly");
+                System.out.println("ENDLESS_CREATE_MOVEMENT_CASE_PASS machine=" + id + " seam=" + seam);
             } finally {
                 if (controller != null) {
                     Object moved = field(controller, "movedContraption");
                     if (moved instanceof net.minecraft.world.entity.Entity entity) entity.discard();
                 }
                 level.setBlock(motorPos, Blocks.AIR.defaultBlockState(), 3);
-                for (int i = 0; i < originals.length; i++) level.setBlock(new BlockPos(12, seam - 10 + i, 7), originals[i], 18);
+                for (var entry : originals.entrySet()) level.setBlock(entry.getKey(), entry.getValue(), 18);
                 level.setBlock(motorPos, motorOriginal, 3);
             }
         }

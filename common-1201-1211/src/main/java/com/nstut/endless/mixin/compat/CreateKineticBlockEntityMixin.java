@@ -261,11 +261,6 @@ public abstract class CreateKineticBlockEntityMixin implements CreateKineticNetw
             if (!resolved.equals(network)) {
                 CreateKineticMigration.alignSavedFollower(self, resolved, true,
                     lastCapacityProvided, lastStressApplied);
-            } else if (!endless$initialized) {
-                // A dense root keeps its native ID. Admit the saved contribution
-                // before clearing the marker, just as for a migrated identity;
-                // native propagation otherwise adds it on top of unloaded stress.
-                CreateKineticMigration.restoreBeforePropagation(self);
             }
             endless$savedLegacyNetwork = false;
             endless$legacyId = null;

@@ -4,4 +4,3 @@ Create expanded-height compatibility:
 - Preserve exact contraption local positions in disk and spawn NBT; retain native legacy readers.
 - Require new real Create machine/network and client-selection gates at dense, page and packed-Y boundaries.
 - Bump the supported Create loader handshake protocols to reject older clients without the exact contraption reader.
-- Preserve saved kinetic stress admission when a network crosses the dense ceiling and resolves to an unchanged native root ID.

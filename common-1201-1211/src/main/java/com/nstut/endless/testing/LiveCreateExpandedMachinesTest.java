@@ -31,17 +31,18 @@ public final class LiveCreateExpandedMachinesTest {
 
     public static void run(ServerLevel level) throws ReflectiveOperationException {
         for (int seam : SEAMS) {
-            verifyVerticalNetwork(level, seam);
+            verifyVerticalNetwork(level, seam, true);
+            verifyVerticalNetwork(level, seam, false);
             verifyPulley(level, seam - 2);
             verifyMovement(level, seam);
             verifyDisplayAndLinks(level, seam);
         }
         verifyElevator(level);
         System.out.println(PASS + " seams=8 lowerAndUpperDense=true positiveAndNegativePage=true packedEdges=true million=true"
-            + " nativeStress=true savedReload=true displayReservations=true linkRelocation=true pulleyLimits=true elevatorDiskDiscovery=true bearingPistonPulleyMovement=true");
+            + " nativeStress=true savedReload=true rootFirstAndFollowerFirst=true displayReservations=true linkRelocation=true pulleyLimits=true elevatorDiskDiscovery=true bearingPistonPulleyMovement=true");
     }
 
-    private static void verifyVerticalNetwork(ServerLevel level, int seam) throws ReflectiveOperationException {
+    private static void verifyVerticalNetwork(ServerLevel level, int seam, boolean followerFirst) throws ReflectiveOperationException {
         BlockPos base = new BlockPos(3, seam - 2, 7);
         BlockState motor = block("creative_motor").setValue(BlockStateProperties.FACING, Direction.UP);
         BlockState shaft = block("shaft").setValue(BlockStateProperties.AXIS, Direction.Axis.Y);
@@ -67,12 +68,20 @@ public final class LiveCreateExpandedMachinesTest {
             for (BlockEntity entity : entities) kinetic.getMethod("setNetwork", Long.class).invoke(entity, new Object[]{null});
             for (int i = 0; i < states.length; i++) level.removeBlockEntity(base.above(i));
             entities.clear();
-            // Follower-first admission across the actual dense/page boundary.
-            for (int i = states.length - 1; i >= 0; i--) {
+            // Reconstruct in both orders across the actual dense/page boundary.
+            for (int n = 0; n < states.length; n++) {
+                int i = followerFirst ? states.length - 1 - n : n;
                 BlockEntity restored = LiveCreateNbt.load(level, base.above(i), states[i], saved.get(i));
                 require(restored != null, "missing restored network member");
-                level.setBlockEntity(restored); entities.add(0, restored);
-                call(restored, "tick");
+                level.setBlockEntity(restored);
+                if (followerFirst) entities.add(0, restored); else entities.add(restored);
+            }
+            // Page/chunk NBT installs its saved entities before ticking them.
+            // Ticking between installations would lazily create empty source BEs
+            // and simulate removal of the source rather than a saved reload.
+            for (int n = 0; n < entities.size(); n++) {
+                int i = followerFirst ? entities.size() - 1 - n : n;
+                call(entities.get(i), "tick");
             }
             tick(entities, 260);
             Object restoredNetwork = connected(entities);
@@ -80,7 +89,7 @@ public final class LiveCreateExpandedMachinesTest {
             float restoredStress = number(call(restoredNetwork, "calculateStress"));
             float restoredCapacity = number(call(restoredNetwork, "calculateCapacity"));
             require(Math.abs(stress - restoredStress) < .01f && Math.abs(capacity - restoredCapacity) < .01f,
-                "boundary reload changed stress/capacity seam=" + seam + " identity=" + identity
+                "boundary reload changed stress/capacity seam=" + seam + " followerFirst=" + followerFirst + " identity=" + identity
                     + " stress=" + stress + "/" + restoredStress + " capacity=" + capacity + "/" + restoredCapacity);
             var update = restoredNetwork.getClass().getMethod("updateCapacityFor", kinetic, float.class);
             update.invoke(restoredNetwork, entities.get(0), 0f);
@@ -98,7 +107,7 @@ public final class LiveCreateExpandedMachinesTest {
         Map<?, ?> members = (Map<?, ?>) field(network, "members");
         require(members.size() == entities.size(), "boundary network membership mismatch");
         require(((Number) call(network, "getSize")).intValue() == entities.size(),
-            "boundary network retained duplicate unloaded membership");
+            "boundary network retained duplicate unloaded membership at " + entities.get(0).getBlockPos() + " size=" + call(network, "getSize") + " unloaded=" + field(network, "unloadedMembers"));
         for (BlockEntity entity : entities) require(members.containsKey(entity)
             && call(entity, "getOrCreateNetwork") == network && number(call(entity, "getSpeed")) == 16,
             "boundary member not connected/running at 16 RPM");
@@ -148,7 +157,9 @@ public final class LiveCreateExpandedMachinesTest {
                 if (piston) for (int i = 1; i <= 4; i++)
                     level.setBlock(controllerPos.below(i), block("piston_extension_pole")
                         .setValue(BlockStateProperties.FACING, Direction.UP), 18);
-                level.setBlock(payload, Blocks.SLIME_BLOCK.defaultBlockState(), 18);
+                int payloadBlocks = !pulley && !piston ? 3 : 1;
+                for (int i = 0; i < payloadBlocks; i++)
+                    level.setBlock(payload.above(i), Blocks.SLIME_BLOCK.defaultBlockState(), 18);
                 controller = level.getBlockEntity(controllerPos);
                 level.setBlock(motorPos, block("creative_motor").setValue(BlockStateProperties.FACING, drive), 3);
                 BlockEntity motor = level.getBlockEntity(motorPos);
@@ -161,7 +172,8 @@ public final class LiveCreateExpandedMachinesTest {
                 Object moving = field(controller, "movedContraption");
                 require(moving instanceof net.minecraft.world.entity.Entity && Boolean.TRUE.equals(field(controller, "running")),
                     id + " did not assemble at seam " + seam);
-                require(level.getBlockState(payload).isAir(), id + " did not remove captured payload");
+                for (int i = 0; i < payloadBlocks; i++)
+                    require(level.getBlockState(payload.above(i)).isAir(), id + " did not remove captured payload");
                 net.minecraft.world.entity.Entity entity = (net.minecraft.world.entity.Entity) moving;
                 net.minecraft.world.phys.Vec3 before = entity.position();
                 for (int i = 0; i < 16; i++) {
@@ -180,8 +192,8 @@ public final class LiveCreateExpandedMachinesTest {
                 invokeDeclared(controller, "disassemble");
                 int payloadCount = 0;
                 for (BlockPos pos : originals.keySet()) if (level.getBlockState(pos).is(Blocks.SLIME_BLOCK)) payloadCount++;
-                require(payloadCount == 1, id + " lost or duplicated its payload on disassembly");
-                System.out.println("ENDLESS_CREATE_MOVEMENT_CASE_PASS machine=" + id + " seam=" + seam);
+                require(payloadCount == payloadBlocks, id + " lost or duplicated its payload on disassembly");
+                System.out.println("ENDLESS_CREATE_MOVEMENT_CASE_PASS machine=" + id + " seam=" + seam + " payloadBlocks=" + payloadBlocks);
             } finally {
                 if (controller != null) {
                     Object moved = field(controller, "movedContraption");

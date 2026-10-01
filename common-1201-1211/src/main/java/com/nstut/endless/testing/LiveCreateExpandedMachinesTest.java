@@ -77,9 +77,11 @@ public final class LiveCreateExpandedMachinesTest {
             tick(entities, 260);
             Object restoredNetwork = connected(entities);
             require(identity.equals(field(entities.get(0), "network")), "network identity changed across boundary reload");
-            require(Math.abs(stress - number(call(restoredNetwork, "calculateStress"))) < .01f
-                && Math.abs(capacity - number(call(restoredNetwork, "calculateCapacity"))) < .01f,
-                "boundary reload changed stress/capacity");
+            float restoredStress = number(call(restoredNetwork, "calculateStress"));
+            float restoredCapacity = number(call(restoredNetwork, "calculateCapacity"));
+            require(Math.abs(stress - restoredStress) < .01f && Math.abs(capacity - restoredCapacity) < .01f,
+                "boundary reload changed stress/capacity seam=" + seam + " identity=" + identity
+                    + " stress=" + stress + "/" + restoredStress + " capacity=" + capacity + "/" + restoredCapacity);
             var update = restoredNetwork.getClass().getMethod("updateCapacityFor", kinetic, float.class);
             update.invoke(restoredNetwork, entities.get(0), 0f);
             for (BlockEntity entity : entities) require(number(call(entity, "getSpeed")) == 0
@@ -95,6 +97,8 @@ public final class LiveCreateExpandedMachinesTest {
         Object network = call(entities.get(0), "getOrCreateNetwork");
         Map<?, ?> members = (Map<?, ?>) field(network, "members");
         require(members.size() == entities.size(), "boundary network membership mismatch");
+        require(((Number) call(network, "getSize")).intValue() == entities.size(),
+            "boundary network retained duplicate unloaded membership");
         for (BlockEntity entity : entities) require(members.containsKey(entity)
             && call(entity, "getOrCreateNetwork") == network && number(call(entity, "getSpeed")) == 16,
             "boundary member not connected/running at 16 RPM");

@@ -13,6 +13,16 @@ import net.minecraft.world.level.LevelAccessor;
 /** Discover only allocated sparse pages, rather than scanning the entire logical height. */
 public final class CreateLogicalGeometry {
     private CreateLogicalGeometry() {}
+    /** Preserve unloaded-neighbour refusal without vanilla's dense-Y early rejection. */
+    public static boolean isAreaLoaded(Level level, BlockPos center, int range) {
+        if (!EndlessLogicalHeights.isActive()) return level.isAreaLoaded(center, range);
+        if ((long) center.getY() + range < EndlessHeights.getMinBuildHeight()
+            || (long) center.getY() - range >= EndlessHeights.getMaxBuildHeight()) return false;
+        for (int x = (center.getX() - range) >> 4; x <= (center.getX() + range) >> 4; x++)
+            for (int z = (center.getZ() - range) >> 4; z <= (center.getZ() + range) >> 4; z++)
+                if (!level.getChunkSource().hasChunk(x, z)) return false;
+        return true;
+    }
     public static Stream<BlockPos> columnPositions(LevelAccessor accessor, BlockPos first, BlockPos last) {
         Stream<BlockPos> dense = BlockPos.betweenClosedStream(first, last).map(BlockPos::immutable);
         if (!EndlessLogicalHeights.isActive() || !(accessor instanceof Level level)) return dense;

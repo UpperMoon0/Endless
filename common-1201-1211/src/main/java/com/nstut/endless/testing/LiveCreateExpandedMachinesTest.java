@@ -220,8 +220,11 @@ public final class LiveCreateExpandedMachinesTest {
                 "stale exact display reservation was not cleaned");
 
             BlockPos first = source.west(), moved = alias.west();
-            level.setBlock(first, block("redstone_link"), 18);
-            level.setBlock(moved, block("redstone_link"), 18);
+            var receiverProperty = (net.minecraft.world.level.block.state.properties.BooleanProperty)
+                Class.forName("com.simibubi.create.content.redstone.link.RedstoneLinkBlock").getField("RECEIVER").get(null);
+            BlockState receiver = block("redstone_link").setValue(receiverProperty, true);
+            level.setBlock(first, receiver, 18);
+            level.setBlock(moved, receiver, 18);
             BlockEntity original = level.getBlockEntity(first), relocated = level.getBlockEntity(moved);
             call(original, "initialize"); call(relocated, "initialize");
             Object originalBehaviour = field(original, "link"), relocatedBehaviour = field(relocated, "link");

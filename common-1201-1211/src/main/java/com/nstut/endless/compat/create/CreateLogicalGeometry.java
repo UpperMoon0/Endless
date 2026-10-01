@@ -13,6 +13,24 @@ import net.minecraft.world.level.LevelAccessor;
 /** Discover only allocated sparse pages, rather than scanning the entire logical height. */
 public final class CreateLogicalGeometry {
     private CreateLogicalGeometry() {}
+    /** Skip empty sparse gaps while preserving randomTeleport's first solid floor. */
+    public static int teleportFloor(Level level, double targetX, double targetY, double targetZ) {
+        BlockPos target = BlockPos.containing(targetX, targetY, targetZ);
+        int ceiling = target.getY() - 1;
+        var pages = new java.util.TreeSet<Integer>(java.util.Comparator.reverseOrder());
+        pages.addAll(EndlessVerticalEngine.world(level).knownPageYs(target.getX() >> 4, target.getZ() >> 4));
+        // Dense terrain is allocated independently of sparse pages.
+        for (int page = VerticalPageLayout.pageYForBlockY(level.getMinBuildHeight());
+             page <= VerticalPageLayout.pageYForBlockY(level.getMaxBuildHeight() - 1); page++) pages.add(page);
+        for (int page : pages) {
+            int low = Math.max(EndlessHeights.getMinBuildHeight(), VerticalPageLayout.pageMinBlockY(page));
+            int high = Math.min(ceiling, Math.min(EndlessHeights.getMaxBuildHeight() - 1, VerticalPageLayout.pageMaxBlockY(page)));
+            for (int y = high; y >= low; y--)
+                if (level.getBlockState(new BlockPos(target.getX(), y, target.getZ())).blocksMotion()) return y;
+        }
+        // Native loop sees no floor and refuses; do not scan millions of empty cells.
+        return Integer.MIN_VALUE;
+    }
     /** Preserve unloaded-neighbour refusal without vanilla's dense-Y early rejection. */
     public static boolean isAreaLoaded(Level level, BlockPos center, int range) {
         if (!EndlessLogicalHeights.isActive()) return level.hasChunksAt(center.offset(-range, -range, -range), center.offset(range, range, range));

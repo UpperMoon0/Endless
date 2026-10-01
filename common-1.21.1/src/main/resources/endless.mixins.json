@@ -15,7 +15,8 @@
     "accessor.ViewAreaAccessor",
     "accessor.VisibleSectionsAccessor",
     "compat.CreateArmInteractionPointHandlerMixin",
-    "compat.CreateEjectorTargetHandlerMixin"
+    "compat.CreateEjectorTargetHandlerMixin",
+    "DestructionProgressMixin"
   ],
   "mixins": [
     "FriendlyByteBufMixin",
@@ -53,7 +54,11 @@
     "compat.CreateArmBlockEntityMixin",
     "compat.CreatePulleyBlockEntityMixin",
     "compat.CreateElevatorColumnMixin",
-    "compat.CreateContraptionMixin"
+    "compat.CreateContraptionMixin",
+    "compat.CreateTrackNodeLocationMixin",
+    "compat.CreateChorusTeleportMixin",
+    "compat.CreateAssemblyExceptionMixin",
+    "LivingTeleportMixin"
   ],
   "injectors": {
     "defaultRequire": 1

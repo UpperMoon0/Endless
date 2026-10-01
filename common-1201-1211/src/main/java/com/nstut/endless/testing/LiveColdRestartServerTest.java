@@ -66,6 +66,7 @@ public final class LiveColdRestartServerTest {
                 if (!fixtureReady(level)) return;
                 verify(level);
                 persistCreateExpectedIdsIfRequested(level);
+                if (Boolean.getBoolean(CREATE_PROPERTY)) LiveCreateMovingRestartTest.prepare(level);
                 ExtendedPoiStorage.flush(level, new ChunkPos(poiPos()));
                 EndlessVerticalEngine.world(level).flushDirty();
                 require(server.saveEverything(true, true, true), "dedicated server saveEverything reported failure");
@@ -82,6 +83,9 @@ public final class LiveColdRestartServerTest {
                 if (Boolean.getBoolean(CREATE_PROPERTY)) {
                     // Persistence has passed independently; only now construct
                     // separate legacy-NBT migration and corrupt-storage fixtures.
+                    LiveCreatePositionCodecTest.run(level);
+                    LiveCreateChorusTest.run(level);
+                    LiveCreateMovingRestartTest.verify(level);
                     LiveCreateMigrationTest.run(level);
                     CreateKineticStorageProbe.run(level.getServer().getWorldPath(LevelResource.ROOT)
                         .resolve("endless-live-allocator-probes"));

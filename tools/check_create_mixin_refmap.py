@@ -21,6 +21,16 @@ EXPECTED = {
         "Lnet/minecraft/core/BlockPos;of(J)Lnet/minecraft/core/BlockPos;":
             "Lnet/minecraft/core/BlockPos;m_122022_(J)Lnet/minecraft/core/BlockPos;",
     },
+    "CreateTrackNodeLocationMixin": {
+        "Lnet/minecraft/network/FriendlyByteBuf;writeShort(I)Lio/netty/buffer/ByteBuf;":
+            "Lnet/minecraft/network/FriendlyByteBuf;writeShort(I)Lio/netty/buffer/ByteBuf;",
+        "Lnet/minecraft/network/FriendlyByteBuf;writeVarInt(I)Lnet/minecraft/network/FriendlyByteBuf;":
+            "Lnet/minecraft/network/FriendlyByteBuf;m_130130_(I)Lnet/minecraft/network/FriendlyByteBuf;",
+        "(III)Lnet/minecraft/core/BlockPos;": "(III)Lnet/minecraft/core/BlockPos;",
+    },
+    "CreateChorusTeleportMixin": {
+        "Lnet/minecraft/util/Mth;clamp(DDD)D": "Lnet/minecraft/util/Mth;m_14008_(DDD)D",
+    },
 }
 
 
@@ -47,7 +57,7 @@ def main() -> int:
     if errors:
         print("\n".join(errors))
         return 1
-    print("Create packaged Forge refmap OK: all five Minecraft redirects use runtime SRG selectors")
+    print("Create packaged Forge refmap OK: all required Minecraft selectors use runtime mappings")
     return 0
 
 

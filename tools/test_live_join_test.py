@@ -360,6 +360,21 @@ class OutputEvidenceTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
                 live.wait_for_session_completion(client, server, 1, "test", markers)
 
+    def test_create_review_markers_cannot_be_omitted(self):
+        cold = live.SCENARIO_BY_ID["create-cold-restart"]
+        self.assertIn("ENDLESS_CREATE_MOVING_RESTART_PREPARED", live.cold_restart_server_markers(cold, "A"))
+        markers = live.cold_restart_server_markers(cold, "B")
+        for missing in ("ENDLESS_CREATE_POSITION_CODECS_PASS", "ENDLESS_CREATE_CHORUS_TELEPORT_PASS", "ENDLESS_CREATE_MOVING_RESTART_PASS"):
+            self.assertIn(missing, markers)
+            server = self.pump("\n".join(marker for marker in markers if marker != missing) + "\n")
+            client = self.pump(live.PASS_MARKER + "\n")
+            with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
+                live.wait_for_session_completion(client, server, 1, "test", markers)
+        gameplay = live.SCENARIO_BY_ID["create-compat"]
+        self.assertIn("ENDLESS_CREATE_SURVIVAL_SERVER_PASS", gameplay.required_server_markers)
+        for marker in ("ENDLESS_CREATE_SURVIVAL_CLIENT_PASS", "ENDLESS_CREATE_DESTRUCTION_POSITIONS_PASS"):
+            self.assertIn(marker, gameplay.required_client_markers)
+
     def test_failure_receipt_survives_exception(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

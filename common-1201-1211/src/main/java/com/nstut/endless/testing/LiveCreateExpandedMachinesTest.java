@@ -160,6 +160,10 @@ public final class LiveCreateExpandedMachinesTest {
                 int payloadBlocks = !pulley && !piston ? 3 : 1;
                 for (int i = 0; i < payloadBlocks; i++)
                     level.setBlock(payload.above(i), Blocks.SLIME_BLOCK.defaultBlockState(), 18);
+                level.setBlock(payload.east(), Blocks.CHEST.defaultBlockState(), 18);
+                ((net.minecraft.world.level.block.entity.ChestBlockEntity) level.getBlockEntity(payload.east()))
+                    .setItem(0, new ItemStack(net.minecraft.world.item.Items.DIAMOND, 7));
+                level.setBlock(payload.west(), block("mechanical_drill").setValue(BlockStateProperties.FACING, Direction.WEST), 18);
                 controller = level.getBlockEntity(controllerPos);
                 level.setBlock(motorPos, block("creative_motor").setValue(BlockStateProperties.FACING, drive), 3);
                 BlockEntity motor = level.getBlockEntity(motorPos);
@@ -185,14 +189,30 @@ public final class LiveCreateExpandedMachinesTest {
                 else require(Math.abs(number(field(controller, "angle"))) > 0, "bearing did not rotate");
                 Object contraption = call(entity, "getContraption");
                 CompoundTag disk = LiveCreateNbt.writeContraption(level, contraption);
-                Object restored = Class.forName("com.simibubi.create.content.contraptions.Contraption")
-                    .getMethod("fromNBT", Level.class, CompoundTag.class, boolean.class).invoke(null, level, disk, false);
-                require(((Map<?, ?>) call(restored, "getBlocks")).size() == ((Map<?, ?>) call(contraption, "getBlocks")).size(),
-                    id + " moving payload changed on NBT round trip");
+                require(!disk.getList("Actors", 10).isEmpty(), id + " fixture did not capture a drill actor");
+                CompoundTag entityDisk = new CompoundTag();
+                entity.saveWithoutId(entityDisk);
+                net.minecraft.world.entity.Entity restoredEntity = entity.getType().create(level);
+                require(restoredEntity != null, "could not reconstruct controlled entity");
+                restoredEntity.load(entityDisk);
+                Object restored = call(restoredEntity, "getContraption");
+                require(disk.equals(LiveCreateNbt.writeContraption(level, restored)),
+                    id + " moving NBT changed exact blocks, inventories, actors or controller payload");
+                require(entity.position().equals(restoredEntity.position()), id + " restored entity position shifted");
+                // Only the restored entity may reattach, tick actors, move and disassemble.
+                entity.discard();
+                setField(controller, "movedContraption", null);
+                restoredEntity.tick();
+                require(field(controller, "movedContraption") == restoredEntity,
+                    id + " restored entity did not reattach to its native controller");
+                net.minecraft.world.phys.Vec3 restoredBefore = restoredEntity.position();
+                float angleBefore = !pulley && !piston ? number(field(controller, "angle")) : 0;
+                for (int i = 0; i < 4; i++) { call(motor, "tick"); call(controller, "tick"); restoredEntity.tick(); }
+                if (pulley || piston) require(restoredEntity.position().distanceTo(restoredBefore) > .01,
+                    id + " restored entity did not resume motion");
+                else require(number(field(controller, "angle")) != angleBefore, "restored bearing did not resume rotation");
                 invokeDeclared(controller, "disassemble");
-                int payloadCount = 0;
-                for (BlockPos pos : originals.keySet()) if (level.getBlockState(pos).is(Blocks.SLIME_BLOCK)) payloadCount++;
-                require(payloadCount == payloadBlocks, id + " lost or duplicated its payload on disassembly");
+                LiveCreateDisassemblyTest.verify(level, restoredEntity, payloadBlocks);
                 System.out.println("ENDLESS_CREATE_MOVEMENT_CASE_PASS machine=" + id + " seam=" + seam + " payloadBlocks=" + payloadBlocks);
             } finally {
                 if (controller != null) {
@@ -307,6 +327,13 @@ public final class LiveCreateExpandedMachinesTest {
     private static Object field(Object object, String name) throws ReflectiveOperationException {
         for (Class<?> type = object.getClass(); type != null; type = type.getSuperclass()) {
             try { Field f = type.getDeclaredField(name); f.setAccessible(true); return f.get(object); }
+            catch (NoSuchFieldException ignored) {}
+        }
+        throw new NoSuchFieldException(name);
+    }
+    private static void setField(Object object, String name, Object value) throws ReflectiveOperationException {
+        for (Class<?> type = object.getClass(); type != null; type = type.getSuperclass()) {
+            try { Field f = type.getDeclaredField(name); f.setAccessible(true); f.set(object, value); return; }
             catch (NoSuchFieldException ignored) {}
         }
         throw new NoSuchFieldException(name);

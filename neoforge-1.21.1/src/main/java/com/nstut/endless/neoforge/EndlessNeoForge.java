@@ -30,7 +30,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 /** NeoForge 1.21.1 bootstrap. */
 @Mod(Endless.MOD_ID)
 public final class EndlessNeoForge {
-    private static final int PROTOCOL = 6;
+    private static final int PROTOCOL = 7;
 
     public EndlessNeoForge(IEventBus modBus) {
         Endless.init();

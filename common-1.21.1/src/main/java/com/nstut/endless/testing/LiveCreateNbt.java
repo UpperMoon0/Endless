@@ -30,4 +30,13 @@ final class LiveCreateNbt {
         behaviour.getClass().getMethod("read", CompoundTag.class, HolderLookup.Provider.class, boolean.class)
             .invoke(behaviour, tag, level.registryAccess(), false);
     }
+
+    static void writeAssemblyException(ServerLevel level, CompoundTag tag, Object exception) throws ReflectiveOperationException {
+        Class<?> type = Class.forName("com.simibubi.create.content.contraptions.AssemblyException");
+        type.getMethod("write", CompoundTag.class, HolderLookup.Provider.class, type).invoke(null, tag, level.registryAccess(), exception);
+    }
+    static Object readAssemblyException(ServerLevel level, CompoundTag tag) throws ReflectiveOperationException {
+        Class<?> type = Class.forName("com.simibubi.create.content.contraptions.AssemblyException");
+        return type.getMethod("read", CompoundTag.class, HolderLookup.Provider.class).invoke(null, tag, level.registryAccess());
+    }
 }

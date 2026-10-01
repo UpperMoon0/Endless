@@ -167,6 +167,7 @@ public final class LiveJoinTest {
             return false;
         }
 
+        LiveCreateSurvivalClientTest.tick(mc);
         if (HIGH_Y_TEST) {
             return tickExtremeTest(mc, level, levelMin, levelHeight, endlessMin, endlessMax, denseMin, denseMax, logical);
         }

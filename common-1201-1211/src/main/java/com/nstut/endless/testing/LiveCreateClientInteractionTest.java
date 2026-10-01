@@ -30,6 +30,7 @@ public final class LiveCreateClientInteractionTest {
 
     public static void run(Minecraft mc) throws ReflectiveOperationException {
         if (done) return;
+        LiveCreateDestructionTest.run(mc);
         ItemStack held = mc.player.getMainHandItem();
         HitResult hit = mc.hitResult;
         try {

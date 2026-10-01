@@ -456,8 +456,8 @@ SCENARIOS.append(Scenario(
     required_server_markers=tuple(
         marker for marker in SCENARIOS[0].required_server_markers
         if marker != "ENDLESS_WAYSTONES_SPARSE_PASS"
-    ) + ("ENDLESS_CREATE_SPARSE_PASS", "ENDLESS_CREATE_KINETIC_PASS"),
-    required_client_markers=SCENARIOS[0].required_client_markers + ("ENDLESS_CREATE_ROTATION_SYNC_PASS", "ENDLESS_CREATE_CLIENT_INTERACTION_PASS",),
+    ) + ("ENDLESS_CREATE_SPARSE_PASS", "ENDLESS_CREATE_KINETIC_PASS", "ENDLESS_CREATE_SURVIVAL_SERVER_PASS"),
+    required_client_markers=SCENARIOS[0].required_client_markers + ("ENDLESS_CREATE_ROTATION_SYNC_PASS", "ENDLESS_CREATE_CLIENT_INTERACTION_PASS", "ENDLESS_CREATE_DESTRUCTION_POSITIONS_PASS", "ENDLESS_CREATE_SURVIVAL_CLIENT_PASS",),
 ))
 
 SCENARIOS.append(Scenario(
@@ -1027,6 +1027,8 @@ def cold_restart_server_markers(scenario: Scenario, phase: str) -> tuple[str, ..
     if not scenario.cold_restart or phase not in ("A", "B"):
         raise ValueError("cold-restart evidence requires phase A or B of a cold-restart scenario")
     markers = (f"ENDLESS_COLD_RESTART_PHASE_{phase}_PASS",) + scenario.required_server_markers
+    if phase == "A" and scenario.create:
+        markers += ("ENDLESS_CREATE_MOVING_RESTART_PREPARED",)
     if phase == "B" and scenario.create:
         markers += (
             "ENDLESS_CREATE_MIGRATION_PASS",
@@ -1039,6 +1041,9 @@ def cold_restart_server_markers(scenario: Scenario, phase: str) -> tuple[str, ..
             # Exact disk/spawn preservation and expanded machine operations are required.
             "ENDLESS_CREATE_CONTRAPTION_EXACT_POSITION_PASS",
             "ENDLESS_CREATE_EXPANDED_MACHINES_PASS",
+            "ENDLESS_CREATE_POSITION_CODECS_PASS",
+            "ENDLESS_CREATE_CHORUS_TELEPORT_PASS",
+            "ENDLESS_CREATE_MOVING_RESTART_PASS",
         )
     return markers
 

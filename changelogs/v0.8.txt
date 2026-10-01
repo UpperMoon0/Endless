@@ -1,0 +1,6 @@
+Create expanded-height compatibility:
+- Use logical build limits for mechanical-arm client points and rope pulleys.
+- Discover elevator contacts in allocated sparse pages, including persisted/evicted pages.
+- Preserve exact contraption local positions in disk and spawn NBT; retain native legacy readers.
+- Require new real Create machine/network and client-selection gates at dense, page and packed-Y boundaries.
+- Bump the supported Create loader handshake protocols to reject older clients without the exact contraption reader.

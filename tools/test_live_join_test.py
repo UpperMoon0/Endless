@@ -87,7 +87,7 @@ class VerificationPolicyTest(unittest.TestCase):
     def test_default_contraption_characterization_is_required_only_in_create_phase_b(self):
         scenario = live.SCENARIO_BY_ID["create-cold-restart"]
         control = "ENDLESS_CREATE_CONTRAPTION_2047_CONTROL_PASS"
-        limitation = "ENDLESS_CREATE_DEFAULT_CONTRAPTION_LIMITATION_CONFIRMED"
+        limitation = "ENDLESS_CREATE_CONTRAPTION_EXACT_POSITION_PASS"
         for marker in (control, limitation):
             self.assertIn(marker, live.cold_restart_server_markers(scenario, "B"))
             self.assertNotIn(marker, live.cold_restart_server_markers(scenario, "A"))
@@ -332,7 +332,7 @@ class OutputEvidenceTest(unittest.TestCase):
     def test_missing_default_contraption_marker_cannot_pass_completion(self):
         scenario = live.SCENARIO_BY_ID["create-cold-restart"]
         markers = live.cold_restart_server_markers(scenario, "B")
-        limitation = "ENDLESS_CREATE_DEFAULT_CONTRAPTION_LIMITATION_CONFIRMED"
+        limitation = "ENDLESS_CREATE_CONTRAPTION_EXACT_POSITION_PASS"
         server = self.pump("\n".join(marker for marker in markers if marker != limitation) + "\n")
         client = self.pump(live.PASS_MARKER + "\n")
         with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
@@ -349,22 +349,16 @@ class OutputEvidenceTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
                 live.wait_for_session_completion(client, server, 1, "test", markers)
 
-    def test_cold_restart_receipt_explicitly_labels_unfixed_default_contraption(self):
+    def test_fixed_contraption_and_expanded_machines_are_mandatory(self):
         scenario = live.SCENARIO_BY_ID["create-cold-restart"]
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            with patch.object(live.subprocess, "check_output", side_effect=["abc123\n", ""]), \
-                 patch.object(live, "_run_scenario"):
-                live.run_scenario(root, "forge-1.20.1", "forge-1.20.1", scenario, 1)
-            result = json.loads(next(root.rglob("result.json")).read_text())
-            self.assertEqual("pass", result["status"])
-            self.assertEqual(list(live.cold_restart_server_markers(scenario, "B")),
-                             result["required_server_markers_by_phase"]["B"])
-            limitation = result["known_limitations"][0]
-            self.assertEqual(14, limitation["issue"])
-            self.assertFalse(limitation["serializer_fixed"])
-            self.assertEqual(2048, limitation["before_local_y"])
-            self.assertEqual(-2048, limitation["after_local_y"])
+        markers = live.cold_restart_server_markers(scenario, "B")
+        self.assertIn("ENDLESS_CREATE_CONTRAPTION_EXACT_POSITION_PASS", markers)
+        self.assertIn("ENDLESS_CREATE_EXPANDED_MACHINES_PASS", markers)
+        for missing in ("ENDLESS_CREATE_CONTRAPTION_EXACT_POSITION_PASS", "ENDLESS_CREATE_EXPANDED_MACHINES_PASS"):
+            server = self.pump("\n".join(marker for marker in markers if marker != missing) + "\n")
+            client = self.pump(live.PASS_MARKER + "\n")
+            with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
+                live.wait_for_session_completion(client, server, 1, "test", markers)
 
     def test_failure_receipt_survives_exception(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -49,7 +49,11 @@
     "compat.CreateKineticBlockEntityMixin",
     "compat.CreateKineticNbtMixin",
     "compat.CreateDisplayTargetMixin",
-    "compat.CreateLinkBehaviourMixin"
+    "compat.CreateLinkBehaviourMixin",
+    "compat.CreateArmBlockEntityMixin",
+    "compat.CreatePulleyBlockEntityMixin",
+    "compat.CreateElevatorColumnMixin",
+    "compat.CreateContraptionMixin"
   ],
   "injectors": {
     "defaultRequire": 1

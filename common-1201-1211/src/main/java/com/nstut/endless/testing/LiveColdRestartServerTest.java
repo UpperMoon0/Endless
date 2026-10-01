@@ -85,9 +85,9 @@ public final class LiveColdRestartServerTest {
                     LiveCreateMigrationTest.run(level);
                     CreateKineticStorageProbe.run(level.getServer().getWorldPath(LevelResource.ROOT)
                         .resolve("endless-live-allocator-probes"));
-                    // This confirms an explicitly documented upstream limitation;
-                    // it does not claim the default contraption serializer is safe.
+                    // Require exact persistence and native machine APIs across sparse boundaries.
                     LiveCreateContraptionSerializationTest.run(level);
+                    LiveCreateExpandedMachinesTest.run(level);
                 }
                 done = true;
                 System.out.println(PHASE_B_PASS + " freshJvm=true");

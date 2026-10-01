@@ -457,7 +457,7 @@ SCENARIOS.append(Scenario(
         marker for marker in SCENARIOS[0].required_server_markers
         if marker != "ENDLESS_WAYSTONES_SPARSE_PASS"
     ) + ("ENDLESS_CREATE_SPARSE_PASS", "ENDLESS_CREATE_KINETIC_PASS"),
-    required_client_markers=SCENARIOS[0].required_client_markers + ("ENDLESS_CREATE_ROTATION_SYNC_PASS",),
+    required_client_markers=SCENARIOS[0].required_client_markers + ("ENDLESS_CREATE_ROTATION_SYNC_PASS", "ENDLESS_CREATE_CLIENT_INTERACTION_PASS",),
 ))
 
 SCENARIOS.append(Scenario(
@@ -1036,8 +1036,9 @@ def cold_restart_server_markers(scenario: Scenario, phase: str) -> tuple[str, ..
             "ENDLESS_CREATE_INTERRUPTED_SAVE_PASS", "ENDLESS_CREATE_MARKED_INTERRUPTED_SAVE_PASS", "ENDLESS_CREATE_UNRESOLVED_ALIASES_PASS",
             "ENDLESS_CREATE_ALLOCATOR_FAIL_CLOSED_PASS",
             "ENDLESS_CREATE_CONTRAPTION_2047_CONTROL_PASS",
-            # Expected upstream defect, NOT a successful serialization assertion.
-            "ENDLESS_CREATE_DEFAULT_CONTRAPTION_LIMITATION_CONFIRMED",
+            # Exact disk/spawn preservation and expanded machine operations are required.
+            "ENDLESS_CREATE_CONTRAPTION_EXACT_POSITION_PASS",
+            "ENDLESS_CREATE_EXPANDED_MACHINES_PASS",
         )
     return markers
 
@@ -1162,15 +1163,6 @@ def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeo
         result["required_server_markers_by_phase"] = {
             phase: cold_restart_server_markers(scenario, phase) for phase in ("A", "B")
         }
-    if scenario.cold_restart and scenario.create:
-        result["known_limitations"] = [{
-            "issue": 14,
-            "marker": "ENDLESS_CREATE_DEFAULT_CONTRAPTION_LIMITATION_CONFIRMED",
-            "default_cap": 2048,
-            "before_local_y": 2048,
-            "after_local_y": -2048,
-            "serializer_fixed": False,
-        }]
     try:
         _run_scenario(root, target, module, scenario, timeout)
         result["status"] = "pass"

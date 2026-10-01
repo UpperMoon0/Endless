@@ -14,8 +14,16 @@ final class LiveCreateNbt {
         return BlockEntity.loadStatic(pos, state, tag);
     }
     static CompoundTag writeContraption(ServerLevel level, Object contraption) throws ReflectiveOperationException {
-        return (CompoundTag) contraption.getClass().getMethod("writeNBT", boolean.class)
-            .invoke(contraption, false);
+        return writeContraption(level, contraption, false);
+    }
+    static CompoundTag writeContraption(ServerLevel level, Object contraption, boolean spawn) throws ReflectiveOperationException {
+        return (CompoundTag) contraption.getClass().getMethod("writeNBT", boolean.class).invoke(contraption, spawn);
     }
 
+    static void writeBehaviour(ServerLevel level, Object behaviour, CompoundTag tag) throws ReflectiveOperationException {
+        behaviour.getClass().getMethod("write", CompoundTag.class, boolean.class).invoke(behaviour, tag, false);
+    }
+    static void readBehaviour(ServerLevel level, Object behaviour, CompoundTag tag) throws ReflectiveOperationException {
+        behaviour.getClass().getMethod("read", CompoundTag.class, boolean.class).invoke(behaviour, tag, false);
+    }
 }

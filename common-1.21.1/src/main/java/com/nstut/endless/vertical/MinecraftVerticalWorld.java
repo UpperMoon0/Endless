@@ -214,6 +214,13 @@ public final class MinecraftVerticalWorld {
         return column == null ? List.of() : column.pageYs();
     }
 
+    /** All allocated pages in this horizontal chunk, including persisted/evicted pages. */
+    public synchronized List<Integer> knownPageYs(int chunkX, int chunkZ) {
+        java.util.TreeSet<Integer> pages = new java.util.TreeSet<>(loadedPageYs(chunkX, chunkZ));
+        if (disk != null) pages.addAll(disk.pageYs(chunkX, chunkZ));
+        return List.copyOf(pages);
+    }
+
     public synchronized boolean pageExists(VerticalPagePos pos) {
         SparseVerticalColumn<LevelChunkSection> column = columns.get(ChunkPos.asLong(pos.chunkX(), pos.chunkZ()));
         if (column != null && column.getPage(pos.pageY()) != null) {

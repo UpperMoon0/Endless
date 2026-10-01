@@ -15,10 +15,19 @@ final class LiveCreateNbt {
         return BlockEntity.loadStatic(pos, state, tag, level.registryAccess());
     }
     static CompoundTag writeContraption(ServerLevel level, Object contraption) throws ReflectiveOperationException {
-        // Create 6.0.11 uses the 1.21.1 registry-aware writer, unlike 6.0.8.
-        return (CompoundTag) contraption.getClass()
-            .getMethod("writeNBT", HolderLookup.Provider.class, boolean.class)
-            .invoke(contraption, level.registryAccess(), false);
+        return writeContraption(level, contraption, false);
+    }
+    static CompoundTag writeContraption(ServerLevel level, Object contraption, boolean spawn) throws ReflectiveOperationException {
+        return (CompoundTag) contraption.getClass().getMethod("writeNBT", HolderLookup.Provider.class, boolean.class)
+            .invoke(contraption, level.registryAccess(), spawn);
     }
 
+    static void writeBehaviour(ServerLevel level, Object behaviour, CompoundTag tag) throws ReflectiveOperationException {
+        behaviour.getClass().getMethod("write", CompoundTag.class, HolderLookup.Provider.class, boolean.class)
+            .invoke(behaviour, tag, level.registryAccess(), false);
+    }
+    static void readBehaviour(ServerLevel level, Object behaviour, CompoundTag tag) throws ReflectiveOperationException {
+        behaviour.getClass().getMethod("read", CompoundTag.class, HolderLookup.Provider.class, boolean.class)
+            .invoke(behaviour, tag, level.registryAccess(), false);
+    }
 }

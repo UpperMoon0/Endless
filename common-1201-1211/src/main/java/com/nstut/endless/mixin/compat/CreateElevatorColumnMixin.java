@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 @Mixin(targets = "com.simibubi.create.content.contraptions.elevator.ElevatorColumn", remap = false)
 public abstract class CreateElevatorColumnMixin {
     @Shadow(remap = false) protected LevelAccessor level;
-    @Redirect(method = "gatherAll", at = @At(value = "INVOKE", target = "Lnet/minecraft/core/BlockPos;betweenClosedStream(Lnet/minecraft/core/BlockPos;Lnet/minecraft/core/BlockPos;)Ljava/util/stream/Stream;"), require = 1)
+    @Redirect(method = "gatherAll", at = @At(value = "INVOKE", target = "Lnet/minecraft/core/BlockPos;betweenClosedStream(Lnet/minecraft/core/BlockPos;Lnet/minecraft/core/BlockPos;)Ljava/util/stream/Stream;", remap = true), require = 1)
     private Stream<BlockPos> endless$occupiedColumn(BlockPos first, BlockPos last) {
         return CreateLogicalGeometry.columnPositions(level, first, last);
     }

@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 @Pseudo
 @Mixin(targets = "com.simibubi.create.content.contraptions.pulley.PulleyBlockEntity", remap = false)
 public abstract class CreatePulleyBlockEntityMixin {
-    @Redirect(method = {"getExtensionRange", "getMinValue"}, at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getMinBuildHeight()I"), require = 1)
+    @Redirect(method = {"getExtensionRange", "getMinValue"}, at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getMinBuildHeight()I", remap = true), require = 1)
     private int endless$logicalMinimum(Level level) {
         return EndlessLogicalHeights.isActive() ? EndlessHeights.getMinBuildHeight() : level.getMinBuildHeight();
     }

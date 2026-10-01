@@ -34,7 +34,7 @@ public abstract class CreateContraptionMixin {
         }
     }
 
-    @Redirect(method = "readStructureBlockInfo", at = @At(value = "INVOKE", target = "Lnet/minecraft/core/BlockPos;of(J)Lnet/minecraft/core/BlockPos;"), require = 1)
+    @Redirect(method = "readStructureBlockInfo", at = @At(value = "INVOKE", target = "Lnet/minecraft/core/BlockPos;of(J)Lnet/minecraft/core/BlockPos;", remap = true), require = 1)
     private static BlockPos endless$readExactKey(long packed, CompoundTag entry, @Coerce Object palette) {
         return CreateContraptionPosition.read(entry, packed);
     }

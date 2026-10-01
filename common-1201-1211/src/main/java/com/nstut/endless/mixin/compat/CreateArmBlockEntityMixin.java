@@ -14,15 +14,15 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 @Pseudo
 @Mixin(targets = "com.simibubi.create.content.kinetics.mechanicalArm.ArmBlockEntity", remap = false)
 public abstract class CreateArmBlockEntityMixin {
-    @Redirect(method = "isAreaActuallyLoaded", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;isAreaLoaded(Lnet/minecraft/core/BlockPos;I)Z"), require = 1)
+    @Redirect(method = "isAreaActuallyLoaded", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;isAreaLoaded(Lnet/minecraft/core/BlockPos;I)Z", remap = false), require = 1)
     private boolean endless$loadedLogicalArea(Level level, BlockPos center, int range) {
         return CreateLogicalGeometry.isAreaLoaded(level, center, range);
     }
-    @Redirect(method = "isAreaActuallyLoaded", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getMinBuildHeight()I"), require = 1)
+    @Redirect(method = "isAreaActuallyLoaded", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getMinBuildHeight()I", remap = true), require = 1)
     private int endless$logicalMinimum(Level level) {
         return EndlessLogicalHeights.isActive() ? EndlessHeights.getMinBuildHeight() : level.getMinBuildHeight();
     }
-    @Redirect(method = "isAreaActuallyLoaded", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getMaxBuildHeight()I"), require = 1)
+    @Redirect(method = "isAreaActuallyLoaded", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getMaxBuildHeight()I", remap = true), require = 1)
     private int endless$logicalMaximum(Level level) {
         return EndlessLogicalHeights.isActive() ? EndlessHeights.getMaxBuildHeight() : level.getMaxBuildHeight();
     }

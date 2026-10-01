@@ -107,6 +107,8 @@ Ejector JUnit regressions exercise all hit faces, wrench/placement modes, world 
 
 Ordinary and high-Y clients report local PASS without disconnecting. The harness shuts them down only after all required client and server markers are present, and fails immediately on an early client exit/disconnect while evidence is missing. The server cold-restart fixture also explicitly rejects a disconnect after it starts. Existing bounded deadlines remain unchanged; there is no assertion retry or longer-timeout workaround.
 
+The Forge build job also reads the shipped jar's refmap and requires all five Minecraft invocation selectors used by the new Create arm/pulley/elevator/contraption redirects to have their 1.20.1 runtime SRG mappings. An absent mapping or a development-only named selector fails the artifact gate. This verifies packaged mapping metadata; it does not replace a production launch.
+
 ### Exact contraption coordinates and expanded machine lifecycles
 
 `LiveCreateContraptionSerializationTest` runs in positive phase B on both Create targets. At unchanged `maxBlocksMoved=2048`, real mounted assembly, entity storage initialization, disk NBT, and spawn NBT must preserve every block key/state for 2,047- and 2,048-payload columns. The latter has 2,049 entries including the anchor and local Y=+2048. A stripped-extension 2,047 control verifies legacy reading. `ENDLESS_CREATE_CONTRAPTION_EXACT_POSITION_PASS` replaces the former known-defect characterization; the harness no longer accepts a shifted payload. Unit tests also cover negative/positive envelope edges, packed aliases, and malformed or unknown-schema refusal.

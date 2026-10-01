@@ -225,7 +225,14 @@ public final class LiveCreateExpandedMachinesTest {
             BlockState receiver = block("redstone_link").setValue(receiverProperty, true);
             level.setBlock(first, receiver, 18);
             level.setBlock(moved, receiver, 18);
-            BlockEntity original = level.getBlockEntity(first), relocated = level.getBlockEntity(moved);
+            // Create registers LinkBehaviour during its first NBT read. A bare
+            // initialize() does not exercise that production deferred lifecycle.
+            BlockEntity original = LiveCreateNbt.load(level, first, receiver,
+                LiveCreateNbt.save(level, level.getBlockEntity(first)));
+            BlockEntity relocated = LiveCreateNbt.load(level, moved, receiver,
+                LiveCreateNbt.save(level, level.getBlockEntity(moved)));
+            require(original != null && relocated != null, "receiver native NBT initialization failed");
+            level.setBlockEntity(original); level.setBlockEntity(relocated);
             call(original, "initialize"); call(relocated, "initialize");
             Object originalBehaviour = field(original, "link"), relocatedBehaviour = field(relocated, "link");
             CompoundTag linkTag = new CompoundTag();

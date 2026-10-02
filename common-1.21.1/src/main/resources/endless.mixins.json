@@ -58,7 +58,8 @@
     "compat.CreateTrackNodeLocationMixin",
     "compat.CreateChorusTeleportMixin",
     "compat.CreateAssemblyExceptionMixin",
-    "LivingTeleportMixin"
+    "LivingTeleportMixin",
+    "PistonBaseBlockMixin"
   ],
   "injectors": {
     "defaultRequire": 1

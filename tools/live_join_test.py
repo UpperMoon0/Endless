@@ -60,6 +60,7 @@ SERVER_FATAL_MARKERS = (
     "ENDLESS_HIGH_Y_SERVER_FAIL",
     "ENDLESS_FAR_ENVELOPE_FAIL",
     "ENDLESS_COLD_RESTART_FAIL",
+    "ENDLESS_CREATE_GAMETESTS_FAIL",
     "Encountered an unexpected exception",
     "This crash report has been saved to:",
     "Failed to start the minecraft server",
@@ -473,6 +474,17 @@ SCENARIOS.append(Scenario(
     required_server_markers=("ENDLESS_CREATE_KINETIC_COLD_RESTART_PASS",),
 ))
 
+CREATE_GAMEPLAY_GROUPS = ("Contraptions", "Fluids", "Items", "Misc", "Processing", "Regressions")
+for group in CREATE_GAMEPLAY_GROUPS:
+    SCENARIOS.append(Scenario(
+        id="create-gameplay-" + group.lower(),
+        description="Pinned Create native " + group + " outcomes across nine height origins",
+        server_kind="modded", server_config=MILLION_BUILD_HEIGHT,
+        client_config=VANILLA_BUILD_HEIGHT, expected=MILLION_BUILD_HEIGHT,
+        server_port=25584, create=True,
+        required_server_markers=("ENDLESS_CREATE_GAMETESTS_PASS group=" + group,),
+    ))
+
 # New-version runtime gate: exercise the actual sparse engine, network sync,
 # client prediction, rendering, pathfinding, scheduled mechanics and persistence
 # without imposing the 1.20.1-only Waystones compatibility fixture.
@@ -500,11 +512,11 @@ LIVE_CASES = tuple(
     (target, scenario.id)
     for target in LEGACY_TARGETS
     for scenario in SCENARIOS
-    if scenario.id not in ("port-runtime", "same-jvm-rejoin-full-envelope", "create-compat", "create-cold-restart")
+    if not scenario.id.startswith("create-gameplay-") and scenario.id not in ("port-runtime", "same-jvm-rejoin-full-envelope", "create-compat", "create-cold-restart")
 ) + tuple((target, "port-runtime") for target in PORT_TARGETS) + tuple(
     (target, scenario_id)
     for target in CREATE_TARGETS
-    for scenario_id in ("create-compat", "create-cold-restart")
+    for scenario_id in ("create-compat", "create-cold-restart") + tuple("create-gameplay-" + g.lower() for g in CREATE_GAMEPLAY_GROUPS if g != "Regressions" or target == "neoforge-1.21.1")
 ) + tuple(
     (target, scenario_id)
     for target in PORT_REJOIN_TARGETS
@@ -930,6 +942,7 @@ def scenario_env(scenario: Scenario, cold_phase: str = "") -> dict[str, str]:
     env["ENDLESS_TEST_EXTREME"] = "true" if scenario.gameplay else "false"
     env["ENDLESS_TEST_WAYSTONES"] = "true" if scenario.waystones else "false"
     env["ENDLESS_TEST_CREATE"] = "true" if scenario.create else "false"
+    env["ENDLESS_TEST_CREATE_GROUP"] = next((g for g in CREATE_GAMEPLAY_GROUPS if scenario.id == "create-gameplay-" + g.lower()), "")
     env["ENDLESS_TEST_FAR"] = "true" if scenario.id == "far-envelope" else "false"
     env["ENDLESS_TEST_COLD_RESTART_PHASE"] = cold_phase
     env["ENDLESS_TEST_SAME_JVM_REJOIN"] = "true" if scenario.integrated_rejoin else "false"
@@ -971,7 +984,7 @@ def run_live_session(
             raise RuntimeError(f"{label}: client reported failure: {outcome.rstrip()}")
 
         wait_for_session_completion(
-            client_output, server_output, min(timeout, 90), label,
+            client_output, server_output, max(timeout, 1200) if scenario.id.startswith("create-gameplay-") else min(timeout, 90), label,
             required_server_markers, required_client_markers,
         )
         print(f"{label}: PASS ({outcome.rstrip()})", flush=True)
@@ -1028,7 +1041,7 @@ def cold_restart_server_markers(scenario: Scenario, phase: str) -> tuple[str, ..
         raise ValueError("cold-restart evidence requires phase A or B of a cold-restart scenario")
     markers = (f"ENDLESS_COLD_RESTART_PHASE_{phase}_PASS",) + scenario.required_server_markers
     if phase == "A" and scenario.create:
-        markers += ("ENDLESS_CREATE_MOVING_RESTART_PREPARED",)
+        markers += ("ENDLESS_CREATE_MOVING_RESTART_PREPARED", "ENDLESS_CREATE_FACTORY_RESTART_PREPARED",)
     if phase == "B" and scenario.create:
         markers += (
             "ENDLESS_CREATE_MIGRATION_PASS",
@@ -1044,6 +1057,7 @@ def cold_restart_server_markers(scenario: Scenario, phase: str) -> tuple[str, ..
             "ENDLESS_CREATE_POSITION_CODECS_PASS",
             "ENDLESS_CREATE_CHORUS_TELEPORT_PASS",
             "ENDLESS_CREATE_MOVING_RESTART_PASS",
+            "ENDLESS_CREATE_FACTORY_RESTART_PASS",
         )
     return markers
 

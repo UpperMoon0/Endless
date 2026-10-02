@@ -15,7 +15,7 @@ class CreatePackagedRefmapTest(unittest.TestCase):
             return gate.check_jar(path)
 
     def valid(self):
-        return {gate.PREFIX + name: dict(entries) for name, entries in gate.EXPECTED.items()}
+        return {gate.mixin_key(name): dict(entries) for name, entries in gate.EXPECTED.items()}
 
     def test_shipped_runtime_srg_selectors_pass(self):
         self.assertEqual([], self.check(self.valid()))

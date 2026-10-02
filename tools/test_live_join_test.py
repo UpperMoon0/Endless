@@ -23,8 +23,25 @@ class VerificationPolicyTest(unittest.TestCase):
 
     def test_unique_matrix(self):
         self.assertEqual(len(live.SCENARIOS), len({s.id for s in live.SCENARIOS}))
-        self.assertEqual(29, len(live.LIVE_CASES))
+        self.assertEqual(40, len(live.LIVE_CASES))
         self.assertEqual(len(live.LIVE_CASES), len(set(live.LIVE_CASES)))
+
+    def test_native_create_gameplay_groups_require_outputs_on_pinned_loaders(self):
+        for group in live.CREATE_GAMEPLAY_GROUPS:
+            scenario = live.SCENARIO_BY_ID["create-gameplay-" + group.lower()]
+            self.assertTrue(scenario.create)
+            self.assertFalse(scenario.gameplay)
+            self.assertIn("ENDLESS_CREATE_GAMETESTS_PASS group=" + group, scenario.required_server_markers)
+            self.assertEqual(group, live.scenario_env(scenario)["ENDLESS_TEST_CREATE_GROUP"])
+            self.assertIn(("neoforge-1.21.1", scenario.id), live.LIVE_CASES)
+            if group != "Regressions":
+                self.assertIn(("forge-1.20.1", scenario.id), live.LIVE_CASES)
+            else:
+                self.assertNotIn(("forge-1.20.1", scenario.id), live.LIVE_CASES)
+        self.assertIn("ENDLESS_CREATE_GAMETESTS_FAIL", live.SERVER_FATAL_MARKERS)
+        for target, scenario in live.LIVE_CASES:
+            if scenario.startswith("create-gameplay-"):
+                self.assertIn(target, live.CREATE_TARGETS)
 
     def test_million_gameplay_cannot_degrade_to_join_only(self):
         scenario = next(s for s in live.SCENARIOS if s.id == "million-gameplay")

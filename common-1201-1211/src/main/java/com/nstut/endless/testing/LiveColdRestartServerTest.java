@@ -36,6 +36,7 @@ public final class LiveColdRestartServerTest {
 
     private static boolean done;
     private static boolean prepared;
+    private static boolean createRecovered;
     private static int ticks;
     private static int fixtureTickEligibleAt = -1;
 
@@ -66,7 +67,10 @@ public final class LiveColdRestartServerTest {
                 if (!fixtureReady(level)) return;
                 verify(level);
                 persistCreateExpectedIdsIfRequested(level);
-                if (Boolean.getBoolean(CREATE_PROPERTY)) LiveCreateMovingRestartTest.prepare(level);
+                if (Boolean.getBoolean(CREATE_PROPERTY)) {
+                    LiveCreateMovingRestartTest.prepare(level);
+                    LiveCreateFactoryRestartTest.prepare(level);
+                }
                 ExtendedPoiStorage.flush(level, new ChunkPos(poiPos()));
                 EndlessVerticalEngine.world(level).flushDirty();
                 require(server.saveEverything(true, true, true), "dedicated server saveEverything reported failure");
@@ -83,9 +87,13 @@ public final class LiveColdRestartServerTest {
                 if (Boolean.getBoolean(CREATE_PROPERTY)) {
                     // Persistence has passed independently; only now construct
                     // separate legacy-NBT migration and corrupt-storage fixtures.
+                    if (!createRecovered) {
                     LiveCreatePositionCodecTest.run(level);
                     LiveCreateChorusTest.run(level);
                     LiveCreateMovingRestartTest.verify(level);
+                    createRecovered = true;
+                    }
+                    if (!LiveCreateFactoryRestartTest.verify(level)) return;
                     LiveCreateMigrationTest.run(level);
                     CreateKineticStorageProbe.run(level.getServer().getWorldPath(LevelResource.ROOT)
                         .resolve("endless-live-allocator-probes"));
@@ -108,6 +116,7 @@ public final class LiveColdRestartServerTest {
 
     private static void forceFixtureChunk(ServerLevel level) {
         level.setChunkForced(0, 0, true);
+        if (Boolean.getBoolean(CREATE_PROPERTY)) level.setChunkForced(2, 2, true);
         require(level.getForcedChunks().contains(fixtureChunkKey()),
             "could not force-load cold-restart fixture chunk 0,0");
     }
@@ -115,7 +124,9 @@ public final class LiveColdRestartServerTest {
     private static boolean fixtureReady(ServerLevel level) {
         long chunkKey = fixtureChunkKey();
         boolean tickEligible = level.areEntitiesLoaded(chunkKey)
-            && level.getChunkSource().isPositionTicking(chunkKey);
+            && level.getChunkSource().isPositionTicking(chunkKey)
+            && (!Boolean.getBoolean(CREATE_PROPERTY) || (level.areEntitiesLoaded(ChunkPos.asLong(2, 2))
+                && level.getChunkSource().isPositionTicking(ChunkPos.asLong(2, 2))));
         if (!tickEligible) {
             require(ticks < 210,
                 "cold-restart fixture chunk never entered vanilla ticking state" + fixtureChunkStatus(level));

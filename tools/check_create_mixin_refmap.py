@@ -6,6 +6,10 @@ import zipfile
 
 PREFIX = "com/nstut/endless/mixin/compat/"
 EXPECTED = {
+    "PistonBaseBlockMixin": {
+        "Lnet/minecraft/world/level/Level;getMinBuildHeight()I": "Lnet/minecraft/world/level/Level;m_141937_()I",
+        "Lnet/minecraft/world/level/Level;getMaxBuildHeight()I": "Lnet/minecraft/world/level/Level;m_151558_()I",
+    },
     "CreateArmBlockEntityMixin": {
         "Lnet/minecraft/world/level/Level;getMinBuildHeight()I": "Lnet/minecraft/world/level/Level;m_141937_()I",
         "Lnet/minecraft/world/level/Level;getMaxBuildHeight()I": "Lnet/minecraft/world/level/Level;m_151558_()I",
@@ -34,6 +38,10 @@ EXPECTED = {
 }
 
 
+def mixin_key(name: str) -> str:
+    return ("com/nstut/endless/mixin/" if name == "PistonBaseBlockMixin" else PREFIX) + name
+
+
 def check_jar(path: Path) -> list[str]:
     mappings = {}
     with zipfile.ZipFile(path) as jar:
@@ -42,7 +50,7 @@ def check_jar(path: Path) -> list[str]:
                 mappings.update(json.loads(jar.read(name)).get("mappings", {}))
     errors = []
     for mixin, selectors in EXPECTED.items():
-        entries = mappings.get(PREFIX + mixin, {})
+        entries = mappings.get(mixin_key(mixin), {})
         for selector, runtime in selectors.items():
             if entries.get(selector) != runtime:
                 errors.append(f"{mixin}: shipped selector {selector} must map to {runtime}; got {entries.get(selector)!r}")

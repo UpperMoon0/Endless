@@ -15,10 +15,11 @@ final class LiveCreateNbt {
         // legacy Count bytes in modded BE inventories, which vanilla's structure
         // fixer cannot visit. Preserve those exact input counts in the current codec.
         CompoundTag tag = template.save(new CompoundTag());
-        int changed = normalizeFixtureCounts(tag) + LiveCreateGameTests.normalizeLegacyThresholds(tag);
+        int changed = normalizeFixtureCounts(tag) + LiveCreateGameTests.normalizeLegacyThresholds(tag)
+            + LiveCreateGameTests.clearRelocatedHoseContexts(tag);
         if (changed > 0) {
             template.load(level.holderLookup(net.minecraft.core.registries.Registries.BLOCK), tag);
-            System.out.println("ENDLESS_CREATE_GAMETEST_TEMPLATE_COUNTS_NORMALIZED stacks=" + changed);
+            System.out.println("ENDLESS_CREATE_GAMETEST_TEMPLATE_SETUP_NORMALIZED fields=" + changed);
         }
     }
     private static int normalizeFixtureCounts(net.minecraft.nbt.Tag tag) {

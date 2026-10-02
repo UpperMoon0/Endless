@@ -11,13 +11,20 @@ final class LiveCreateNbt {
     private LiveCreateNbt() {}
     static void prepareGameTestTemplate(ServerLevel level, net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate template) {
         CompoundTag tag = template.save(new CompoundTag());
-        if (LiveCreateGameTests.normalizeLegacyThresholds(tag) > 0)
+        if (LiveCreateGameTests.normalizeLegacyThresholds(tag) + LiveCreateGameTests.clearRelocatedHoseContexts(tag) > 0)
             template.load(level.holderLookup(net.minecraft.core.registries.Registries.BLOCK), tag);
     }
     static BlockPos readPos(CompoundTag tag, String key) { return net.minecraft.nbt.NbtUtils.readBlockPos(tag.getCompound(key)); }
     static boolean symmetryEnabled(net.minecraft.world.item.ItemStack stack) { return stack.hasTag() && stack.getTag().getBoolean("enable"); }
     static void setBacktankAir(net.minecraft.world.item.ItemStack stack, int air) { stack.getOrCreateTag().putInt("Air", air); }
-    static void seedRecipe(ServerLevel level) throws Exception { ((java.util.Random) Class.forName("com.simibubi.create.Create").getField("RANDOM").get(null)).setSeed(0L); }
+    static void seedRecipe(ServerLevel level) throws Exception {
+        // Native sequenced result selection and chance-based processing outputs
+        // use distinct random sources in pinned Forge Create 6.0.8.
+        ((java.util.Random) Class.forName("com.simibubi.create.Create").getField("RANDOM").get(null)).setSeed(0L);
+        var outputRandom = Class.forName("com.simibubi.create.content.processing.recipe.ProcessingOutput").getDeclaredField("r");
+        outputRandom.setAccessible(true);
+        ((java.util.Random) outputRandom.get(null)).setSeed(0L);
+    }
     static CompoundTag save(ServerLevel level, BlockEntity entity) { return entity.saveWithFullMetadata(); }
     static BlockEntity load(ServerLevel level, BlockPos pos, BlockState state, CompoundTag tag) {
         return BlockEntity.loadStatic(pos, state, tag);

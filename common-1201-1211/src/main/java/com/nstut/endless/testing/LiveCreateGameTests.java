@@ -213,6 +213,21 @@ public final class LiveCreateGameTests {
         } catch (Exception failure) { throw new IllegalStateException(failure); }
     }
     private static boolean seededRecipe(TestFunction function) { return name(function).equals("TestProcessing.precisionMechanismCrafting") || name(function).equals("TestItems.fanProcessing"); }
+    static int clearRelocatedHoseContexts(net.minecraft.nbt.CompoundTag template) {
+        int changed = 0;
+        for (net.minecraft.nbt.Tag entry : template.getList("blocks", 10)) {
+            var data = ((net.minecraft.nbt.CompoundTag) entry).getCompound("nbt");
+            if (!data.getString("id").equals("create:hose_pulley")) continue;
+            // Pinned templates capture absolute world search coordinates. Native
+            // draining.read queues LastPos and pullNext waits for that old search
+            // before rebuilding at its new root; an unloaded capture chunk stalls
+            // the fresh fixture. Freshly placed hoses must discover their own pool.
+            // Keep offset, speed, tank inputs and every native output assertion.
+            for (String key : List.of("LastPos", "AffectedAreaFrom", "AffectedAreaTo", "Infinite"))
+                if (data.contains(key)) { data.remove(key); changed++; }
+        }
+        return changed;
+    }
     static int normalizeLegacyThresholds(net.minecraft.nbt.CompoundTag template) {
         int changed = 0;
         for (net.minecraft.nbt.Tag entry : template.getList("blocks", 10)) {

@@ -28,7 +28,8 @@ public final class LiveCreateGameTests {
     public static final String FAIL = "ENDLESS_CREATE_GAMETESTS_FAIL";
     // Origins straddle the seam with native structures, rather than just sitting above it.
     private static final int[] HEIGHTS = {64, -67, 317, -515, 509, -2051, 2045, -1_000_451, 1_000_445};
-    private record Running(GameTestInfo info, BoundingBox bounds, int y) {}
+    private record Running(GameTestInfo info, BoundingBox bounds, int y, BlockPos origin) {}
+    private static final java.util.Map<GameTestInfo, Integer> populated = new java.util.HashMap<>();
     private static final List<Running> running = new ArrayList<>();
     private static List<TestFunction> functions;
     private static int next;
@@ -45,25 +46,31 @@ public final class LiveCreateGameTests {
         try {
             ticks++;
             if (functions == null) {
+                // Match GameTestServer.TEST_GAME_RULES; recipe, entity, fluid and machine ticks still run normally.
+                level.getGameRules().getRule(net.minecraft.world.level.GameRules.RULE_RANDOMTICKING).set(0, server);
+                level.getGameRules().getRule(net.minecraft.world.level.GameRules.RULE_DOMOBSPAWNING).set(false, server);
+                level.getGameRules().getRule(net.minecraft.world.level.GameRules.RULE_WEATHER_CYCLE).set(false, server);
+                level.getGameRules().getRule(net.minecraft.world.level.GameRules.RULE_DOFIRETICK).set(false, server);
                 @SuppressWarnings("unchecked") Collection<TestFunction> nativeFunctions = (Collection<TestFunction>)
                     Class.forName("com.simibubi.create.infrastructure.gametest.CreateGameTests")
                         .getMethod("generateTests").invoke(null);
                 functions = nativeFunctions.stream().filter(f -> name(f).startsWith("Test" + group + ".")).toList();
-                require(new java.util.HashSet<>(functions.stream().map(LiveCreateGameTests::name).toList()).equals(new java.util.HashSet<>(LiveCreateGameTestCatalog.expected(group))),
+                require(functions.size() == LiveCreateGameTestCatalog.expected(group).size() && new java.util.HashSet<>(functions.stream().map(LiveCreateGameTests::name).toList()).equals(new java.util.HashSet<>(LiveCreateGameTestCatalog.expected(group))),
                     "pinned native test catalog mismatch group=" + group);
                 System.out.println("ENDLESS_CREATE_GAMETESTS_START group=" + group + " functions=" + functions.size() + " heights=" + HEIGHTS.length);
             }
             if (running.isEmpty()) {
-                if (next == functions.size()) {
+                if (next == functions.size() * HEIGHTS.length) {
                     done = true;
                     require(completed == functions.size() * HEIGHTS.length, "missing native outcome");
                     System.out.println(PASS + " group=" + group + " cases=" + completed + " nativeAssertions=true naturalTicks=true");
                     return;
                 }
-                // Four templates at a time; all heights use the same horizontal ticking chunks.
-                for (int slot = 0; slot < 4 && next < functions.size(); slot++, next++) {
-                    TestFunction function = functions.get(next);
-                    for (int y : HEIGHTS) running.add(place(level, function, new BlockPos(64 + slot % 2 * 64, y, 64 + slot / 2 * 64)));
+                // Isolate heights horizontally: falling items from one fixture must never enter another.
+                for (int slot = 0; slot < 4 && next < functions.size() * HEIGHTS.length; slot++, next++) {
+                    TestFunction function = functions.get(next / HEIGHTS.length);
+                    int y = HEIGHTS[next % HEIGHTS.length];
+                    running.add(place(level, function, new BlockPos(64 + slot % 2 * 64, y, 64 + slot / 2 * 64)));
                 }
                 placedAt = ticks;
                 return;
@@ -75,14 +82,25 @@ public final class LiveCreateGameTests {
                     require(ticks - placedAt < 200, "fixture chunks never entered ticking state");
                     continue;
                 }
+                if (!populated.containsKey(test.info)) {
+                    level.getEntitiesOfClass(Entity.class, AABB.of(test.bounds), e -> !(e instanceof Player)).forEach(Entity::discard);
+                    var template = level.getStructureManager().get(ResourceLocation.tryParse(test.info.getStructureName())).orElseThrow();
+                    require(template.placeInWorld(level, test.origin, test.origin, new net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings()
+                        .setIgnoreEntities(false), level.random, 2), "native template placement failed");
+                    populated.put(test.info, ticks);
+                    continue;
+                }
+                if (ticks - populated.get(test.info) < 30) continue;
                 if (!test.info.hasStarted()) set(test.info, "startTick", level.getGameTime());
                 Method tick = GameTestInfo.class.getDeclaredMethod("tickInternal"); tick.setAccessible(true); tick.invoke(test.info);
                 if (!test.info.isDone()) continue;
+                if (!test.info.hasSucceeded()) dump(level, test);
                 require(test.info.hasSucceeded(), "native outcome failed test=" + test.info.getTestName() + " originY=" + test.y + " cause=" + test.info.getError());
                 completed++;
                 System.out.println("ENDLESS_CREATE_GAMETEST_CASE_PASS test=" + test.info.getTestName() + " originY=" + test.y);
                 clear(level, test.bounds);
                 running.remove(test);
+                populated.remove(test.info);
             }
         } catch (Throwable failure) {
             done = true;
@@ -104,6 +122,13 @@ public final class LiveCreateGameTests {
             origin.getX() + size.getX() + 3, origin.getY() + size.getY() + 20, origin.getZ() + size.getZ() + 3);
         for (int x = bounds.minX() >> 4; x <= bounds.maxX() >> 4; x++)
             for (int z = bounds.minZ() >> 4; z <= bounds.maxZ() >> 4; z++) level.setChunkForced(x, z, true);
+        // A previous fixture can eject items beyond its vertical cleanup bounds. The cells
+        // are reused sequentially, so remove those remnants before placing the next case.
+        List<Entity> remnants = new ArrayList<>();
+        for (Entity entity : level.getAllEntities())
+            if (!(entity instanceof Player) && entity.getX() >= bounds.minX() && entity.getX() <= bounds.maxX() + 1
+                && entity.getZ() >= bounds.minZ() && entity.getZ() <= bounds.maxZ() + 1) remnants.add(entity);
+        remnants.forEach(Entity::discard);
         clear(level, bounds);
         // Native test floors permit items and passengers to land without falling out of the fixture.
         for (BlockPos p : BlockPos.betweenClosed(new BlockPos(bounds.minX(), origin.getY() - 1, bounds.minZ()),
@@ -117,12 +142,14 @@ public final class LiveCreateGameTests {
         structure.setIgnoreEntities(false);
         structure.setRotation(Rotation.NONE);
         structure.setStructureSize(size);
-        require(template.placeInWorld(level, origin, origin, new net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings()
-            .setIgnoreEntities(false), level.random, 2), "native template placement failed");
+        // Real light blocks supply the same crop-survival precondition at buried and open-air origins.
+        for (int x = -3; x <= size.getX() + 2; x++) for (int z = -3; z <= size.getZ() + 2; z++)
+            if (x == -3 || x == size.getX() + 2 || z == -3 || z == size.getZ() + 2)
+                for (int y = 0; y <= size.getY(); y++) level.setBlock(origin.offset(x, y, z), Blocks.GLOWSTONE.defaultBlockState(), 2);
         set(info, "structureBlockPos", structurePos);
         set(info, "structureBlockEntity", structure);
         set(info, "startTick", level.getGameTime());
-        return new Running(info, bounds, origin.getY());
+        return new Running(info, bounds, origin.getY(), origin);
     }
 
     private static GameTestInfo createInfo(TestFunction function, ServerLevel level) throws Exception {
@@ -134,6 +161,25 @@ public final class LiveCreateGameTests {
             }
         }
         throw new NoSuchMethodException("pinned GameTestInfo constructor");
+    }
+    private static void dump(ServerLevel level, Running test) {
+        for (Entity e : level.getAllEntities()) if (e instanceof net.minecraft.world.entity.item.ItemEntity item
+                && Math.abs(e.getX() - test.origin.getX()) < 20 && Math.abs(e.getZ() - test.origin.getZ()) < 20)
+            System.out.println("ENDLESS_CREATE_GAMETEST_ITEM pos=" + e.position() + " motion=" + e.getDeltaMovement() + " stack=" + item.getItem());
+        for (BlockPos p : BlockPos.betweenClosed(new BlockPos(test.bounds.minX(), test.bounds.minY(), test.bounds.minZ()),
+                new BlockPos(test.bounds.maxX(), test.bounds.maxY(), test.bounds.maxZ()))) {
+            var entity = level.getBlockEntity(p);
+            if (entity != null) System.out.println("ENDLESS_CREATE_GAMETEST_STATE test=" + test.info.getTestName()
+                + " pos=" + p + " state=" + level.getBlockState(p) + " nbt=" + LiveCreateNbt.save(level, entity));
+            if (entity != null && entity.getClass().getSimpleName().equals("EncasedFanBlockEntity")) try {
+                Field air = entity.getClass().getDeclaredField("airCurrent"); air.setAccessible(true); Object current = air.get(entity);
+                System.out.println("ENDLESS_CREATE_GAMETEST_FAN pos=" + p + " bounds=" + current.getClass().getField("bounds").get(current)
+                    + " maxDistance=" + current.getClass().getField("maxDistance").get(current));
+            } catch (ReflectiveOperationException failure) { throw new IllegalStateException(failure); }
+            var state = level.getBlockState(p);
+            if (state.getBlock() instanceof net.minecraft.world.level.block.CropBlock || state.is(Blocks.FARMLAND))
+                System.out.println("ENDLESS_CREATE_GAMETEST_CROP pos=" + p + " state=" + state + " light=" + level.getRawBrightness(p, 0));
+        }
     }
     private static String name(TestFunction function) {
         try { return (String) function.getClass().getMethod("testName").invoke(function); }

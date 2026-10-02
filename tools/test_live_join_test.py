@@ -23,7 +23,7 @@ class VerificationPolicyTest(unittest.TestCase):
 
     def test_unique_matrix(self):
         self.assertEqual(len(live.SCENARIOS), len({s.id for s in live.SCENARIOS}))
-        self.assertEqual(40, len(live.LIVE_CASES))
+        self.assertEqual(42, len(live.LIVE_CASES))
         self.assertEqual(len(live.LIVE_CASES), len(set(live.LIVE_CASES)))
 
     def test_native_create_gameplay_groups_require_outputs_on_pinned_loaders(self):
@@ -42,6 +42,15 @@ class VerificationPolicyTest(unittest.TestCase):
         for target, scenario in live.LIVE_CASES:
             if scenario.startswith("create-gameplay-"):
                 self.assertIn(target, live.CREATE_TARGETS)
+
+    def test_player_workflows_require_authoritative_server_and_client_outcomes(self):
+        scenario = live.SCENARIO_BY_ID["create-player-workflows"]
+        self.assertTrue(scenario.create)
+        self.assertIn("ENDLESS_CREATE_PLAYER_SERVER_PASS", scenario.required_server_markers)
+        self.assertIn("ENDLESS_CREATE_PLAYER_CLIENT_PASS", scenario.required_client_markers)
+        self.assertEqual("true", live.scenario_env(scenario)["ENDLESS_TEST_CREATE_PLAYER"])
+        self.assertEqual(set(live.CREATE_TARGETS), {target for target, name in live.LIVE_CASES if name == scenario.id})
+        self.assertEqual("false", live.scenario_env(live.SCENARIO_BY_ID["create-compat"])["ENDLESS_TEST_CREATE_PLAYER"])
 
     def test_million_gameplay_cannot_degrade_to_join_only(self):
         scenario = next(s for s in live.SCENARIOS if s.id == "million-gameplay")
@@ -381,7 +390,9 @@ class OutputEvidenceTest(unittest.TestCase):
         cold = live.SCENARIO_BY_ID["create-cold-restart"]
         self.assertIn("ENDLESS_CREATE_MOVING_RESTART_PREPARED", live.cold_restart_server_markers(cold, "A"))
         markers = live.cold_restart_server_markers(cold, "B")
-        for missing in ("ENDLESS_CREATE_POSITION_CODECS_PASS", "ENDLESS_CREATE_CHORUS_TELEPORT_PASS", "ENDLESS_CREATE_MOVING_RESTART_PASS"):
+        for missing in ("ENDLESS_CREATE_POSITION_CODECS_PASS", "ENDLESS_CREATE_CHORUS_TELEPORT_PASS", "ENDLESS_CREATE_MOVING_RESTART_PASS",
+                        "ENDLESS_CREATE_FACTORY_RESTART_PASS", "ENDLESS_CREATE_LOGISTICS_RESTART_PASS",
+                        "ENDLESS_CREATE_GANTRY_RESTART_PASS", "ENDLESS_CREATE_CLOCKWORK_RESTART_PASS"):
             self.assertIn(missing, markers)
             server = self.pump("\n".join(marker for marker in markers if marker != missing) + "\n")
             client = self.pump(live.PASS_MARKER + "\n")

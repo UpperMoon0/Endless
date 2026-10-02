@@ -10,6 +10,17 @@ import net.minecraft.world.level.block.state.BlockState;
 /** Version-specific NBT APIs used by the real Create migration/serialization regressions. */
 final class LiveCreateNbt {
     private LiveCreateNbt() {}
+    static BlockPos readPos(CompoundTag tag, String key) { return net.minecraft.nbt.NbtUtils.readBlockPos(tag, key).orElseThrow(); }
+    @SuppressWarnings("unchecked")
+    static boolean symmetryEnabled(net.minecraft.world.item.ItemStack stack) throws ReflectiveOperationException {
+        var type = (net.minecraft.core.component.DataComponentType<Boolean>) Class.forName("com.simibubi.create.AllDataComponents").getField("SYMMETRY_WAND_ENABLE").get(null);
+        return stack.getOrDefault(type, false);
+    }
+    @SuppressWarnings("unchecked")
+    static void setBacktankAir(net.minecraft.world.item.ItemStack stack, int air) throws ReflectiveOperationException {
+        var type = (net.minecraft.core.component.DataComponentType<Integer>) Class.forName("com.simibubi.create.AllDataComponents").getField("BACKTANK_AIR").get(null);
+        stack.set(type, air);
+    }
     static CompoundTag save(ServerLevel level, BlockEntity entity) { return entity.saveWithFullMetadata(level.registryAccess()); }
     static BlockEntity load(ServerLevel level, BlockPos pos, BlockState state, CompoundTag tag) {
         return BlockEntity.loadStatic(pos, state, tag, level.registryAccess());

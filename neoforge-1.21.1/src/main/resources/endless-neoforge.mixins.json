@@ -3,8 +3,10 @@
   "package": "com.nstut.endless.neoforge.mixin",
   "compatibilityLevel": "JAVA_21",
   "minVersion": "0.8",
+  "plugin": "com.nstut.endless.neoforge.mixin.CreateDistMixinPlugin",
   "mixins": [
-    "compat.CreateBlockHelperMixin"
+    "compat.CreateBlockHelperMixin",
+    "compat.CreateSymmetryMirrorDistMixin"
   ],
   "client": [
     "NeoForgeBlockStatePredictionHandlerMixin"

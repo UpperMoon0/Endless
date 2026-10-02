@@ -474,6 +474,14 @@ SCENARIOS.append(Scenario(
     required_server_markers=("ENDLESS_CREATE_KINETIC_COLD_RESTART_PASS",),
 ))
 
+SCENARIOS.append(Scenario(
+    id="create-player-workflows", description="Native survival toolbox, copycat, scaffolding and symmetry packets at nine heights",
+    server_kind="modded", server_config=MILLION_BUILD_HEIGHT, client_config=VANILLA_BUILD_HEIGHT,
+    expected=MILLION_BUILD_HEIGHT, server_port=25585, create=True,
+    required_server_markers=("ENDLESS_CREATE_PLAYER_SERVER_PASS",),
+    required_client_markers=("ENDLESS_CREATE_PLAYER_CLIENT_PASS",),
+))
+
 CREATE_GAMEPLAY_GROUPS = ("Contraptions", "Fluids", "Items", "Misc", "Processing", "Regressions")
 for group in CREATE_GAMEPLAY_GROUPS:
     SCENARIOS.append(Scenario(
@@ -512,11 +520,11 @@ LIVE_CASES = tuple(
     (target, scenario.id)
     for target in LEGACY_TARGETS
     for scenario in SCENARIOS
-    if not scenario.id.startswith("create-gameplay-") and scenario.id not in ("port-runtime", "same-jvm-rejoin-full-envelope", "create-compat", "create-cold-restart")
+    if not scenario.id.startswith("create-gameplay-") and scenario.id not in ("port-runtime", "same-jvm-rejoin-full-envelope", "create-compat", "create-cold-restart", "create-player-workflows")
 ) + tuple((target, "port-runtime") for target in PORT_TARGETS) + tuple(
     (target, scenario_id)
     for target in CREATE_TARGETS
-    for scenario_id in ("create-compat", "create-cold-restart") + tuple("create-gameplay-" + g.lower() for g in CREATE_GAMEPLAY_GROUPS if g != "Regressions" or target == "neoforge-1.21.1")
+    for scenario_id in ("create-compat", "create-cold-restart", "create-player-workflows") + tuple("create-gameplay-" + g.lower() for g in CREATE_GAMEPLAY_GROUPS if g != "Regressions" or target == "neoforge-1.21.1")
 ) + tuple(
     (target, scenario_id)
     for target in PORT_REJOIN_TARGETS
@@ -869,6 +877,7 @@ def prepare_server(module_dir: Path, scenario: Scenario) -> None:
     server_dir = module_dir / "run" / "live-join" / "server"
     reset_dir(server_dir)
     (server_dir / "eula.txt").write_text("eula=true\n", encoding="utf-8")
+    test_world = "level-type=minecraft:flat\nlevel-seed=0\n" if scenario.id.startswith("create-gameplay-") or scenario.id == "create-player-workflows" else ""
     (server_dir / "server.properties").write_text(
         "online-mode=false\n"
         f"server-port={scenario.server_port}\n"
@@ -877,7 +886,7 @@ def prepare_server(module_dir: Path, scenario: Scenario) -> None:
         "spawn-protection=0\n"
         "view-distance=4\n"
         "simulation-distance=4\n"
-        "allow-flight=true\n",
+        "allow-flight=true\n" + test_world,
         encoding="utf-8",
     )
     if scenario.server_kind == "vanilla":
@@ -942,6 +951,7 @@ def scenario_env(scenario: Scenario, cold_phase: str = "") -> dict[str, str]:
     env["ENDLESS_TEST_EXTREME"] = "true" if scenario.gameplay else "false"
     env["ENDLESS_TEST_WAYSTONES"] = "true" if scenario.waystones else "false"
     env["ENDLESS_TEST_CREATE"] = "true" if scenario.create else "false"
+    env["ENDLESS_TEST_CREATE_PLAYER"] = str(scenario.id == "create-player-workflows").lower()
     env["ENDLESS_TEST_CREATE_GROUP"] = next((g for g in CREATE_GAMEPLAY_GROUPS if scenario.id == "create-gameplay-" + g.lower()), "")
     env["ENDLESS_TEST_FAR"] = "true" if scenario.id == "far-envelope" else "false"
     env["ENDLESS_TEST_COLD_RESTART_PHASE"] = cold_phase
@@ -984,7 +994,7 @@ def run_live_session(
             raise RuntimeError(f"{label}: client reported failure: {outcome.rstrip()}")
 
         wait_for_session_completion(
-            client_output, server_output, max(timeout, 1200) if scenario.id.startswith("create-gameplay-") else min(timeout, 90), label,
+            client_output, server_output, max(timeout, 1800) if scenario.id.startswith("create-gameplay-") else max(timeout, 600) if scenario.id == "create-player-workflows" else min(timeout, 90), label,
             required_server_markers, required_client_markers,
         )
         print(f"{label}: PASS ({outcome.rstrip()})", flush=True)
@@ -1041,7 +1051,7 @@ def cold_restart_server_markers(scenario: Scenario, phase: str) -> tuple[str, ..
         raise ValueError("cold-restart evidence requires phase A or B of a cold-restart scenario")
     markers = (f"ENDLESS_COLD_RESTART_PHASE_{phase}_PASS",) + scenario.required_server_markers
     if phase == "A" and scenario.create:
-        markers += ("ENDLESS_CREATE_MOVING_RESTART_PREPARED", "ENDLESS_CREATE_FACTORY_RESTART_PREPARED",)
+        markers += ("ENDLESS_CREATE_MOVING_RESTART_PREPARED", "ENDLESS_CREATE_FACTORY_RESTART_PREPARED", "ENDLESS_CREATE_LOGISTICS_RESTART_PREPARED", "ENDLESS_CREATE_GANTRY_RESTART_PREPARED", "ENDLESS_CREATE_CLOCKWORK_RESTART_PREPARED",)
     if phase == "B" and scenario.create:
         markers += (
             "ENDLESS_CREATE_MIGRATION_PASS",
@@ -1058,6 +1068,9 @@ def cold_restart_server_markers(scenario: Scenario, phase: str) -> tuple[str, ..
             "ENDLESS_CREATE_CHORUS_TELEPORT_PASS",
             "ENDLESS_CREATE_MOVING_RESTART_PASS",
             "ENDLESS_CREATE_FACTORY_RESTART_PASS",
+            "ENDLESS_CREATE_LOGISTICS_RESTART_PASS",
+            "ENDLESS_CREATE_GANTRY_RESTART_PASS",
+            "ENDLESS_CREATE_CLOCKWORK_RESTART_PASS",
         )
     return markers
 

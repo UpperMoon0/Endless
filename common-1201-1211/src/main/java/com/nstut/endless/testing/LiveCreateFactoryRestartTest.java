@@ -41,6 +41,7 @@ public final class LiveCreateFactoryRestartTest {
                 level.setBlock(bearing.offset(x, 1, z), Blocks.SLIME_BLOCK.defaultBlockState(), 18);
                 level.setBlock(bearing.offset(x, 2, z), Blocks.WHITE_WOOL.defaultBlockState(), 18);
             }
+            level.setBlock(bearing.offset(2, 1, 0), block("red_seat"), 18);
             level.setBlock(bearing.below(), axis("shaft"), 3);
             level.setBlock(bearing.below(2), axis("gearshift"), 3);
             level.setBlock(bearing.below(3), axis("clutch"), 3);
@@ -56,8 +57,16 @@ public final class LiveCreateFactoryRestartTest {
             require(((Number) call(controller, "calculateAddedStressCapacity")).floatValue() > 0, "windmill supplies no native stress capacity");
             Entity entity = (Entity) field(controller, "movedContraption");
             require(entity != null && entity.isAlive(), "windmill did not assemble native sails");
+            require(((List<?>) call(call(entity, "getContraption"), "getSeats")).size() == 1, "windmill did not capture its native seat");
+            var rider = net.minecraft.world.entity.EntityType.PIG.create(level);
+            require(rider != null, "could not create survival passenger");
+            rider.setNoAi(true); rider.setPos(bearing.getX()+.5, bearing.getY()+3, bearing.getZ()+.5);
+            require(level.addFreshEntity(rider), "could not add passenger to world");
+            entity.getClass().getMethod("addSittingPassenger", Entity.class, int.class).invoke(entity, rider, 0);
+            require(rider.getVehicle() == entity, "native seat rejected passenger");
             CompoundTag entry = new CompoundTag();
             entry.putInt("Seam", seam); entry.putUUID("Windmill", entity.getUUID());
+            entry.putUUID("Rider", rider.getUUID());
             entry.putFloat("RPM", rpm); entry.put("Contraption", LiveCreateNbt.writeContraption(level, call(entity, "getContraption")));
             BlockPos sender = new BlockPos(34, seam - 1, 34), receiver = new BlockPos(38, seam - 1, 34);
             for (BlockPos p : List.of(sender, receiver)) {
@@ -94,9 +103,9 @@ public final class LiveCreateFactoryRestartTest {
                 Entity entity = level.getEntity(entry.getUUID("Windmill"));
                 require(entity != null && entity.isAlive(), "world-loaded windmill missing seam=" + seam);
                 Object controller = level.getBlockEntity(bearing);
-                require(field(controller, "movedContraption") == entity, "restored windmill lost native controller");
+                // Native world entity ticks reattach the controller after initial chunk loading.
                 CompoundTag saved = entry.getCompound("Contraption"), loaded = LiveCreateNbt.writeContraption(level, call(entity, "getContraption"));
-                for (String key : List.of("Blocks", "Anchor", "Sails"))
+                for (String key : List.of("Blocks", "Anchor", "Sails", "Seats", "Passengers"))
                     require(java.util.Objects.equals(saved.get(key), loaded.get(key)), "restored windmill payload changed " + key);
                 recoveryAngles[i] = ((Number) field(controller, "angle")).floatValue();
             }
@@ -108,9 +117,21 @@ public final class LiveCreateFactoryRestartTest {
             CompoundTag entry = restoredEntries.getCompound(i); int seam = entry.getInt("Seam");
             BlockPos bearing = new BlockPos(42, seam + 2, 42);
             Object controller = level.getBlockEntity(bearing); float rpm = entry.getFloat("RPM");
+            Entity rider = level.getEntity(entry.getUUID("Rider"));
+            require(rider != null && rider.isAlive(), "saved passenger missing after fresh JVM");
             if (recoveryTicks == 20) {
+                require(field(controller, "movedContraption") == level.getEntity(entry.getUUID("Windmill")), "restored windmill lost native controller after world ticks");
                 require(speed(controller) == rpm && ((Number) field(controller, "angle")).floatValue() != recoveryAngles[i], "restored windmill failed to rotate on world ticks");
                 require(speed(level.getBlockEntity(bearing.below(4).offset(1, 0, 1))) == -2 * rpm, "restored cog ratio changed");
+                Entity vehicle = level.getEntity(entry.getUUID("Windmill"));
+                require(rider.getVehicle() == vehicle, "restored seat passenger lost its vehicle");
+                net.minecraft.world.phys.Vec3 expected = (net.minecraft.world.phys.Vec3) vehicle.getClass().getMethod("getPassengerPosition", Entity.class, float.class).invoke(vehicle, rider, 1f);
+                // Native positionRider adds the entity-specific seat offset and -1/8
+                // after getPassengerPosition computes the transformed seat vector.
+                double seatOffset = ((Number) Class.forName("com.simibubi.create.content.contraptions.actors.seat.SeatEntity")
+                    .getMethod("getCustomEntitySeatOffset", Entity.class).invoke(null, rider)).doubleValue();
+                expected = expected.add(0, seatOffset - .125, 0);
+                require(rider.position().distanceTo(expected) < .01, "native passenger tick did not preserve transformed seat position");
                 level.setBlock(bearing.below(3).east(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
             } else if (recoveryTicks == 40) {
                 require(speed(level.getBlockEntity(bearing.below(4))) == 0, "powered clutch did not disconnect");
@@ -118,8 +139,11 @@ public final class LiveCreateFactoryRestartTest {
             } else if (recoveryTicks == 60) {
                 require(speed(level.getBlockEntity(bearing.below(4))) == rpm, "clutch failed to recover");
                 level.setBlock(bearing.below(2).west(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
+                require(rider.getVehicle() == level.getEntity(entry.getUUID("Windmill")), "seat passenger fell out while machine restarted/reversed");
+                rider.stopRiding();
             } else {
                 require(speed(level.getBlockEntity(bearing.below(4))) == -rpm, "scheduled gearshift did not reverse on world ticks");
+                require(rider.getVehicle() == null && Math.abs(rider.getY() - bearing.getY()) < 16, "native seat dismount shifted passenger height");
                 BlockPos sender = new BlockPos(34, seam - 1, 34), receiver = new BlockPos(38, seam - 1, 34);
                 Object packager = level.getBlockEntity(sender), unpacker = level.getBlockEntity(receiver);
                 require(((ChestBlockEntity) level.getBlockEntity(sender.below())).isEmpty(), "source duplicated after restart");
@@ -137,7 +161,7 @@ public final class LiveCreateFactoryRestartTest {
             }
         }
         if (recoveryTicks != 80) return false;
-        System.out.println(PASS + " cases=9 freshJvm=true nativeWorldWindmills=true naturalTicks=true cogRatios=true clutchRecovery=true gearshiftReversal=true packageItems=7");
+        System.out.println(PASS + " cases=9 freshJvm=true nativeWorldWindmills=true naturalTicks=true cogRatios=true clutchRecovery=true gearshiftReversal=true passengerRecovery=true nativeSeatDismount=true packageItems=7");
         return true;
     }
     private static void tickDrive(ServerLevel level, BlockPos bearing) throws Exception {

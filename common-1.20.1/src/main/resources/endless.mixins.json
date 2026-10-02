@@ -11,7 +11,9 @@
     "BlockStatePredictionHandlerMixin",
     "RenderChunkMixin",
     "compat.CreateArmInteractionPointHandlerMixin",
-    "compat.CreateEjectorTargetHandlerMixin"
+    "compat.CreateEjectorTargetHandlerMixin",
+    "DestructionProgressMixin",
+    "SoundManagerMixin"
   ],
   "mixins": [
     "FriendlyByteBufMixin",
@@ -43,7 +45,17 @@
     "compat.CreateKineticBlockEntityMixin",
     "compat.CreateKineticNbtMixin",
     "compat.CreateDisplayTargetMixin",
-    "compat.CreateLinkBehaviourMixin"
+    "compat.CreateLinkBehaviourMixin",
+    "compat.CreateArmBlockEntityMixin",
+    "compat.CreatePulleyBlockEntityMixin",
+    "compat.CreateElevatorColumnMixin",
+    "compat.CreateContraptionMixin",
+    "compat.CreateTrackNodeLocationMixin",
+    "compat.CreateChorusTeleportMixin",
+    "compat.CreateAssemblyExceptionMixin",
+    "compat.CreateSoundPoolMixin",
+    "LivingTeleportMixin",
+    "PistonBaseBlockMixin"
   ],
   "injectors": {
     "defaultRequire": 1

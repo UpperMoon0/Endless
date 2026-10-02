@@ -34,7 +34,11 @@ public final class LiveCreateClientSyncTest {
     public static boolean tick(Minecraft minecraft) {
         if (done) return true;
         try {
-            if (visualManager == null) initialize(minecraft);
+            if (visualManager == null) {
+                LiveCreateClientInteractionTest.run(minecraft);
+                LiveCreateSoundTest.run(minecraft);
+                initialize(minecraft);
+            }
             float speed = stage < 0 ? 0 : SPEEDS[stage];
             String mismatch = mismatch(speed);
             if (mismatch != null) {

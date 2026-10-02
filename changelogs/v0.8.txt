@@ -1,0 +1,13 @@
+Create expanded-height compatibility:
+- Use logical build limits for mechanical-arm client points and rope pulleys.
+- Discover elevator contacts in allocated sparse pages, including persisted/evicted pages.
+- Preserve exact contraption local positions in disk and spawn NBT; retain native legacy readers.
+- Require new real Create machine/network and client-selection gates at dense, page and packed-Y boundaries.
+- Bump the supported Create loader handshake protocols to reject older clients without the exact contraption reader.
+- Preserve train graph packet heights beyond the signed-short range, including pixel offsets and dimension/framing data.
+- Keep chorus-potato teleport destinations in the logical build envelope; preserve native landing/collision behavior with bounded allocated-page floor discovery.
+- Persist exact assembly-error highlight positions while retaining legacy NBT readers.
+- Keep mining cracks and Create multi-position cracks separate at packed-Y aliases; clean them up on update, retarget, removal and world replacement.
+- Require restored moving entities, mounted inventories, drill actors and controller linkage across a fresh server JVM.
+- Require native client selection packets, normal-tick arm inventory transfers and ejector delivery in survival mode at packed aliases.
+- Invalidate Minecraft 1.21.1 navigation classification caches on sparse writes, including mutations before the dense chunk starts ticking.

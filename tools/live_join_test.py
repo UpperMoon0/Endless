@@ -60,6 +60,7 @@ SERVER_FATAL_MARKERS = (
     "ENDLESS_HIGH_Y_SERVER_FAIL",
     "ENDLESS_FAR_ENVELOPE_FAIL",
     "ENDLESS_COLD_RESTART_FAIL",
+    "ENDLESS_CREATE_GAMETESTS_FAIL",
     "Encountered an unexpected exception",
     "This crash report has been saved to:",
     "Failed to start the minecraft server",
@@ -456,8 +457,8 @@ SCENARIOS.append(Scenario(
     required_server_markers=tuple(
         marker for marker in SCENARIOS[0].required_server_markers
         if marker != "ENDLESS_WAYSTONES_SPARSE_PASS"
-    ) + ("ENDLESS_CREATE_SPARSE_PASS", "ENDLESS_CREATE_KINETIC_PASS"),
-    required_client_markers=SCENARIOS[0].required_client_markers + ("ENDLESS_CREATE_ROTATION_SYNC_PASS",),
+    ) + ("ENDLESS_CREATE_SPARSE_PASS", "ENDLESS_CREATE_KINETIC_PASS", "ENDLESS_CREATE_SURVIVAL_SERVER_PASS"),
+    required_client_markers=SCENARIOS[0].required_client_markers + ("ENDLESS_CREATE_ROTATION_SYNC_PASS", "ENDLESS_CREATE_SOUND_POSITIONS_PASS", "ENDLESS_CREATE_CLIENT_INTERACTION_PASS", "ENDLESS_CREATE_DESTRUCTION_POSITIONS_PASS", "ENDLESS_CREATE_SURVIVAL_CLIENT_PASS",),
 ))
 
 SCENARIOS.append(Scenario(
@@ -472,6 +473,33 @@ SCENARIOS.append(Scenario(
     create=True,
     required_server_markers=("ENDLESS_CREATE_KINETIC_COLD_RESTART_PASS",),
 ))
+
+SCENARIOS.append(Scenario(
+    id="create-player-workflows", description="Native survival toolbox, copycat, scaffolding and symmetry packets at nine heights",
+    server_kind="modded", server_config=MILLION_BUILD_HEIGHT, client_config=VANILLA_BUILD_HEIGHT,
+    expected=MILLION_BUILD_HEIGHT, server_port=25585, create=True,
+    required_server_markers=("ENDLESS_CREATE_PLAYER_SERVER_PASS",),
+    required_client_markers=("ENDLESS_CREATE_PLAYER_CLIENT_PASS",),
+))
+
+SCENARIOS.append(Scenario(
+    id="create-train-workflows", description="Native train assembly, scheduled travel and client passenger/graph synchronization at nine heights",
+    server_kind="modded", server_config=MILLION_BUILD_HEIGHT, client_config=VANILLA_BUILD_HEIGHT,
+    expected=MILLION_BUILD_HEIGHT, server_port=25586, create=True,
+    required_server_markers=("ENDLESS_CREATE_TRAIN_SERVER_PASS",),
+    required_client_markers=("ENDLESS_CREATE_TRAIN_CLIENT_PASS",),
+))
+
+CREATE_GAMEPLAY_GROUPS = ("Contraptions", "Fluids", "Items", "Misc", "Processing", "Regressions")
+for group in CREATE_GAMEPLAY_GROUPS:
+    SCENARIOS.append(Scenario(
+        id="create-gameplay-" + group.lower(),
+        description="Pinned Create native " + group + " outcomes across nine height origins",
+        server_kind="modded", server_config=MILLION_BUILD_HEIGHT,
+        client_config=VANILLA_BUILD_HEIGHT, expected=MILLION_BUILD_HEIGHT,
+        server_port=25584, create=True,
+        required_server_markers=("ENDLESS_CREATE_GAMETESTS_PASS group=" + group,),
+    ))
 
 # New-version runtime gate: exercise the actual sparse engine, network sync,
 # client prediction, rendering, pathfinding, scheduled mechanics and persistence
@@ -500,11 +528,11 @@ LIVE_CASES = tuple(
     (target, scenario.id)
     for target in LEGACY_TARGETS
     for scenario in SCENARIOS
-    if scenario.id not in ("port-runtime", "same-jvm-rejoin-full-envelope", "create-compat", "create-cold-restart")
+    if not scenario.id.startswith("create-gameplay-") and scenario.id not in ("port-runtime", "same-jvm-rejoin-full-envelope", "create-compat", "create-cold-restart", "create-player-workflows", "create-train-workflows")
 ) + tuple((target, "port-runtime") for target in PORT_TARGETS) + tuple(
     (target, scenario_id)
     for target in CREATE_TARGETS
-    for scenario_id in ("create-compat", "create-cold-restart")
+    for scenario_id in ("create-compat", "create-cold-restart", "create-player-workflows", "create-train-workflows") + tuple("create-gameplay-" + g.lower() for g in CREATE_GAMEPLAY_GROUPS if g != "Regressions" or target == "neoforge-1.21.1")
 ) + tuple(
     (target, scenario_id)
     for target in PORT_REJOIN_TARGETS
@@ -781,6 +809,45 @@ def launch_graphical_client(
     return process, OutputPump(process, prefix, log_path)
 
 
+def world_session_unlocked(world: Path) -> bool:
+    """Probe the same file/range lock held by Minecraft DirectoryLock (not flock)."""
+    try:
+        handle = (world / "session.lock").open("r+b")
+    except FileNotFoundError:
+        return True  # Matches DirectoryLock.isLocked for a world not created yet.
+    except PermissionError:
+        return False
+    with handle:
+        if os.name == "nt":
+            import msvcrt
+            try:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError:
+                return False
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import errno
+            import fcntl
+            try:
+                fcntl.lockf(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as error:
+                if error.errno in (errno.EACCES, errno.EAGAIN):
+                    return False
+                raise
+            fcntl.lockf(handle.fileno(), fcntl.LOCK_UN)
+    return True
+
+
+def wait_for_world_shutdown(world: Path, timeout: float = 60) -> None:
+    # A Gradle launcher can exit before its game JVM finishes SIGTERM cleanup.
+    # Never snapshot/reopen/replace the save while that JVM owns session.lock.
+    deadline = time.monotonic() + timeout
+    while not world_session_unlocked(world):
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"Minecraft world lock still held after launcher exit: {world}")
+        time.sleep(0.2)
+
+
 def stop_tree(process, graceful_server: bool = False) -> None:
     if process.poll() is not None:
         return
@@ -857,6 +924,7 @@ def prepare_server(module_dir: Path, scenario: Scenario) -> None:
     server_dir = module_dir / "run" / "live-join" / "server"
     reset_dir(server_dir)
     (server_dir / "eula.txt").write_text("eula=true\n", encoding="utf-8")
+    test_world = "level-type=minecraft:flat\nlevel-seed=0\n" if scenario.id.startswith("create-gameplay-") or scenario.id in ("create-player-workflows", "create-train-workflows") else ""
     (server_dir / "server.properties").write_text(
         "online-mode=false\n"
         f"server-port={scenario.server_port}\n"
@@ -865,7 +933,7 @@ def prepare_server(module_dir: Path, scenario: Scenario) -> None:
         "spawn-protection=0\n"
         "view-distance=4\n"
         "simulation-distance=4\n"
-        "allow-flight=true\n",
+        "allow-flight=true\n" + test_world,
         encoding="utf-8",
     )
     if scenario.server_kind == "vanilla":
@@ -930,6 +998,9 @@ def scenario_env(scenario: Scenario, cold_phase: str = "") -> dict[str, str]:
     env["ENDLESS_TEST_EXTREME"] = "true" if scenario.gameplay else "false"
     env["ENDLESS_TEST_WAYSTONES"] = "true" if scenario.waystones else "false"
     env["ENDLESS_TEST_CREATE"] = "true" if scenario.create else "false"
+    env["ENDLESS_TEST_CREATE_TRAINS"] = str(scenario.id == "create-train-workflows").lower()
+    env["ENDLESS_TEST_CREATE_PLAYER"] = str(scenario.id == "create-player-workflows").lower()
+    env["ENDLESS_TEST_CREATE_GROUP"] = next((g for g in CREATE_GAMEPLAY_GROUPS if scenario.id == "create-gameplay-" + g.lower()), "")
     env["ENDLESS_TEST_FAR"] = "true" if scenario.id == "far-envelope" else "false"
     env["ENDLESS_TEST_COLD_RESTART_PHASE"] = cold_phase
     env["ENDLESS_TEST_SAME_JVM_REJOIN"] = "true" if scenario.integrated_rejoin else "false"
@@ -971,7 +1042,7 @@ def run_live_session(
             raise RuntimeError(f"{label}: client reported failure: {outcome.rstrip()}")
 
         wait_for_session_completion(
-            client_output, server_output, min(timeout, 90), label,
+            client_output, server_output, max(timeout, 1800) if scenario.id.startswith("create-gameplay-") else max(timeout, 600) if scenario.id in ("create-player-workflows", "create-train-workflows") else min(timeout, 90), label,
             required_server_markers, required_client_markers,
         )
         print(f"{label}: PASS ({outcome.rstrip()})", flush=True)
@@ -981,6 +1052,8 @@ def run_live_session(
         if client is not None:
             stop_tree(client)
         stop_tree(server, graceful_server=True)
+        if scenario.cold_restart:
+            wait_for_world_shutdown(root / module / "run" / "live-join" / "server" / "live-join-world")
 
 
 def required_client_markers_for(target: str, scenario: Scenario) -> tuple[str, ...]:
@@ -1027,6 +1100,8 @@ def cold_restart_server_markers(scenario: Scenario, phase: str) -> tuple[str, ..
     if not scenario.cold_restart or phase not in ("A", "B"):
         raise ValueError("cold-restart evidence requires phase A or B of a cold-restart scenario")
     markers = (f"ENDLESS_COLD_RESTART_PHASE_{phase}_PASS",) + scenario.required_server_markers
+    if phase == "A" and scenario.create:
+        markers += ("ENDLESS_CREATE_MOVING_RESTART_PREPARED", "ENDLESS_CREATE_FACTORY_RESTART_PREPARED", "ENDLESS_CREATE_LOGISTICS_RESTART_PREPARED", "ENDLESS_CREATE_GANTRY_RESTART_PREPARED", "ENDLESS_CREATE_CLOCKWORK_RESTART_PREPARED", "ENDLESS_CREATE_CART_RESTART_PREPARED",)
     if phase == "B" and scenario.create:
         markers += (
             "ENDLESS_CREATE_MIGRATION_PASS",
@@ -1036,8 +1111,17 @@ def cold_restart_server_markers(scenario: Scenario, phase: str) -> tuple[str, ..
             "ENDLESS_CREATE_INTERRUPTED_SAVE_PASS", "ENDLESS_CREATE_MARKED_INTERRUPTED_SAVE_PASS", "ENDLESS_CREATE_UNRESOLVED_ALIASES_PASS",
             "ENDLESS_CREATE_ALLOCATOR_FAIL_CLOSED_PASS",
             "ENDLESS_CREATE_CONTRAPTION_2047_CONTROL_PASS",
-            # Expected upstream defect, NOT a successful serialization assertion.
-            "ENDLESS_CREATE_DEFAULT_CONTRAPTION_LIMITATION_CONFIRMED",
+            # Exact disk/spawn preservation and expanded machine operations are required.
+            "ENDLESS_CREATE_CONTRAPTION_EXACT_POSITION_PASS",
+            "ENDLESS_CREATE_EXPANDED_MACHINES_PASS",
+            "ENDLESS_CREATE_POSITION_CODECS_PASS",
+            "ENDLESS_CREATE_CHORUS_TELEPORT_PASS",
+            "ENDLESS_CREATE_MOVING_RESTART_PASS",
+            "ENDLESS_CREATE_FACTORY_RESTART_PASS",
+            "ENDLESS_CREATE_LOGISTICS_RESTART_PASS",
+            "ENDLESS_CREATE_GANTRY_RESTART_PASS",
+            "ENDLESS_CREATE_CLOCKWORK_RESTART_PASS",
+            "ENDLESS_CREATE_CART_RESTART_PASS",
         )
     return markers
 
@@ -1162,15 +1246,6 @@ def run_scenario(root: Path, target: str, module: str, scenario: Scenario, timeo
         result["required_server_markers_by_phase"] = {
             phase: cold_restart_server_markers(scenario, phase) for phase in ("A", "B")
         }
-    if scenario.cold_restart and scenario.create:
-        result["known_limitations"] = [{
-            "issue": 14,
-            "marker": "ENDLESS_CREATE_DEFAULT_CONTRAPTION_LIMITATION_CONFIRMED",
-            "default_cap": 2048,
-            "before_local_y": 2048,
-            "after_local_y": -2048,
-            "serializer_fixed": False,
-        }]
     try:
         _run_scenario(root, target, module, scenario, timeout)
         result["status"] = "pass"

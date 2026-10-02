@@ -23,8 +23,43 @@ class VerificationPolicyTest(unittest.TestCase):
 
     def test_unique_matrix(self):
         self.assertEqual(len(live.SCENARIOS), len({s.id for s in live.SCENARIOS}))
-        self.assertEqual(29, len(live.LIVE_CASES))
+        self.assertEqual(44, len(live.LIVE_CASES))
         self.assertEqual(len(live.LIVE_CASES), len(set(live.LIVE_CASES)))
+
+    def test_native_create_gameplay_groups_require_outputs_on_pinned_loaders(self):
+        for group in live.CREATE_GAMEPLAY_GROUPS:
+            scenario = live.SCENARIO_BY_ID["create-gameplay-" + group.lower()]
+            self.assertTrue(scenario.create)
+            self.assertFalse(scenario.gameplay)
+            self.assertIn("ENDLESS_CREATE_GAMETESTS_PASS group=" + group, scenario.required_server_markers)
+            self.assertEqual(group, live.scenario_env(scenario)["ENDLESS_TEST_CREATE_GROUP"])
+            self.assertIn(("neoforge-1.21.1", scenario.id), live.LIVE_CASES)
+            if group != "Regressions":
+                self.assertIn(("forge-1.20.1", scenario.id), live.LIVE_CASES)
+            else:
+                self.assertNotIn(("forge-1.20.1", scenario.id), live.LIVE_CASES)
+        self.assertIn("ENDLESS_CREATE_GAMETESTS_FAIL", live.SERVER_FATAL_MARKERS)
+        for target, scenario in live.LIVE_CASES:
+            if scenario.startswith("create-gameplay-"):
+                self.assertIn(target, live.CREATE_TARGETS)
+
+    def test_player_workflows_require_authoritative_server_and_client_outcomes(self):
+        scenario = live.SCENARIO_BY_ID["create-player-workflows"]
+        self.assertTrue(scenario.create)
+        self.assertIn("ENDLESS_CREATE_PLAYER_SERVER_PASS", scenario.required_server_markers)
+        self.assertIn("ENDLESS_CREATE_PLAYER_CLIENT_PASS", scenario.required_client_markers)
+        self.assertEqual("true", live.scenario_env(scenario)["ENDLESS_TEST_CREATE_PLAYER"])
+        self.assertEqual(set(live.CREATE_TARGETS), {target for target, name in live.LIVE_CASES if name == scenario.id})
+        self.assertEqual("false", live.scenario_env(live.SCENARIO_BY_ID["create-compat"])["ENDLESS_TEST_CREATE_PLAYER"])
+
+    def test_train_workflows_require_client_rides_and_native_server_arrivals(self):
+        scenario = live.SCENARIO_BY_ID["create-train-workflows"]
+        self.assertTrue(scenario.create)
+        self.assertIn("ENDLESS_CREATE_TRAIN_SERVER_PASS", scenario.required_server_markers)
+        self.assertIn("ENDLESS_CREATE_TRAIN_CLIENT_PASS", scenario.required_client_markers)
+        self.assertEqual("true", live.scenario_env(scenario)["ENDLESS_TEST_CREATE_TRAINS"])
+        self.assertEqual(set(live.CREATE_TARGETS), {target for target, name in live.LIVE_CASES if name == scenario.id})
+        self.assertEqual("false", live.scenario_env(live.SCENARIO_BY_ID["create-compat"])["ENDLESS_TEST_CREATE_TRAINS"])
 
     def test_million_gameplay_cannot_degrade_to_join_only(self):
         scenario = next(s for s in live.SCENARIOS if s.id == "million-gameplay")
@@ -87,7 +122,7 @@ class VerificationPolicyTest(unittest.TestCase):
     def test_default_contraption_characterization_is_required_only_in_create_phase_b(self):
         scenario = live.SCENARIO_BY_ID["create-cold-restart"]
         control = "ENDLESS_CREATE_CONTRAPTION_2047_CONTROL_PASS"
-        limitation = "ENDLESS_CREATE_DEFAULT_CONTRAPTION_LIMITATION_CONFIRMED"
+        limitation = "ENDLESS_CREATE_CONTRAPTION_EXACT_POSITION_PASS"
         for marker in (control, limitation):
             self.assertIn(marker, live.cold_restart_server_markers(scenario, "B"))
             self.assertNotIn(marker, live.cold_restart_server_markers(scenario, "A"))
@@ -209,6 +244,18 @@ class OutputEvidenceTest(unittest.TestCase):
         self.assertEqual("ready\n", pump.wait_for(("ready",), 1))
         pump.wait_until_seen(("mechanics pass",), 1)
 
+    def test_cold_restart_waits_for_native_world_lock(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            world = Path(tmp)
+            (world / "session.lock").write_bytes(b"lock")
+            self.assertTrue(live.world_session_unlocked(world))
+            with patch.object(live, "world_session_unlocked", side_effect=[False, False, True]), patch.object(live.time, "sleep") as pause:
+                live.wait_for_world_shutdown(world)
+                self.assertEqual(2, pause.call_count)
+            with patch.object(live, "world_session_unlocked", return_value=False):
+                with self.assertRaisesRegex(RuntimeError, "world lock still held"):
+                    live.wait_for_world_shutdown(world, timeout=0)
+
     def test_missing_marker_fails_even_when_process_exited_cleanly(self):
         pump = self.pump("joined\n")
         with self.assertRaisesRegex(RuntimeError, "missing required"):
@@ -219,6 +266,18 @@ class OutputEvidenceTest(unittest.TestCase):
         server = self.pump("\n".join(scenario.required_server_markers) + "\n")
         client = self.pump("\n".join(marker for marker in scenario.required_client_markers
                                     if marker != "ENDLESS_CREATE_ROTATION_SYNC_PASS")
+                           + "\n" + live.PASS_MARKER + "\n")
+        with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
+            live.wait_for_session_completion(client, server, 1, "test",
+                                             scenario.required_server_markers,
+                                             scenario.required_client_markers)
+
+    def test_create_completion_requires_native_sound_coordinates(self):
+        scenario = live.SCENARIO_BY_ID["create-compat"]
+        marker = "ENDLESS_CREATE_SOUND_POSITIONS_PASS"
+        self.assertIn(marker, scenario.required_client_markers)
+        server = self.pump("\n".join(scenario.required_server_markers) + "\n")
+        client = self.pump("\n".join(value for value in scenario.required_client_markers if value != marker)
                            + "\n" + live.PASS_MARKER + "\n")
         with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
             live.wait_for_session_completion(client, server, 1, "test",
@@ -332,7 +391,7 @@ class OutputEvidenceTest(unittest.TestCase):
     def test_missing_default_contraption_marker_cannot_pass_completion(self):
         scenario = live.SCENARIO_BY_ID["create-cold-restart"]
         markers = live.cold_restart_server_markers(scenario, "B")
-        limitation = "ENDLESS_CREATE_DEFAULT_CONTRAPTION_LIMITATION_CONFIRMED"
+        limitation = "ENDLESS_CREATE_CONTRAPTION_EXACT_POSITION_PASS"
         server = self.pump("\n".join(marker for marker in markers if marker != limitation) + "\n")
         client = self.pump(live.PASS_MARKER + "\n")
         with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
@@ -349,22 +408,33 @@ class OutputEvidenceTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
                 live.wait_for_session_completion(client, server, 1, "test", markers)
 
-    def test_cold_restart_receipt_explicitly_labels_unfixed_default_contraption(self):
+    def test_fixed_contraption_and_expanded_machines_are_mandatory(self):
         scenario = live.SCENARIO_BY_ID["create-cold-restart"]
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            with patch.object(live.subprocess, "check_output", side_effect=["abc123\n", ""]), \
-                 patch.object(live, "_run_scenario"):
-                live.run_scenario(root, "forge-1.20.1", "forge-1.20.1", scenario, 1)
-            result = json.loads(next(root.rglob("result.json")).read_text())
-            self.assertEqual("pass", result["status"])
-            self.assertEqual(list(live.cold_restart_server_markers(scenario, "B")),
-                             result["required_server_markers_by_phase"]["B"])
-            limitation = result["known_limitations"][0]
-            self.assertEqual(14, limitation["issue"])
-            self.assertFalse(limitation["serializer_fixed"])
-            self.assertEqual(2048, limitation["before_local_y"])
-            self.assertEqual(-2048, limitation["after_local_y"])
+        markers = live.cold_restart_server_markers(scenario, "B")
+        self.assertIn("ENDLESS_CREATE_CONTRAPTION_EXACT_POSITION_PASS", markers)
+        self.assertIn("ENDLESS_CREATE_EXPANDED_MACHINES_PASS", markers)
+        for missing in ("ENDLESS_CREATE_CONTRAPTION_EXACT_POSITION_PASS", "ENDLESS_CREATE_EXPANDED_MACHINES_PASS"):
+            server = self.pump("\n".join(marker for marker in markers if marker != missing) + "\n")
+            client = self.pump(live.PASS_MARKER + "\n")
+            with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
+                live.wait_for_session_completion(client, server, 1, "test", markers)
+
+    def test_create_review_markers_cannot_be_omitted(self):
+        cold = live.SCENARIO_BY_ID["create-cold-restart"]
+        self.assertIn("ENDLESS_CREATE_MOVING_RESTART_PREPARED", live.cold_restart_server_markers(cold, "A"))
+        markers = live.cold_restart_server_markers(cold, "B")
+        for missing in ("ENDLESS_CREATE_POSITION_CODECS_PASS", "ENDLESS_CREATE_CHORUS_TELEPORT_PASS", "ENDLESS_CREATE_MOVING_RESTART_PASS",
+                        "ENDLESS_CREATE_FACTORY_RESTART_PASS", "ENDLESS_CREATE_LOGISTICS_RESTART_PASS",
+                        "ENDLESS_CREATE_GANTRY_RESTART_PASS", "ENDLESS_CREATE_CLOCKWORK_RESTART_PASS", "ENDLESS_CREATE_CART_RESTART_PASS"):
+            self.assertIn(missing, markers)
+            server = self.pump("\n".join(marker for marker in markers if marker != missing) + "\n")
+            client = self.pump(live.PASS_MARKER + "\n")
+            with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
+                live.wait_for_session_completion(client, server, 1, "test", markers)
+        gameplay = live.SCENARIO_BY_ID["create-compat"]
+        self.assertIn("ENDLESS_CREATE_SURVIVAL_SERVER_PASS", gameplay.required_server_markers)
+        for marker in ("ENDLESS_CREATE_SURVIVAL_CLIENT_PASS", "ENDLESS_CREATE_DESTRUCTION_POSITIONS_PASS"):
+            self.assertIn(marker, gameplay.required_client_markers)
 
     def test_failure_receipt_survives_exception(self):
         with tempfile.TemporaryDirectory() as tmp:

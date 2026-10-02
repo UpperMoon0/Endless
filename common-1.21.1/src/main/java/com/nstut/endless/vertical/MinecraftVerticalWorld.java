@@ -118,6 +118,10 @@ public final class MinecraftVerticalWorld {
 
         markDirty(pagePos);
         invalidateForBlockChange(pos);
+        // ServerLevel normally invalidates this cache in sendBlockUpdated, but
+        // Level skips that callback before the dense chunk is BLOCK_TICKING.
+        // Sparse writes must invalidate even during page/startup mutations.
+        if (level instanceof ServerLevel serverLevel) serverLevel.getPathTypeCache().invalidate(pos);
         return old;
     }
 
@@ -212,6 +216,13 @@ public final class MinecraftVerticalWorld {
     public synchronized List<Integer> loadedPageYs(int chunkX, int chunkZ) {
         SparseVerticalColumn<LevelChunkSection> column = columns.get(ChunkPos.asLong(chunkX, chunkZ));
         return column == null ? List.of() : column.pageYs();
+    }
+
+    /** All allocated pages in this horizontal chunk, including persisted/evicted pages. */
+    public synchronized List<Integer> knownPageYs(int chunkX, int chunkZ) {
+        java.util.TreeSet<Integer> pages = new java.util.TreeSet<>(loadedPageYs(chunkX, chunkZ));
+        if (disk != null) pages.addAll(disk.pageYs(chunkX, chunkZ));
+        return List.copyOf(pages);
     }
 
     public synchronized boolean pageExists(VerticalPagePos pos) {

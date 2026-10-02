@@ -127,6 +127,9 @@ public final class LiveJoinTest {
     }
 
     public static boolean tick() {
+        if (isArmed() && preLoginChecked) LiveCreatePlayerWorkflowClientTest.tick(Minecraft.getInstance());
+        if (isArmed() && preLoginChecked) LiveCreateTrainClientTest.tick(Minecraft.getInstance());
+        if (isArmed() && preLoginChecked) LiveCreateSurvivalClientTest.tick(Minecraft.getInstance());
         if (!isArmed() || !preLoginChecked || ordinaryClientDone) return false;
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return false;

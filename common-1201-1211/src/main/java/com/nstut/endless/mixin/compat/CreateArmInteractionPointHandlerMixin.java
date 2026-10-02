@@ -1,5 +1,7 @@
 package com.nstut.endless.mixin.compat;
 
+import java.lang.ref.WeakReference;
+import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.BlockHitResult;
@@ -17,9 +19,18 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class CreateArmInteractionPointHandlerMixin {
     @Shadow(remap = false) private static long lastBlockPos;
     @Unique private static BlockPos endless$lastExactBlockPos;
+    @Unique private static WeakReference<Object> endless$lastWorld = new WeakReference<>(null);
+    @Shadow(remap = false) private static List<?> currentSelection;
 
     @Inject(method = "tick", at = @At("HEAD"), require = 1, remap = false)
     private static void endless$invalidatePackedAlias(CallbackInfo ci) {
+        Object world = Minecraft.getInstance().level;
+        if (world != endless$lastWorld.get()) {
+            lastBlockPos = -1;
+            currentSelection.clear();
+            endless$lastExactBlockPos = null;
+            endless$lastWorld = new WeakReference<>(world);
+        }
         BlockPos hovered = endless$hovered();
         if (hovered != null && lastBlockPos != -1 && lastBlockPos == hovered.asLong()
             && endless$lastExactBlockPos != null && !endless$lastExactBlockPos.equals(hovered)) {

@@ -36,6 +36,12 @@ public final class LiveColdRestartServerTest {
 
     private static boolean done;
     private static boolean prepared;
+    private static boolean createRecovered;
+    private static boolean factoryRecovered;
+    private static boolean logisticsRecovered;
+    private static boolean gantryRecovered;
+    private static boolean clockworkRecovered;
+    private static boolean cartRecovered;
     private static int ticks;
     private static int fixtureTickEligibleAt = -1;
 
@@ -66,6 +72,14 @@ public final class LiveColdRestartServerTest {
                 if (!fixtureReady(level)) return;
                 verify(level);
                 persistCreateExpectedIdsIfRequested(level);
+                if (Boolean.getBoolean(CREATE_PROPERTY)) {
+                    LiveCreateMovingRestartTest.prepare(level);
+                    LiveCreateFactoryRestartTest.prepare(level);
+                    LiveCreateLogisticsRestartTest.prepare(level);
+                    LiveCreateGantryRestartTest.prepare(level);
+                    LiveCreateClockworkRestartTest.prepare(level);
+                    LiveCreateCartRestartTest.prepare(level);
+                }
                 ExtendedPoiStorage.flush(level, new ChunkPos(poiPos()));
                 EndlessVerticalEngine.world(level).flushDirty();
                 require(server.saveEverything(true, true, true), "dedicated server saveEverything reported failure");
@@ -82,12 +96,36 @@ public final class LiveColdRestartServerTest {
                 if (Boolean.getBoolean(CREATE_PROPERTY)) {
                     // Persistence has passed independently; only now construct
                     // separate legacy-NBT migration and corrupt-storage fixtures.
+                    if (!createRecovered) {
+                    LiveCreatePositionCodecTest.run(level);
+                    LiveCreateChorusTest.run(level);
+                    LiveCreateMovingRestartTest.verify(level);
+                    createRecovered = true;
+                    }
+                    if (!clockworkRecovered) clockworkRecovered = LiveCreateClockworkRestartTest.verify(level);
+                    if (!factoryRecovered) {
+                        if (!LiveCreateFactoryRestartTest.verify(level)) return;
+                        factoryRecovered = true;
+                    }
+                    if (!logisticsRecovered) {
+                        if (!LiveCreateLogisticsRestartTest.verify(level)) return;
+                        logisticsRecovered = true;
+                    }
+                    if (!gantryRecovered) {
+                        if (!LiveCreateGantryRestartTest.verify(level)) return;
+                        gantryRecovered = true;
+                    }
+                    if (!clockworkRecovered) return;
+                    if (!cartRecovered) {
+                        if (!LiveCreateCartRestartTest.verify(level)) return;
+                        cartRecovered = true;
+                    }
                     LiveCreateMigrationTest.run(level);
                     CreateKineticStorageProbe.run(level.getServer().getWorldPath(LevelResource.ROOT)
                         .resolve("endless-live-allocator-probes"));
-                    // This confirms an explicitly documented upstream limitation;
-                    // it does not claim the default contraption serializer is safe.
+                    // Require exact persistence and native machine APIs across sparse boundaries.
                     LiveCreateContraptionSerializationTest.run(level);
+                    LiveCreateExpandedMachinesTest.run(level);
                 }
                 done = true;
                 System.out.println(PHASE_B_PASS + " freshJvm=true");
@@ -104,6 +142,7 @@ public final class LiveColdRestartServerTest {
 
     private static void forceFixtureChunk(ServerLevel level) {
         level.setChunkForced(0, 0, true);
+        if (Boolean.getBoolean(CREATE_PROPERTY)) { level.setChunkForced(2, 2, true); level.setChunkForced(6, 4, true); level.setChunkForced(8, 4, true); }
         require(level.getForcedChunks().contains(fixtureChunkKey()),
             "could not force-load cold-restart fixture chunk 0,0");
     }
@@ -111,9 +150,13 @@ public final class LiveColdRestartServerTest {
     private static boolean fixtureReady(ServerLevel level) {
         long chunkKey = fixtureChunkKey();
         boolean tickEligible = level.areEntitiesLoaded(chunkKey)
-            && level.getChunkSource().isPositionTicking(chunkKey);
+            && level.getChunkSource().isPositionTicking(chunkKey)
+            && (!Boolean.getBoolean(CREATE_PROPERTY) || (level.areEntitiesLoaded(ChunkPos.asLong(2, 2))
+                && level.getChunkSource().isPositionTicking(ChunkPos.asLong(2, 2))
+                && level.areEntitiesLoaded(ChunkPos.asLong(6, 4)) && level.getChunkSource().isPositionTicking(ChunkPos.asLong(6, 4))
+                && level.areEntitiesLoaded(ChunkPos.asLong(8, 4)) && level.getChunkSource().isPositionTicking(ChunkPos.asLong(8, 4))));
         if (!tickEligible) {
-            require(ticks < 210,
+            require(ticks < 610,
                 "cold-restart fixture chunk never entered vanilla ticking state" + fixtureChunkStatus(level));
             return false;
         }
@@ -147,11 +190,18 @@ public final class LiveColdRestartServerTest {
 
     private static String fixtureChunkStatus(ServerLevel level) {
         long chunkKey = fixtureChunkKey();
-        return " gameTime=" + level.getGameTime()
+        String status = " gameTime=" + level.getGameTime()
             + " entitiesLoaded=" + level.areEntitiesLoaded(chunkKey)
             + " positionTicking=" + level.getChunkSource().isPositionTicking(chunkKey)
             + " shouldTickBlocks=" + level.shouldTickBlocksAt(chunkKey)
             + " forced=" + level.getForcedChunks().contains(chunkKey);
+        if (Boolean.getBoolean(CREATE_PROPERTY)) for (int x : new int[] {2, 6, 8}) {
+            int z = x == 2 ? 2 : 4; long key = ChunkPos.asLong(x, z);
+            status += " chunk=" + x + "," + z + " entitiesLoaded=" + level.areEntitiesLoaded(key)
+                + " positionTicking=" + level.getChunkSource().isPositionTicking(key)
+                + " forced=" + level.getForcedChunks().contains(key);
+        }
+        return status;
     }
     private static void prepare(ServerLevel level) {
         require(level.setBlock(glowPos(), Blocks.GLOWSTONE.defaultBlockState(), 3), "cold-restart glowstone write failed");

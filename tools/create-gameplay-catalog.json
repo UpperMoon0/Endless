@@ -1,0 +1,152 @@
+{
+  "1.20.1": {
+    "Contraptions": [
+      "TestContraptions.arrowDispenser",
+      "TestContraptions.cropFarming",
+      "TestContraptions.mountedItemExtract",
+      "TestContraptions.mountedFluidDrain",
+      "TestContraptions.ploughing",
+      "TestContraptions.redstoneContacts",
+      "TestContraptions.controls",
+      "TestContraptions.elevator",
+      "TestContraptions.rollerFilling",
+      "TestContraptions.rollerPavingAndClearing",
+      "TestContraptions.dispensersDontFight",
+      "TestContraptions.dispensersRefill",
+      "TestContraptions.vaultsProtectFuel"
+    ],
+    "Fluids": [
+      "TestFluids.hosePulleyTransfer",
+      "TestFluids.inWorldPumpingOut",
+      "TestFluids.inWorldPumpingIn",
+      "TestFluids.steamEngine",
+      "TestFluids.threePipeCombine",
+      "TestFluids.threePipeSplit",
+      "TestFluids.largeWaterwheel",
+      "TestFluids.smallWaterwheel",
+      "TestFluids.waterwheelMaterials",
+      "TestFluids.smartObserverPipes",
+      "TestFluids.thresholdSwitch",
+      "TestFluids.openPipes",
+      "TestFluids.spouting"
+    ],
+    "Items": [
+      "TestItems.andesiteTunnelSplit",
+      "TestItems.armPurgatory",
+      "TestItems.attributeFilters",
+      "TestItems.beltCoaster",
+      "TestItems.brassTunnelFiltering",
+      "TestItems.brassTunnelPreferNearest",
+      "TestItems.brassTunnelRoundRobin",
+      "TestItems.brassTunnelSplit",
+      "TestItems.brassTunnelSyncInput",
+      "TestItems.smartObserverBeltAndFunnel",
+      "TestItems.smartObserverChutes",
+      "TestItems.smartObserverCounting",
+      "TestItems.smartObserverFilteredStorage",
+      "TestItems.smartObserverStorage",
+      "TestItems.depotDisplay",
+      "TestItems.thresholdSwitch",
+      "TestItems.storages",
+      "TestItems.vaultComparatorOutput",
+      "TestItems.depotComparatorOutput",
+      "TestItems.fanProcessing"
+    ],
+    "Misc": [
+      "TestMisc.schematicannon",
+      "TestMisc.shearing",
+      "TestMisc.smartObserverBlocks",
+      "TestMisc.thresholdSwitchPulley",
+      "TestMisc.netheriteBacktank"
+    ],
+    "Processing": [
+      "TestProcessing.brassMixing",
+      "TestProcessing.brassMixing2",
+      "TestProcessing.crushingWheelCrafting",
+      "TestProcessing.precisionMechanismCrafting",
+      "TestProcessing.sandWashing",
+      "TestProcessing.stoneCobbleSandCrushing",
+      "TestProcessing.trackCrafting",
+      "TestProcessing.waterFillingBottle",
+      "TestProcessing.wheatMilling"
+    ]
+  },
+  "1.21.1": {
+    "Contraptions": [
+      "TestContraptions.arrowDispenser",
+      "TestContraptions.cropFarming",
+      "TestContraptions.mountedItemExtract",
+      "TestContraptions.mountedFluidDrain",
+      "TestContraptions.ploughing",
+      "TestContraptions.redstoneContacts",
+      "TestContraptions.controls",
+      "TestContraptions.elevator",
+      "TestContraptions.rollerFilling",
+      "TestContraptions.rollerPavingAndClearing",
+      "TestContraptions.dispensersDontFight",
+      "TestContraptions.dispensersRefill",
+      "TestContraptions.vaultsProtectFuel"
+    ],
+    "Fluids": [
+      "TestFluids.hosePulleyTransfer",
+      "TestFluids.inWorldPumpingOut",
+      "TestFluids.inWorldPumpingIn",
+      "TestFluids.steamEngine",
+      "TestFluids.threePipeCombine",
+      "TestFluids.threePipeSplit",
+      "TestFluids.largeWaterwheel",
+      "TestFluids.smallWaterwheel",
+      "TestFluids.waterwheelMaterials",
+      "TestFluids.smartObserverPipes",
+      "TestFluids.thresholdSwitch",
+      "TestFluids.openPipes",
+      "TestFluids.spouting"
+    ],
+    "Items": [
+      "TestItems.andesiteTunnelSplit",
+      "TestItems.armMultiOutput",
+      "TestItems.armPurgatory",
+      "TestItems.attributeFilters",
+      "TestItems.beltCoaster",
+      "TestItems.brassTunnelFiltering",
+      "TestItems.brassTunnelPreferNearest",
+      "TestItems.brassTunnelRoundRobin",
+      "TestItems.brassTunnelSplit",
+      "TestItems.brassTunnelSyncInput",
+      "TestItems.smartObserverBeltAndFunnel",
+      "TestItems.smartObserverChutes",
+      "TestItems.smartObserverCounting",
+      "TestItems.smartObserverFilteredStorage",
+      "TestItems.smartObserverStorage",
+      "TestItems.depotDisplay",
+      "TestItems.thresholdSwitch",
+      "TestItems.storages",
+      "TestItems.vaultComparatorOutput",
+      "TestItems.depotComparatorOutput",
+      "TestItems.fanProcessing"
+    ],
+    "Misc": [
+      "TestMisc.schematicannon",
+      "TestMisc.shearing",
+      "TestMisc.smartObserverBlocks",
+      "TestMisc.thresholdSwitchPulley",
+      "TestMisc.netheriteBacktank"
+    ],
+    "Processing": [
+      "TestProcessing.brassMixing",
+      "TestProcessing.brassMixing2",
+      "TestProcessing.potionBrewing",
+      "TestProcessing.spoutCrafting",
+      "TestProcessing.crushingWheelCrafting",
+      "TestProcessing.precisionMechanismCrafting",
+      "TestProcessing.sandWashing",
+      "TestProcessing.stoneCobbleSandCrushing",
+      "TestProcessing.trackCrafting",
+      "TestProcessing.waterFillingBottle",
+      "TestProcessing.wheatMilling"
+    ],
+    "Regressions": [
+      "TestRegressions.issue9615_efficientDeployers"
+    ]
+  }
+}

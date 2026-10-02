@@ -2,18 +2,18 @@
 
 Endless provides sparse, practically unbounded vertical building space for Minecraft 1.20.1 (Fabric/Forge), 1.21.1 (Fabric/NeoForge), and 26.1.2 (NeoForge) without allocating a dense chunk column for the entire height.
 
-**v0.7 supported configuration envelope:** Y=-8,000,000 through Y=7,999,999.
+**v0.8 supported configuration envelope:** Y=-8,000,000 through Y=7,999,999.
 
 CurseForge: https://www.curseforge.com/minecraft/mc-mods/nstut-endless
 
 ![Endless](assets/icon.png)
 
-## How v0.7 works
+## How v0.8 works
 
 Vanilla Minecraft cannot safely make its normal `LevelChunkSection[]` millions of blocks tall. The supported versions also retain narrow packed-position or dense-section assumptions that cannot represent the full Endless envelope directly. Endless therefore separates the user-facing logical build range from the vanilla-compatible dense chunk core and stores extended space in sparse pages.
 
 - `config/endless.json` defines the **logical build range** used by placement, commands, teleport validity, AI limits, rendering queries, and sparse routing. Any section-aligned subrange of `[-8000000, 8000000)` is supported.
-- A fresh v0.7 world keeps the **dense core** at vanilla `[-64, 320)`. Widening the logical config does not widen `LevelChunkSection[]`.
+- A fresh v0.8 world keeps the **dense core** at vanilla `[-64, 320)`. Widening the logical config does not widen `LevelChunkSection[]`.
 - Existing/migrated worlds may retain a wider historical dense core (up to the legacy-safe `[-2032, 2032)` envelope) solely so old Anvil sections are never discarded. That internal range does **not** widen the configured build limit.
 - Coordinates outside the dense core but inside the configured logical range are stored in **512-block sparse pages**. Empty height costs no section-array memory.
 - Sparse pages use dedicated compressed NBT storage under each dimension instead of vanilla `ChunkSerializer`, so high section Y is never narrowed to a signed byte.
@@ -57,7 +57,7 @@ The ±8,000,000 representation envelope is deliberate. It stays inside Minecraft
 
 - `minBuildHeight` is inclusive.
 - `maxBuildHeight` is exclusive, so the example's highest legal block is Y=1023.
-- Values are normalized to 16-block section boundaries and clamped only to the v0.7 representation envelope `[-8000000, 8000000)`.
+- Values are normalized to 16-block section boundaries and clamped only to the v0.8 representation envelope `[-8000000, 8000000)`.
 - Valid million-scale values are preserved across launch; they are not clamped back to the old ±2032 dense envelope.
 - Restart after changing the file. The server's configured logical range is authoritative for multiplayer clients.
 
@@ -65,15 +65,15 @@ Changing a logical range can narrow or widen where players, commands, and compat
 
 ### Existing worlds
 
-Fresh v0.7 worlds keep a vanilla `[-64,320)` dense core. A world upgraded from an older Endless version may have a wider persisted dense core because old releases stored extended sections directly in vanilla Anvil chunks. That persisted dense layout never shrinks automatically.
+Fresh v0.8 worlds keep a vanilla `[-64,320)` dense core. A world upgraded from an older Endless version may have a wider persisted dense core because old releases stored extended sections directly in vanilla Anvil chunks. That persisted dense layout never shrinks automatically.
 
-v0.7 retains v0.4's fail-closed migration rules. Played pre-v0.4 worlds are inspected before any chunk loads. Ambiguous historical section layouts, meaningful data in unsafe guard sections, conflicting heightmap packing, or untrusted migration inputs stop startup instead of allowing vanilla to silently discard sections.
+v0.8 retains v0.4's fail-closed migration rules. Played pre-v0.4 worlds are inspected before any chunk loads. Ambiguous historical section layouts, meaningful data in unsafe guard sections, conflicting heightmap packing, or untrusted migration inputs stop startup instead of allowing vanilla to silently discard sections.
 
-Back up important worlds before upgrading. Sparse v0.7 pages do not reinterpret legacy Anvil data; they are a new storage layer outside the persisted dense core.
+Back up important worlds before upgrading. Sparse v0.8 pages do not reinterpret legacy Anvil data; they are a new storage layer outside the persisted dense core.
 
 ## Compatibility notes
 
-Endless supports Minecraft 1.20.1 on Fabric/Forge, Minecraft 1.21.1 on Fabric/NeoForge, and Minecraft 26.1.2 on NeoForge. Sparse multiplayer requires an Endless v0.7-compatible client on the same Minecraft/loader line as the server.
+Endless supports Minecraft 1.20.1 on Fabric/Forge, Minecraft 1.21.1 on Fabric/NeoForge, and Minecraft 26.1.2 on NeoForge. Sparse multiplayer requires an Endless v0.8-compatible client on the same Minecraft/loader line as the server.
 
 Mods that use ordinary `Level`, `LevelChunk`, `BlockPos`, block entity, tick, POI, heightmap, and brightness APIs can operate at high Y through Endless' routing. A mod that directly converts high-Y positions with `BlockPos.asLong()`, assumes `chunk.getSections()` contains every possible Y, or directly inspects vanilla light `DataLayer` storage can still impose vanilla's old bounds on itself. Those are representation-level assumptions that cannot be transparently fixed inside another mod's private data structures.
 
@@ -83,17 +83,17 @@ Create compatibility targets Forge 1.20.1 (Create 6.0.8) and NeoForge 1.21.1 (Cr
 
 Each dimension's `data/endless_create_kinetic_ids.dat` is part of the world backup. Existing unreadable or invalid allocator data stops allocation instead of silently starting a new namespace. Namespace version 3 uses packed X=30,000,000, outside vanilla's legal horizontal bounds at every Y. Unsafe unversioned and version-2 allocator files from earlier v0.7 drafts are refused unchanged (version 2 did not reliably distinguish provisional followers from generator ownership) and require the matching draft build or explicit offline migration. Restore the matching allocator and world state from a verified backup; do not delete or replace that file to suppress an error. A genuinely absent allocator is initialized for a new namespace, so deleting an established allocator is not a supported recovery procedure.
 
-Display-link/redstone-link full-position persistence and mechanical-arm/ejector cache changes are targeted source-backed fixes. Ejector key regressions cover the hit cell in wrench mode, the face-adjacent cell in placement mode, packed-Y aliases, and world/mode/reset changes. These checks do not certify final GUI trajectory pixels, comprehensive copy/relocation behavior, packaged production launches, or all Flywheel lighting/culling/cache lifetimes. Contraption serialization has a confirmed default-configuration limitation, detailed below; broader destruction-progress aliasing remains tracked separately (#16).
+Display-link/redstone-link full-position persistence, arm interaction initialization, ejector selection, pulley limits, and elevator contact discovery use exact coordinates or the logical build envelope. The live gates exercise real APIs across the dense floor/ceiling, positive/negative sparse pages, packed-Y boundaries, and million-scale positions. Bearing, piston, and pulley fixtures reconstruct the moving entity, reattach it to its native controller, resume motion, and disassemble that restored entity, including mounted chest contents and drill actors. Separate phase-A world-saved machines must survive the fresh phase-B JVM. Elevator discovery searches occupied pages, including persisted pages, rather than scanning millions of empty cells. Train node packets preserve full doubled Y and pixel offsets, assembly-error NBT retains exact highlight positions, and chorus-potato destinations use logical bounds. Mining cracks use exact renderer-local coordinates, including Create's extra structure positions and their removal lifecycle.
 
-### Known Create contraption serialization limitation (#14)
+### Create contraption coordinates (#14)
 
-**The default 2,048-block assembly cap does not guarantee safe local-coordinate serialization.** On both pinned Create runtimes above, a cart assembler with 2,048 connected slime blocks stacked above it assembles at unchanged `maxBlocksMoved=2048`. Mounted payload traversal starts at `anchor.above()` and the minecart anchor is added afterward, yielding 2,049 captured entries. The top payload is local Y=+2048; `writeNBT` / `Contraption.fromNBT` reconstructs it at local Y=-2048, 4,096 blocks lower. This is not limited to enlarged settings or imported contraptions.
+Endless 0.8 extends Create's paletted block entries with versioned full XYZ local coordinates for both disk and entity-spawn NBT. Native block states, block-entity data, and update tags remain attached to their original entries. Existing entries without the extension keep Create's legacy interpretation; malformed extended coordinates are refused. Previously truncated data cannot be reconstructed automatically.
 
-This release does **not** fix or guard that upstream serialization defect. Avoid contraptions whose local coordinates exceed the packed representation, even at default settings; block count alone is not a safety check. Issue [#14](https://github.com/UpperMoon0/Endless/issues/14) remains open for a narrow coordinate guard or serializer fix. The live test now checks a 2,047-payload intact control and explicitly **confirms the known 2,048-payload limitation** through real assembly, entity initialization and an NBT round trip. A green test run therefore does not certify contraption serialization safety. Other assembly origins and enlarged/imported contraptions still need their own coverage.
+The default-cap regression builds real mounted contraptions with 2,047 and 2,048 payload blocks and checks every position/state after both disk and spawn serialization. The latter includes the anchor and local Y=+2048, which previously became -2048. Forge 1.20.1 and NeoForge 1.21.1 require matching clients with the current handshake (Forge protocol 6 / NeoForge protocol 7) because older clients cannot read the exact spawn keys and extended train nodes. These targeted tests do not certify every Create/Flywheel behavior, arbitrary addon, imported legacy contraption, passenger/collision workflow, or complete lighting/culling lifecycle.
 
 ## Limitations
 
-- **World generation** remains in the normal generator range. v0.7 adds buildable sparse space; it does not generate terrain millions of blocks high by default.
+- **World generation** remains in the normal generator range. v0.8 adds buildable sparse space; it does not generate terrain millions of blocks high by default.
 - **Rendering** covers a 512-block vertical window around the camera. Far-away vertical pages remain saved and active server-side but are not rendered until the camera approaches them.
 - **Representation envelope** is practical rather than mathematical infinity: `[-8,000,000, 8,000,000)`, chosen to preserve vanilla `SectionPos`-keyed systems.
 

@@ -53,6 +53,10 @@ public final class VerticalNetworkBridge {
         LiveHighYServerTest.tick(server);
         LiveFarEnvelopeServerTest.tick(server);
         LiveColdRestartServerTest.tick(server);
+        com.nstut.endless.testing.LiveCreateGameTests.tick(server);
+        com.nstut.endless.testing.LiveCreatePlayerWorkflowServerTest.tick(server);
+        com.nstut.endless.testing.LiveCreateTrainServerTest.tick(server);
+        com.nstut.endless.testing.LiveCreateSurvivalServerTest.tick(server);
 
         if (++ticks >= FLUSH_INTERVAL_TICKS) {
             ticks = 0;
@@ -81,11 +85,13 @@ public final class VerticalNetworkBridge {
                 }
             }
         }
+        SparseChunkUpdateQueue.flush();
     }
 
     public static synchronized void shutdown() {
         EndlessVerticalEngine.closeAll();
         PLAYER_WINDOWS.clear();
+        SparseChunkUpdateQueue.clear();
         // The sender is loader-global process state, not server-instance state.
         // Clearing it here breaks the second integrated-server session in the
         // same Minecraft JVM: the mod bootstrap does not run again, so saved

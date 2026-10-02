@@ -32,6 +32,9 @@ loom {
                 property "endless.liveJoinTest.highY", System.getenv('ENDLESS_TEST_EXTREME') ?: 'false'
                 property "endless.liveJoinWaystonesTest", System.getenv('ENDLESS_TEST_WAYSTONES') ?: 'false'
                 property "endless.liveJoinCreateTest", System.getenv('ENDLESS_TEST_CREATE') ?: 'false'
+                property "endless.liveCreateGameTests", System.getenv('ENDLESS_TEST_CREATE_GROUP') ?: ''
+                property "endless.liveCreatePlayerWorkflows", System.getenv('ENDLESS_TEST_CREATE_PLAYER') ?: 'false'
+                property "endless.liveCreateTrains", System.getenv('ENDLESS_TEST_CREATE_TRAINS') ?: 'false'
                 property "endless.liveJoinFarEnvelopeTest", System.getenv('ENDLESS_TEST_FAR') ?: 'false'
                 property "endless.liveJoinColdRestartPhase", System.getenv('ENDLESS_TEST_COLD_RESTART_PHASE') ?: ''
                 programArgs "--quickPlayMultiplayer", "127.0.0.1:${System.getenv('ENDLESS_TEST_PORT') ?: '25575'}"
@@ -51,6 +54,9 @@ loom {
                 property "endless.liveJoinHighYTest", System.getenv('ENDLESS_TEST_EXTREME') ?: 'false'
                 property "endless.liveJoinWaystonesTest", System.getenv('ENDLESS_TEST_WAYSTONES') ?: 'false'
                 property "endless.liveJoinCreateTest", System.getenv('ENDLESS_TEST_CREATE') ?: 'false'
+                property "endless.liveCreateGameTests", System.getenv('ENDLESS_TEST_CREATE_GROUP') ?: ''
+                property "endless.liveCreatePlayerWorkflows", System.getenv('ENDLESS_TEST_CREATE_PLAYER') ?: 'false'
+                property "endless.liveCreateTrains", System.getenv('ENDLESS_TEST_CREATE_TRAINS') ?: 'false'
                 property "endless.liveJoinFarEnvelopeTest", System.getenv('ENDLESS_TEST_FAR') ?: 'false'
                 property "endless.liveJoinColdRestartPhase", System.getenv('ENDLESS_TEST_COLD_RESTART_PHASE') ?: ''
                 programArg "nogui"

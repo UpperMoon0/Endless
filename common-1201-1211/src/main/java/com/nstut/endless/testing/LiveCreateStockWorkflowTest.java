@@ -1,0 +1,168 @@
+package com.nstut.endless.testing;
+
+import java.lang.reflect.Field;
+import java.util.List;
+import java.util.UUID;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+
+/** Native linked stock requests must conserve stock through packaging and unpacking. */
+public final class LiveCreateStockWorkflowTest {
+    private LiveCreateStockWorkflowTest() {}
+    public static BlockPos ticker(BlockPos base) { return base.offset(3, 0, 4); }
+    private static BlockPos source(BlockPos base) { return base.east(6); }
+    private static BlockPos output(BlockPos base) { return base.offset(6, 0, 4); }
+    private static BlockPos requester(BlockPos base) { return base.offset(8, 0, 4); }
+    public static Object order() throws Exception {
+        Object stack = Class.forName("com.simibubi.create.content.logistics.BigItemStack").getConstructor(ItemStack.class, int.class).newInstance(new ItemStack(Items.DIAMOND), 7);
+        return Class.forName("com.simibubi.create.content.logistics.stockTicker.PackageOrderWithCrafts").getMethod("simple", List.class).invoke(null, List.of(stack));
+    }
+    public static void prepare(ServerLevel level, ServerPlayer player, BlockPos base) throws Exception {
+        for (BlockPos p : List.of(source(base), output(base))) {
+            level.setBlock(p.below(), Blocks.CHEST.defaultBlockState(), 18);
+            level.setBlock(p, block("packager").setValue(BlockStateProperties.FACING, Direction.UP), 3);
+        }
+        ((ChestBlockEntity) level.getBlockEntity(source(base).below())).setItem(0, new ItemStack(Items.DIAMOND, 14));
+        BlockPos link = source(base).above();
+        level.setBlock(link, block("stock_link").setValue(BlockStateProperties.ATTACH_FACE, net.minecraft.world.level.block.state.properties.AttachFace.FLOOR), 3);
+        level.setBlock(ticker(base), block("stock_ticker"), 3); level.setBlock(requester(base), block("redstone_requester"), 3);
+        UUID network = UUID.randomUUID();
+        Object linkEntity = level.getBlockEntity(link);
+        fieldObject(linkEntity, "placedBy").set(linkEntity, player.getUUID());
+        for (BlockPos p : List.of(link, ticker(base), requester(base))) {
+            Object behaviour = field(level.getBlockEntity(p), "behaviour");
+            fieldObject(behaviour, "freqId").set(behaviour, network);
+        }
+        Object request = level.getBlockEntity(requester(base));
+        fieldObject(request, "encodedRequest").set(request, order());
+        fieldObject(request, "encodedTargetAdress").set(request, "Endless-player-" + base.getY());
+    }
+    public static void assertStock(ServerLevel level, BlockPos base, int expected) throws Exception {
+        Object ticker = level.getBlockEntity(ticker(base)), summary = ticker.getClass().getMethod("getAccurateSummary").invoke(ticker);
+        int available = ((Number) summary.getClass().getMethod("getCountOf", ItemStack.class).invoke(summary, new ItemStack(Items.DIAMOND))).intValue();
+        require(available == expected, "native stock-link summary mismatch expected=" + expected + " actual=" + available);
+    }
+    public static boolean unpack(ServerLevel level, BlockPos base, int expectedTotal) throws Exception {
+        return unpack(level, base, expectedTotal, 14 - expectedTotal);
+    }
+    private static boolean unpack(ServerLevel level, BlockPos base, int expectedTotal, int expectedSource) throws Exception {
+        Object packager = level.getBlockEntity(source(base)), inventory = field(packager, "inventory");
+        ItemStack box = (ItemStack) inventory.getClass().getMethod("extractItem", int.class, int.class, boolean.class).invoke(inventory, 0, 1, true);
+        if (box.isEmpty()) return false;
+        Class<?> type = Class.forName("com.simibubi.create.content.logistics.box.PackageItem");
+        require(box.getCount() == 1 && (boolean) type.getMethod("isPackage", ItemStack.class).invoke(null, box), "stock request emitted invalid package");
+        require(("Endless-player-" + base.getY()).equals(type.getMethod("getAddress", ItemStack.class).invoke(null, box)), "stock request packet address changed");
+        Object contents = type.getMethod("getContents", ItemStack.class).invoke(null, box); int diamonds = 0;
+        for (int i = 0; i < 9; i++) { ItemStack item = (ItemStack) contents.getClass().getMethod("getStackInSlot", int.class).invoke(contents, i); require(item.isEmpty() || item.is(Items.DIAMOND), "stock package payload identity changed"); diamonds += item.getCount(); }
+        require(diamonds == 7, "stock packet lost or duplicated ordered contents");
+        box = (ItemStack) inventory.getClass().getMethod("extractItem", int.class, int.class, boolean.class).invoke(inventory, 0, 1, false);
+        Object target = field(level.getBlockEntity(output(base)), "inventory");
+        ItemStack leftover = (ItemStack) target.getClass().getMethod("insertItem", int.class, ItemStack.class, boolean.class).invoke(target, 0, box, false);
+        require(leftover.isEmpty(), "native stock-order unpacking failed");
+        require(count((ChestBlockEntity) level.getBlockEntity(output(base).below())) == expectedTotal
+            && count((ChestBlockEntity) level.getBlockEntity(source(base).below())) == expectedSource, "stock request/unpacking failed exact conservation");
+        require(((ItemStack) field(packager, "heldBox")).isEmpty(), "stock request left a duplicate held package");
+        return true;
+    }
+    private static Object gauge(ServerLevel level, BlockPos base) throws Exception {
+        return ((java.util.Map<?, ?>) field(level.getBlockEntity(output(base).above()), "panels")).values().iterator().next();
+    }
+    public static void prepareGauge(ServerLevel level, BlockPos base) throws Exception {
+        require(count((ChestBlockEntity) level.getBlockEntity(source(base).below())) == 0
+            && count((ChestBlockEntity) level.getBlockEntity(output(base).below())) == 21, "gauge setup changed prior conserved stock");
+        level.setBlock(output(base).above(), block("factory_gauge").setValue(BlockStateProperties.ATTACH_FACE, net.minecraft.world.level.block.state.properties.AttachFace.FLOOR), 3);
+        Object panel = gauge(level, base);
+        panel.getClass().getMethod("enable").invoke(panel);
+        Object linked = field(level.getBlockEntity(source(base).above()), "behaviour");
+        panel.getClass().getMethod("setNetwork", UUID.class).invoke(panel, field(linked, "freqId"));
+        panel.getClass().getMethod("setFilter", ItemStack.class).invoke(panel, new ItemStack(Items.DIAMOND));
+        fieldObject(panel, "count").setInt(panel, 28); fieldObject(panel, "upTo").setBoolean(panel, true);
+        fieldObject(panel, "recipeAddress").set(panel, "Endless-player-" + base.getY());
+    }
+    public static void supplyGauge(ServerLevel level, BlockPos base) throws Exception {
+        Object panel = gauge(level, base);
+        require((boolean) field(level.getBlockEntity(output(base).above()), "restocker"), "native gauge did not discover its attached packager");
+        require(!(boolean) field(panel, "satisfied") && ((Number) panel.getClass().getMethod("getLevelInStorage").invoke(panel)).intValue() == 21,
+            "gauge reported absent stock as satisfied");
+        require(((Number) panel.getClass().getMethod("getPromised").invoke(panel)).intValue() == 0, "empty-network gauge created a phantom restocking promise");
+        ((ChestBlockEntity) level.getBlockEntity(source(base).below())).setItem(0, new ItemStack(Items.DIAMOND, 7));
+    }
+    public static boolean unpackGauge(ServerLevel level, BlockPos base) throws Exception {
+        return unpack(level, base, 28, 0);
+    }
+    public static void verifyGauge(ServerLevel level, BlockPos base) throws Exception {
+        Object panel = gauge(level, base);
+        require((boolean) field(panel, "satisfied") && ((Number) panel.getClass().getMethod("getLevelInStorage").invoke(panel)).intValue() == 28,
+            "native gauge did not observe delivered restocking demand");
+        require(count((ChestBlockEntity) level.getBlockEntity(source(base).below())) == 0 && count((ChestBlockEntity) level.getBlockEntity(output(base).below())) == 28,
+            "native gauge restocking lost or duplicated conserved stock");
+    }
+    public static void trigger(ServerLevel level, BlockPos base) {
+        level.setBlock(requester(base).east(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
+    }
+    public static void assertRequester(ServerLevel level, BlockPos base) throws Exception {
+        require((boolean) field(level.getBlockEntity(requester(base)), "lastRequestSucceeded"), "native redstone requester did not execute its linked order");
+        assertStock(level, base, 0);
+    }
+    private static BlockPos repackager(BlockPos base) { return base.offset(8, 0, 2); }
+    public static void prepareRepackager(ServerLevel level, BlockPos base) throws Exception {
+        BlockPos pos = repackager(base);
+        level.setBlock(pos.below(), Blocks.CHEST.defaultBlockState(), 18);
+        level.setBlock(pos, block("repackager").setValue(BlockStateProperties.FACING, Direction.UP), 3);
+        ((ChestBlockEntity) level.getBlockEntity(pos.below())).setItem(0, fragment(base, 0, 3, false));
+        level.setBlock(pos.east(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
+    }
+    private static ItemStack fragment(BlockPos base, int index, int diamonds, boolean last) throws Exception {
+        Class<?> type = Class.forName("com.simibubi.create.content.logistics.box.PackageItem");
+        ItemStack box = (ItemStack) type.getMethod("containing", List.class).invoke(null, List.of(new ItemStack(Items.DIAMOND, diamonds)));
+        type.getMethod("addAddress", ItemStack.class, String.class).invoke(null, box, "Endless-repack-" + base.getY());
+        type.getMethod("setOrder", ItemStack.class, int.class, int.class, boolean.class, int.class, boolean.class,
+            Class.forName("com.simibubi.create.content.logistics.stockTicker.PackageOrderWithCrafts"))
+            .invoke(null, box, base.getY() + 1_048_576, 0, true, index, last, null);
+        return box;
+    }
+    public static void completeRepackager(ServerLevel level, BlockPos base) throws Exception {
+        Object packager = level.getBlockEntity(repackager(base)), inventory = field(packager, "inventory");
+        require(((ItemStack) inventory.getClass().getMethod("extractItem", int.class, int.class, boolean.class).invoke(inventory, 0, 1, true)).isEmpty()
+            && ((ItemStack) field(packager, "heldBox")).isEmpty() && ((List<?>) field(packager, "queuedExitingPackages")).isEmpty(),
+            "repackager emitted an incomplete fragmented order");
+        ChestBlockEntity input = (ChestBlockEntity) level.getBlockEntity(repackager(base).below());
+        require(!input.getItem(0).isEmpty() && input.getItem(1).isEmpty(), "incomplete native fragment was consumed or duplicated");
+        input.setItem(1, fragment(base, 1, 4, true));
+    }
+    public static boolean verifyRepackager(ServerLevel level, BlockPos base) throws Exception {
+        Object packager = level.getBlockEntity(repackager(base)), inventory = field(packager, "inventory");
+        ItemStack box = (ItemStack) inventory.getClass().getMethod("extractItem", int.class, int.class, boolean.class).invoke(inventory, 0, 1, true);
+        if (box.isEmpty()) return false;
+        Class<?> type = Class.forName("com.simibubi.create.content.logistics.box.PackageItem");
+        require(box.getCount() == 1 && ("Endless-repack-"+base.getY()).equals(type.getMethod("getAddress", ItemStack.class).invoke(null, box))
+            && ((Number) type.getMethod("getOrderId", ItemStack.class).invoke(null, box)).intValue() == base.getY()+1_048_576,
+            "native repackager changed order identity or address");
+        Object contents = type.getMethod("getContents", ItemStack.class).invoke(null, box); int diamonds = 0;
+        for (int i = 0; i < 9; i++) { ItemStack item = (ItemStack) contents.getClass().getMethod("getStackInSlot", int.class).invoke(contents, i); require(item.isEmpty() || item.is(Items.DIAMOND), "repackaged item identity changed"); diamonds += item.getCount(); }
+        require(diamonds == 7 && ((ChestBlockEntity) level.getBlockEntity(repackager(base).below())).isEmpty(), "native repackager lost or duplicated fragments");
+        box = (ItemStack) inventory.getClass().getMethod("extractItem", int.class, int.class, boolean.class).invoke(inventory, 0, 1, false);
+        Object target = field(level.getBlockEntity(output(base)), "inventory");
+        require(((ItemStack) target.getClass().getMethod("insertItem", int.class, ItemStack.class, boolean.class).invoke(target, 0, box, false)).isEmpty(), "native repackaged box failed to unpack");
+        require(count((ChestBlockEntity) level.getBlockEntity(output(base).below())) == 21
+            && ((ItemStack) field(packager, "heldBox")).isEmpty() && ((List<?>) field(packager, "queuedExitingPackages")).isEmpty(), "native repackaged inventory conservation failed");
+        return true;
+    }
+    private static int count(ChestBlockEntity chest) {
+        int total = 0; for (int i = 0; i < chest.getContainerSize(); i++) { ItemStack item = chest.getItem(i); require(item.isEmpty() || item.is(Items.DIAMOND), "unexpected stock inventory item"); total += item.getCount(); } return total;
+    }
+    private static Object field(Object object, String name) throws Exception { return fieldObject(object, name).get(object); }
+    private static Field fieldObject(Object object, String name) throws Exception { for (Class<?> c = object.getClass(); c != null; c = c.getSuperclass()) try { Field f = c.getDeclaredField(name); f.setAccessible(true); return f; } catch (NoSuchFieldException ignored) {} throw new NoSuchFieldException(name); }
+    private static BlockState block(String id) { var key = ResourceLocation.tryParse("create:" + id); require(BuiltInRegistries.BLOCK.containsKey(key), "missing pinned block " + id); return BuiltInRegistries.BLOCK.get(key).defaultBlockState(); }
+    private static void require(boolean ok, String message) { if (!ok) throw new IllegalStateException(message); }
+}

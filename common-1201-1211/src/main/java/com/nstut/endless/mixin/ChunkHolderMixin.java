@@ -74,6 +74,7 @@ public abstract class ChunkHolderMixin {
         Map<BlockPos, Set<ServerPlayer>> changes = new LinkedHashMap<>(endless$sparseChanges);
         endless$sparseChanges.clear();
         Level level = chunk.getLevel();
+        Map<Integer, Set<ServerPlayer>> changedPages = new LinkedHashMap<>();
         for (var change : changes.entrySet()) {
             // Include players who began watching this page between the change and
             // vanilla's broadcast, while retaining the original audience.
@@ -92,11 +93,19 @@ public abstract class ChunkHolderMixin {
             // broadcast. Still reject delivery into another world.
             for (ServerPlayer player : change.getValue()) {
                 if (player.level() != level) continue;
+                changedPages.computeIfAbsent(page, ignored -> new LinkedHashSet<>()).add(player);
                 player.connection.send(blockPacket);
                 if (blockEntityPacket != null) {
                     player.connection.send(blockEntityPacket);
                 }
             }
         }
+        // NeoForge can apply a queued full-page payload after native block
+        // updates. Send one current revision per changed page/audience after
+        // the native packets: older in-flight snapshots then cannot restore
+        // stale state, and native BE callbacks still receive their packets.
+        for (var changedPage : changedPages.entrySet())
+            for (ServerPlayer player : changedPage.getValue())
+                com.nstut.endless.vertical.VerticalNetworkBridge.sendPage(player, chunk, changedPage.getKey());
     }
 }

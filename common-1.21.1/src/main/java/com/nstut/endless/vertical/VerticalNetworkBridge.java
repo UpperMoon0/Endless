@@ -141,7 +141,7 @@ public final class VerticalNetworkBridge {
         denseInvariantChecked = true;
     }
 
-    private static void sendPage(ServerPlayer player, LevelChunk chunk, int pageY) {
+    public static void sendPage(ServerPlayer player, LevelChunk chunk, int pageY) {
         VerticalPagePos pos = new VerticalPagePos(chunk.getPos().x, pageY, chunk.getPos().z);
         MinecraftVerticalWorld world = EndlessVerticalEngine.world(player.level());
         if (!world.pageExists(pos)) {

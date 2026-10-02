@@ -9,6 +9,11 @@ import net.minecraft.world.level.block.state.BlockState;
 /** Version-specific NBT APIs used by the real Create migration/serialization regressions. */
 final class LiveCreateNbt {
     private LiveCreateNbt() {}
+    static void prepareGameTestTemplate(ServerLevel level, net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate template) {
+        CompoundTag tag = template.save(new CompoundTag());
+        if (LiveCreateGameTests.normalizeLegacyThresholds(tag) > 0)
+            template.load(level.holderLookup(net.minecraft.core.registries.Registries.BLOCK), tag);
+    }
     static BlockPos readPos(CompoundTag tag, String key) { return net.minecraft.nbt.NbtUtils.readBlockPos(tag.getCompound(key)); }
     static boolean symmetryEnabled(net.minecraft.world.item.ItemStack stack) { return stack.hasTag() && stack.getTag().getBoolean("enable"); }
     static void setBacktankAir(net.minecraft.world.item.ItemStack stack, int air) { stack.getOrCreateTag().putInt("Air", air); }

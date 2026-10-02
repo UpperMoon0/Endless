@@ -10,6 +10,27 @@ import net.minecraft.world.level.block.state.BlockState;
 /** Version-specific NBT APIs used by the real Create migration/serialization regressions. */
 final class LiveCreateNbt {
     private LiveCreateNbt() {}
+    static void prepareGameTestTemplate(ServerLevel level, net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate template) {
+        // Pinned NeoForge Create templates declare current DataVersion but retain
+        // legacy Count bytes in modded BE inventories, which vanilla's structure
+        // fixer cannot visit. Preserve those exact input counts in the current codec.
+        CompoundTag tag = template.save(new CompoundTag());
+        int changed = normalizeFixtureCounts(tag) + LiveCreateGameTests.normalizeLegacyThresholds(tag);
+        if (changed > 0) {
+            template.load(level.holderLookup(net.minecraft.core.registries.Registries.BLOCK), tag);
+            System.out.println("ENDLESS_CREATE_GAMETEST_TEMPLATE_COUNTS_NORMALIZED stacks=" + changed);
+        }
+    }
+    private static int normalizeFixtureCounts(net.minecraft.nbt.Tag tag) {
+        int changed = 0;
+        if (tag instanceof CompoundTag compound) {
+            if (compound.contains("id", 8) && compound.contains("Count", 99) && !compound.contains("count", 99)) {
+                compound.putInt("count", compound.getInt("Count")); compound.remove("Count"); changed++;
+            }
+            for (String key : java.util.List.copyOf(compound.getAllKeys())) changed += normalizeFixtureCounts(compound.get(key));
+        } else if (tag instanceof net.minecraft.nbt.ListTag list) for (net.minecraft.nbt.Tag entry : list) changed += normalizeFixtureCounts(entry);
+        return changed;
+    }
     static BlockPos readPos(CompoundTag tag, String key) { return net.minecraft.nbt.NbtUtils.readBlockPos(tag, key).orElseThrow(); }
     @SuppressWarnings("unchecked")
     static boolean symmetryEnabled(net.minecraft.world.item.ItemStack stack) throws ReflectiveOperationException {

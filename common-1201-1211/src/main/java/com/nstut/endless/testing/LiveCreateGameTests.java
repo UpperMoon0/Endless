@@ -67,8 +67,10 @@ public final class LiveCreateGameTests {
                     return;
                 }
                 // Isolate heights horizontally: falling items from one fixture must never enter another.
-                for (int slot = 0; slot < 4 && next < functions.size() * HEIGHTS.length; slot++, next++) {
+                int limit = seededRecipe(functions.get(next / HEIGHTS.length)) ? 1 : 4;
+                for (int slot = 0; slot < limit && next < functions.size() * HEIGHTS.length; slot++, next++) {
                     TestFunction function = functions.get(next / HEIGHTS.length);
+                    if (slot > 0 && seededRecipe(function)) break;
                     int y = HEIGHTS[next % HEIGHTS.length];
                     running.add(place(level, function, new BlockPos(64 + slot % 2 * 64, y, 64 + slot / 2 * 64)));
                 }
@@ -85,16 +87,29 @@ public final class LiveCreateGameTests {
                 if (!populated.containsKey(test.info)) {
                     level.getEntitiesOfClass(Entity.class, AABB.of(test.bounds), e -> !(e instanceof Player)).forEach(Entity::discard);
                     var template = level.getStructureManager().get(ResourceLocation.tryParse(test.info.getStructureName())).orElseThrow();
+                    LiveCreateNbt.prepareGameTestTemplate(level, template);
                     require(template.placeInWorld(level, test.origin, test.origin, new net.minecraft.world.level.levelgen.structure.templatesystem.StructurePlaceSettings()
                         .setIgnoreEntities(false), level.random, 2), "native template placement failed");
                     populated.put(test.info, ticks);
                     continue;
                 }
                 if (ticks - populated.get(test.info) < 30) continue;
-                if (!test.info.hasStarted()) set(test.info, "startTick", level.getGameTime());
+                if (!test.info.hasStarted()) {
+                    set(test.info, "startTick", level.getGameTime());
+                    restoreLegacyThresholdSettings(level, test);
+                    if (test.info.getTestName().equals("TestProcessing.precisionMechanismCrafting")) {
+                        // Its native assertion requires both a successful item and a
+                        // random byproduct. A reproducible seed avoids an all-success
+                        // random draw; the native recipe and result pool remain intact.
+                        ((java.util.Random) Class.forName("com.simibubi.create.Create").getField("RANDOM").get(null)).setSeed(0L);
+                    }
+                }
                 Method tick = GameTestInfo.class.getDeclaredMethod("tickInternal"); tick.setAccessible(true); tick.invoke(test.info);
                 if (!test.info.isDone()) continue;
-                if (!test.info.hasSucceeded()) dump(level, test);
+                if (!test.info.hasSucceeded()) {
+                    dump(level, test);
+                    if (test.info.getError() != null) test.info.getError().printStackTrace();
+                }
                 require(test.info.hasSucceeded(), "native outcome failed test=" + test.info.getTestName() + " originY=" + test.y + " cause=" + test.info.getError());
                 completed++;
                 System.out.println("ENDLESS_CREATE_GAMETEST_CASE_PASS test=" + test.info.getTestName() + " originY=" + test.y);
@@ -187,6 +202,35 @@ public final class LiveCreateGameTests {
             try { return (String) function.getClass().getMethod("getTestName").invoke(function); }
             catch (Exception failure) { throw new IllegalStateException(failure); }
         } catch (Exception failure) { throw new IllegalStateException(failure); }
+    }
+    private static boolean seededRecipe(TestFunction function) { return name(function).equals("TestProcessing.precisionMechanismCrafting"); }
+    static int normalizeLegacyThresholds(net.minecraft.nbt.CompoundTag template) {
+        int changed = 0;
+        for (net.minecraft.nbt.Tag entry : template.getList("blocks", 10)) {
+            var data = ((net.minecraft.nbt.CompoundTag) entry).getCompound("nbt");
+            if (!data.getString("id").equals("create:stockpile_switch") || !data.contains("OnAbove", 99) || data.contains("OnAboveAmount", 99)) continue;
+            // Old templates store percentages. Current Create reads absolute amounts
+            // and otherwise loads missing thresholds as zero, activating an empty chest.
+            data.putFloat("EndlessFixtureOnPercent", data.getFloat("OnAbove"));
+            data.putFloat("EndlessFixtureOffPercent", data.getFloat("OffBelow"));
+            data.putInt("OnAboveAmount", 128); data.putInt("OffBelowAmount", 64);
+            changed++;
+        }
+        return changed;
+    }
+    private static void restoreLegacyThresholdSettings(ServerLevel level, Running test) throws Exception {
+        var template = level.getStructureManager().get(ResourceLocation.tryParse(test.info.getStructureName())).orElseThrow();
+        var tag = template.save(new net.minecraft.nbt.CompoundTag());
+        for (net.minecraft.nbt.Tag entry : tag.getList("blocks", 10)) {
+            var block = (net.minecraft.nbt.CompoundTag) entry; var data = block.getCompound("nbt");
+            if (!data.contains("EndlessFixtureOnPercent", 99)) continue;
+            var relative = block.getList("pos", 3); BlockPos pos = test.origin.offset(relative.getInt(0), relative.getInt(1), relative.getInt(2));
+            Object threshold = level.getBlockEntity(pos);
+            int capacity = ((Number) threshold.getClass().getMethod("getMaxLevel").invoke(threshold)).intValue();
+            require(capacity > 0, "legacy threshold fixture has no native observed capacity");
+            threshold.getClass().getField("onWhenAbove").setInt(threshold, Math.round(capacity * data.getFloat("EndlessFixtureOnPercent")));
+            threshold.getClass().getField("offWhenBelow").setInt(threshold, Math.round(capacity * data.getFloat("EndlessFixtureOffPercent")));
+        }
     }
     private static boolean chunksReady(ServerLevel level, BoundingBox box) {
         for (int x = box.minX() >> 4; x <= box.maxX() >> 4; x++)

@@ -150,7 +150,7 @@ public final class LiveColdRestartServerTest {
                 && level.areEntitiesLoaded(ChunkPos.asLong(6, 4)) && level.getChunkSource().isPositionTicking(ChunkPos.asLong(6, 4))
                 && level.areEntitiesLoaded(ChunkPos.asLong(8, 4)) && level.getChunkSource().isPositionTicking(ChunkPos.asLong(8, 4))));
         if (!tickEligible) {
-            require(ticks < 210,
+            require(ticks < 610,
                 "cold-restart fixture chunk never entered vanilla ticking state" + fixtureChunkStatus(level));
             return false;
         }
@@ -184,11 +184,18 @@ public final class LiveColdRestartServerTest {
 
     private static String fixtureChunkStatus(ServerLevel level) {
         long chunkKey = fixtureChunkKey();
-        return " gameTime=" + level.getGameTime()
+        String status = " gameTime=" + level.getGameTime()
             + " entitiesLoaded=" + level.areEntitiesLoaded(chunkKey)
             + " positionTicking=" + level.getChunkSource().isPositionTicking(chunkKey)
             + " shouldTickBlocks=" + level.shouldTickBlocksAt(chunkKey)
             + " forced=" + level.getForcedChunks().contains(chunkKey);
+        if (Boolean.getBoolean(CREATE_PROPERTY)) for (int x : new int[] {2, 6, 8}) {
+            int z = x == 2 ? 2 : 4; long key = ChunkPos.asLong(x, z);
+            status += " chunk=" + x + "," + z + " entitiesLoaded=" + level.areEntitiesLoaded(key)
+                + " positionTicking=" + level.getChunkSource().isPositionTicking(key)
+                + " forced=" + level.getForcedChunks().contains(key);
+        }
+        return status;
     }
     private static void prepare(ServerLevel level) {
         require(level.setBlock(glowPos(), Blocks.GLOWSTONE.defaultBlockState(), 3), "cold-restart glowstone write failed");

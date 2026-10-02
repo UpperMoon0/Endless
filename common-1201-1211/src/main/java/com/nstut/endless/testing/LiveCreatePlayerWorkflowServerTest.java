@@ -47,6 +47,7 @@ public final class LiveCreatePlayerWorkflowServerTest {
                 player.getInventory().setItem(4, item("andesite_scaffolding"));
                 player.inventoryMenu.broadcastChanges();
                 player.teleportTo(b.getX() + 1.5, b.getY(), b.getZ() + .5);
+                player.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
                 player.setYRot(0); player.setYHeadRot(0);
                 level.setBlock(flag(lane), Blocks.GOLD_BLOCK.defaultBlockState(), 3);
                 prepared = true; ticks = 0; return;
@@ -78,15 +79,17 @@ public final class LiveCreatePlayerWorkflowServerTest {
             } else if (step == 3 && LiveCreateNbt.symmetryEnabled(player.getInventory().getItem(2))) {
                 step = 4; level.setBlock(flag(lane), Blocks.WHITE_WOOL.defaultBlockState(), 3);
             } else if (step == 4 && level.getBlockState(base(lane).south(3).above()).is(Blocks.WHITE_WOOL) && level.getBlockState(base(lane).south().above()).is(Blocks.WHITE_WOOL)) {
-                // Pinned Create consumes a held-block reservation and one mirrored
-                // block in addition to vanilla's original placement cost.
-                require(player.getInventory().getItem(3).getCount() == 5, "symmetry changed native survival material accounting");
+                // Create replaces the held inventory stack for its reservation and
+                // mirrored block. Vanilla's later shrink targets the old stack reference.
+                require(player.getInventory().getItem(3).getCount() == 6, "symmetry changed native survival material accounting remaining=" + player.getInventory().getItem(3).getCount());
                 player.getInventory().setItem(2, ItemStack.EMPTY); // Finish symmetry before the independent reach control.
                 player.getInventory().setItem(5, new ItemStack(Items.WHITE_WOOL, 8));
                 level.setBlock(flag(lane), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
                 step = 5; ticks = 0;
             } else if (step == 5 && ticks >= 40) {
                 require(level.getBlockState(base(lane).east(8).above()).isAir() && player.getInventory().getItem(5).getCount() == 8, "ordinary survival reach admitted the distant negative-control placement");
+                player.teleportTo(base(lane).getX() + 1.5, base(lane).getY(), base(lane).getZ() + .5);
+                player.setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
                 player.setItemSlot(net.minecraft.world.entity.EquipmentSlot.OFFHAND, item("extendo_grip"));
                 level.setBlock(flag(lane), Blocks.NETHERITE_BLOCK.defaultBlockState(), 3); step = 6; ticks = 0;
             } else if (step == 6 && level.getBlockState(base(lane).east(8).above()).is(Blocks.WHITE_WOOL)) {
@@ -113,9 +116,18 @@ public final class LiveCreatePlayerWorkflowServerTest {
                 player.setItemSlot(net.minecraft.world.entity.EquipmentSlot.CHEST, ItemStack.EMPTY);
                 player.setItemSlot(net.minecraft.world.entity.EquipmentSlot.HEAD, ItemStack.EMPTY);
                 player.setItemSlot(net.minecraft.world.entity.EquipmentSlot.FEET, ItemStack.EMPTY);
-                System.out.println("ENDLESS_CREATE_PLAYER_CASE_PASS y=" + HEIGHTS[lane] + " toolboxPackets=true exactStock64=true copycat=true scaffolding=true symmetry=true extendoControl=true divingControl=true tankAirConsumed=3");
-                level.setBlock(flag(lane), Blocks.LIME_WOOL.defaultBlockState(), 3); step = 9; ticks = 0;
-            } else if (step == 9 && ticks > 20) {
+                LiveCreateStockWorkflowTest.prepare(level, player, base(lane));
+                level.setBlock(flag(lane), Blocks.GRAY_WOOL.defaultBlockState(), 3); step = 9; ticks = 0;
+            } else if (step == 9 && ticks >= 40) {
+                LiveCreateStockWorkflowTest.assertStock(level, base(lane), 14);
+                level.setBlock(flag(lane), Blocks.ORANGE_WOOL.defaultBlockState(), 3); step = 10; ticks = 0;
+            } else if (step == 10 && LiveCreateStockWorkflowTest.unpack(level, base(lane), 7)) {
+                LiveCreateStockWorkflowTest.trigger(level, base(lane)); step = 11; ticks = 0;
+            } else if (step == 11 && LiveCreateStockWorkflowTest.unpack(level, base(lane), 14)) {
+                LiveCreateStockWorkflowTest.assertRequester(level, base(lane));
+                System.out.println("ENDLESS_CREATE_PLAYER_CASE_PASS y=" + HEIGHTS[lane] + " toolboxPackets=true exactStock64=true copycat=true scaffolding=true symmetry=true extendoControl=true divingControl=true tankAirConsumed=3 stockTickerPacket=true redstoneRequester=true orderedDiamondsConserved=14");
+                level.setBlock(flag(lane), Blocks.LIME_WOOL.defaultBlockState(), 3); step = 12; ticks = 0;
+            } else if (step == 12 && ticks > 20) {
                 // Allow the client to observe the acknowledgement before moving to the next origin.
                 if (++lane == HEIGHTS.length) { done = true; System.out.println("ENDLESS_CREATE_PLAYER_SERVER_PASS cases=" + HEIGHTS.length); }
                 else { prepared = false; step = ticks = 0; }

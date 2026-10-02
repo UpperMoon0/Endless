@@ -42,6 +42,11 @@ public final class LiveCreatePlayerWorkflowClientTest {
                 click(mc, 5, base.east(8)); readyTicks = 0;
             } else if (flag == Blocks.BLUE_WOOL) {
                 // Server observes normal underwater breathing ticks before and after equipping the diving suit.
+            } else if (flag == Blocks.ORANGE_WOOL) {
+                Object order = LiveCreateStockWorkflowTest.order();
+                send(Class.forName("com.simibubi.create.content.logistics.stockTicker.PackageOrderRequestPacket")
+                    .getConstructor(BlockPos.class, order.getClass(), String.class, boolean.class)
+                    .newInstance(LiveCreateStockWorkflowTest.ticker(base), order, "Endless-player-" + base.getY(), false));
             } else if (flag == Blocks.LIME_WOOL) {
                 if (++lane == LiveCreatePlayerWorkflowServerTest.HEIGHTS.length) { done = true; System.out.println("ENDLESS_CREATE_PLAYER_CLIENT_PASS nativePackets=true survivalItemUses=true cases=" + lane); }
                 last = null; return;
@@ -53,7 +58,7 @@ public final class LiveCreatePlayerWorkflowClientTest {
         if (mc.gameMode.getPlayerMode() != net.minecraft.world.level.GameType.SURVIVAL) throw new IllegalStateException("player workflow requires survival");
         mc.player.getInventory().selected = slot;
         BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(pos).add(0, .5, 0), Direction.UP, pos, false);
-        if (mc.player.getEyePosition().distanceTo(hit.getLocation()) > (slot == 5 ? 8 : 4.5)) throw new IllegalStateException("fixture exceeds the tested reach");
+        if (mc.player.getEyePosition().distanceTo(hit.getLocation()) > (slot == 5 ? 8 : 4.5)) throw new IllegalStateException("fixture exceeds the tested reach slot=" + slot + " eye=" + mc.player.getEyePosition() + " target=" + hit.getLocation());
         mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
     }
     private static void send(Object packet) throws Exception {

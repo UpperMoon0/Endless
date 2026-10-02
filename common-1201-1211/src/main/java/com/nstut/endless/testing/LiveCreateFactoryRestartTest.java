@@ -125,13 +125,19 @@ public final class LiveCreateFactoryRestartTest {
                 require(speed(level.getBlockEntity(bearing.below(4).offset(1, 0, 1))) == -2 * rpm, "restored cog ratio changed");
                 Entity vehicle = level.getEntity(entry.getUUID("Windmill"));
                 require(rider.getVehicle() == vehicle, "restored seat passenger lost its vehicle");
-                net.minecraft.world.phys.Vec3 expected = (net.minecraft.world.phys.Vec3) vehicle.getClass().getMethod("getPassengerPosition", Entity.class, float.class).invoke(vehicle, rider, 1f);
+                // ServerLevel ticks passengers before block entities. The bearing has
+                // advanced one angle by this post-server-tick assertion, so the rider
+                // occupies the exact previous transform used by native positionRider.
+                net.minecraft.world.phys.Vec3 expected = (net.minecraft.world.phys.Vec3) vehicle.getClass().getMethod("getPassengerPosition", Entity.class, float.class).invoke(vehicle, rider, 0f);
                 // Native positionRider adds the entity-specific seat offset and -1/8
                 // after getPassengerPosition computes the transformed seat vector.
                 double seatOffset = ((Number) Class.forName("com.simibubi.create.content.contraptions.actors.seat.SeatEntity")
                     .getMethod("getCustomEntitySeatOffset", Entity.class).invoke(null, rider)).doubleValue();
                 expected = expected.add(0, seatOffset - .125, 0);
-                require(rider.position().distanceTo(expected) < .01, "native passenger tick did not preserve transformed seat position");
+                require(rider.position().distanceTo(expected) < .01, "native passenger tick did not preserve transformed seat position seam=" + seam
+                    + " actual=" + rider.position() + " expected=" + expected + " offset=" + seatOffset
+                    + " previous=" + vehicle.getClass().getMethod("getPassengerPosition", Entity.class, float.class).invoke(vehicle, rider, 0f)
+                    + " controllerAngle=" + field(controller, "angle"));
                 level.setBlock(bearing.below(3).east(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
             } else if (recoveryTicks == 40) {
                 require(speed(level.getBlockEntity(bearing.below(4))) == 0, "powered clutch did not disconnect");

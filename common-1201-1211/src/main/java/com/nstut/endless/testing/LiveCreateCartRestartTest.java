@@ -20,11 +20,17 @@ public final class LiveCreateCartRestartTest {
     private static final int[] SEAMS = {64, -64, 320, -512, 512, -2048, 2048, -1_000_448, 1_000_448};
     private static ListTag saved;
     private static int ticks;
+    private static int readinessTicks;
     private LiveCreateCartRestartTest() {}
     private static BlockPos rail(int seam) { return new BlockPos(16, seam - 1, 32); }
     private static java.nio.file.Path checkpoint(ServerLevel level) { return level.getServer().getWorldPath(LevelResource.ROOT).resolve("endless-create-cart-checkpoint.snbt"); }
     public static void prepare(ServerLevel level) throws Exception {
         ListTag cases = new ListTag();
+        // Vanilla setChunkForced sets the saved-data dirty flag to the change
+        // result. Repeating already-forced chunks for every height clears it;
+        // the newly forced cart chunks then disappear from the disk checkpoint.
+        for (int x = 1; x <= 3; x++)
+            if (!level.getForcedChunks().contains(net.minecraft.world.level.ChunkPos.asLong(x, 2))) level.setChunkForced(x, 2, true);
         var player = level.getServer().getPlayerList().getPlayers().get(0);
         var mode = player.gameMode.getGameModeForPlayer();
         ItemStack held = player.getMainHandItem().copy();
@@ -32,7 +38,6 @@ public final class LiveCreateCartRestartTest {
             player.setGameMode(net.minecraft.world.level.GameType.SURVIVAL);
             for (int seam : SEAMS) {
                 BlockPos root = rail(seam);
-                for (int x = 1; x <= 3; x++) level.setChunkForced(x, 2, true);
                 for (int x = 0; x <= 40; x++) {
                     level.setBlock(root.east(x).below(), Blocks.STONE.defaultBlockState(), 3);
                     level.setBlock(root.east(x), Blocks.POWERED_RAIL.defaultBlockState().setValue(net.minecraft.world.level.block.PoweredRailBlock.SHAPE, net.minecraft.world.level.block.state.properties.RailShape.EAST_WEST).setValue(BlockStateProperties.POWERED, false), 3);
@@ -64,6 +69,20 @@ public final class LiveCreateCartRestartTest {
         if (saved == null) {
             saved = TagParser.parseTag(Files.readString(checkpoint(level))).getList("Cases", 10);
             require(saved.size() == SEAMS.length, "cart checkpoint missing cases");
+        }
+        if (ticks == 0) {
+            for (int x = 1; x <= 3; x++)
+                require(level.getForcedChunks().contains(net.minecraft.world.level.ChunkPos.asLong(x, 2)), "cart fixture chunk was not saved as forced x=" + x);
+            // Disk entities and their native controller registration are
+            // asynchronous. Require natural entity ticks before powering rails.
+            for (int i = 0; i < saved.size(); i++) {
+                var entry = saved.getCompound(i);
+                MinecartChest a = cart(level, entry, "A"), b = cart(level, entry, "B");
+                if (!level.isPositionEntityTicking(a.blockPosition()) || !level.isPositionEntityTicking(b.blockPosition()) || a.tickCount < 2 || b.tickCount < 2) {
+                    require(++readinessTicks < 200, "restored cart chunks never entered native entity ticking");
+                    return false;
+                }
+            }
             for (int i = 0; i < saved.size(); i++) {
                 var entry = saved.getCompound(i); int seam = entry.getInt("Seam"); require(seam == SEAMS[i], "cart checkpoint seam mismatch");
                 MinecartChest a = cart(level, entry, "A"), b = cart(level, entry, "B"); linked(level, a, b); cargo(a, b);
@@ -95,6 +114,8 @@ public final class LiveCreateCartRestartTest {
         var type = Class.forName("com.simibubi.create.content.contraptions.minecart.capability.CapabilityMinecartController");
         var get = type.getMethod("getIfPresent", net.minecraft.world.level.Level.class, java.util.UUID.class);
         Object ca = get.invoke(null, level, a.getUUID()), cb = get.invoke(null, level, b.getUUID());
+        if (ca == null || cb == null)
+            System.out.println("ENDLESS_CREATE_CART_CONTROLLER_STATE a=" + a.position() + " b=" + b.position() + " ticksA=" + a.tickCount + " ticksB=" + b.tickCount + " controllerA=" + ca + " controllerB=" + cb + " entityTickingA=" + level.isPositionEntityTicking(a.blockPosition()) + " entityTickingB=" + level.isPositionEntityTicking(b.blockPosition()) + " forcedChunks=" + level.getForcedChunks());
         require(ca != null && cb != null, "native cart controller missing after world load");
         require(b.getUUID().equals(ca.getClass().getMethod("getCoupledCart", boolean.class).invoke(ca, true)) && a.getUUID().equals(cb.getClass().getMethod("getCoupledCart", boolean.class).invoke(cb, false)), "native reciprocal cart coupling changed across save");
     }

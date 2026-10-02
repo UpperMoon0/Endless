@@ -16,7 +16,8 @@
     "accessor.VisibleSectionsAccessor",
     "compat.CreateArmInteractionPointHandlerMixin",
     "compat.CreateEjectorTargetHandlerMixin",
-    "DestructionProgressMixin"
+    "DestructionProgressMixin",
+    "SoundManagerMixin"
   ],
   "mixins": [
     "FriendlyByteBufMixin",
@@ -58,6 +59,7 @@
     "compat.CreateTrackNodeLocationMixin",
     "compat.CreateChorusTeleportMixin",
     "compat.CreateAssemblyExceptionMixin",
+    "compat.CreateSoundPoolMixin",
     "LivingTeleportMixin",
     "PistonBaseBlockMixin"
   ],

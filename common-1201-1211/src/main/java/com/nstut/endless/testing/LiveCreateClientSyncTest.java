@@ -36,6 +36,7 @@ public final class LiveCreateClientSyncTest {
         try {
             if (visualManager == null) {
                 LiveCreateClientInteractionTest.run(minecraft);
+                LiveCreateSoundTest.run(minecraft);
                 initialize(minecraft);
             }
             float speed = stage < 0 ? 0 : SPEEDS[stage];

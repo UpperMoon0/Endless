@@ -260,6 +260,18 @@ class OutputEvidenceTest(unittest.TestCase):
                                              scenario.required_server_markers,
                                              scenario.required_client_markers)
 
+    def test_create_completion_requires_native_sound_coordinates(self):
+        scenario = live.SCENARIO_BY_ID["create-compat"]
+        marker = "ENDLESS_CREATE_SOUND_POSITIONS_PASS"
+        self.assertIn(marker, scenario.required_client_markers)
+        server = self.pump("\n".join(scenario.required_server_markers) + "\n")
+        client = self.pump("\n".join(value for value in scenario.required_client_markers if value != marker)
+                           + "\n" + live.PASS_MARKER + "\n")
+        with self.assertRaisesRegex(RuntimeError, "before server/client completion"):
+            live.wait_for_session_completion(client, server, 1, "test",
+                                             scenario.required_server_markers,
+                                             scenario.required_client_markers)
+
     def test_failure_wins_over_pass_in_history(self):
         pump = self.pump("PASS\nFAIL\n")
         with self.assertRaisesRegex(RuntimeError, "reported failure"):

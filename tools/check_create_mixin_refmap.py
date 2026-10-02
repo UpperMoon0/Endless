@@ -32,6 +32,10 @@ EXPECTED = {
             "Lnet/minecraft/network/FriendlyByteBuf;m_130130_(I)Lnet/minecraft/network/FriendlyByteBuf;",
         "(III)Lnet/minecraft/core/BlockPos;": "(III)Lnet/minecraft/core/BlockPos;",
     },
+    "CreateSoundPoolMixin": {
+        "Lnet/minecraft/core/BlockPos$MutableBlockPos;set(J)Lnet/minecraft/core/BlockPos$MutableBlockPos;":
+            "Lnet/minecraft/core/BlockPos$MutableBlockPos;m_122188_(J)Lnet/minecraft/core/BlockPos$MutableBlockPos;",
+    },
     "CreateChorusTeleportMixin": {
         "Lnet/minecraft/util/Mth;clamp(DDD)D": "Lnet/minecraft/util/Mth;m_14008_(DDD)D",
     },

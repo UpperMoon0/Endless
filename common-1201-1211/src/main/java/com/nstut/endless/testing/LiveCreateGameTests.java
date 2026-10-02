@@ -178,6 +178,8 @@ public final class LiveCreateGameTests {
         throw new NoSuchMethodException("pinned GameTestInfo constructor");
     }
     private static void dump(ServerLevel level, Running test) {
+        for (Entity e : level.getAllEntities()) if (!(e instanceof Player) && Math.abs(e.getX()-test.origin.getX()) < 20 && Math.abs(e.getZ()-test.origin.getZ()) < 20)
+            System.out.println("ENDLESS_CREATE_GAMETEST_ENTITY type=" + e.getType() + " pos=" + e.position() + " fire=" + e.isOnFire() + " sky=" + level.canSeeSky(e.blockPosition()) + " vehicle=" + e.getVehicle());
         for (Entity e : level.getAllEntities()) if (e instanceof net.minecraft.world.entity.item.ItemEntity item
                 && Math.abs(e.getX() - test.origin.getX()) < 20 && Math.abs(e.getZ() - test.origin.getZ()) < 20)
             System.out.println("ENDLESS_CREATE_GAMETEST_ITEM pos=" + e.position() + " motion=" + e.getDeltaMovement() + " stack=" + item.getItem());

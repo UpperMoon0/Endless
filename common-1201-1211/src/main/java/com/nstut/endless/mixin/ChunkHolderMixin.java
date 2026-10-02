@@ -15,11 +15,14 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.List;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * Keeps sparse block changes out of ChunkHolder's dense per-section update array.
@@ -27,7 +30,7 @@ import java.util.List;
  * <p>Vanilla sizes {@code changedBlocksPerSection} from the bounded dense core.
  * A logical Y such as 1,000,000 therefore produces a section index far beyond
  * that array. Sparse positions are already represented by Endless storage, so
- * they are synchronized directly with normal block/block-entity packets using
+ * they are synchronized at vanilla's broadcast point with normal block/block-entity packets using
  * the negotiated extended BlockPos codec instead of entering vanilla's dense
  * section batching path.</p>
  */
@@ -36,6 +39,7 @@ public abstract class ChunkHolderMixin {
     private static final int ENDLESS_PAGE_RADIUS = 1;
 
     @Shadow @Final private ChunkHolder.PlayerProvider playerProvider;
+    @Unique private final Set<BlockPos> endless$sparseChanges = new LinkedHashSet<>();
 
     @Shadow
     public abstract LevelChunk getTickingChunk();
@@ -54,27 +58,37 @@ public abstract class ChunkHolderMixin {
 
         // Never let a sparse section index reach vanilla's dense ShortSet[].
         ci.cancel();
+        // Match vanilla's deferred serialization. Create's BeltInventory.write
+        // drains pending insertions/removals, so calling getUpdatePacket here
+        // can mutate the inventory while its native tick iterator is active.
+        endless$sparseChanges.add(pos.immutable());
+    }
 
+    @Inject(method = "broadcastChanges", at = @At("TAIL"))
+    private void endless$broadcastSparseChanges(LevelChunk chunk, CallbackInfo ci) {
+        if (endless$sparseChanges.isEmpty()) return;
+        List<BlockPos> changes = List.copyOf(endless$sparseChanges);
+        endless$sparseChanges.clear();
         List<ServerPlayer> players = this.playerProvider.getPlayers(chunk.getPos(), false);
-        if (players.isEmpty()) {
-            return;
-        }
+        if (players.isEmpty()) return;
+        Level level = chunk.getLevel();
+        for (BlockPos pos : changes) {
+            int changedPageY = VerticalPageLayout.pageYForBlockY(pos.getY());
+            BlockState state = level.getBlockState(pos);
+            ClientboundBlockUpdatePacket blockPacket = new ClientboundBlockUpdatePacket(pos, state);
+            BlockEntity blockEntity = state.hasBlockEntity() ? level.getBlockEntity(pos) : null;
+            Packet<ClientGamePacketListener> blockEntityPacket =
+                blockEntity == null ? null : blockEntity.getUpdatePacket();
 
-        int changedPageY = VerticalPageLayout.pageYForBlockY(pos.getY());
-        BlockState state = level.getBlockState(pos);
-        ClientboundBlockUpdatePacket blockPacket = new ClientboundBlockUpdatePacket(pos, state);
-        BlockEntity blockEntity = state.hasBlockEntity() ? level.getBlockEntity(pos) : null;
-        Packet<ClientGamePacketListener> blockEntityPacket =
-            blockEntity == null ? null : blockEntity.getUpdatePacket();
-
-        for (ServerPlayer player : players) {
-            int playerPageY = VerticalPageLayout.pageYForBlockY(player.getBlockY());
-            if (Math.abs(playerPageY - changedPageY) > ENDLESS_PAGE_RADIUS) {
-                continue;
-            }
-            player.connection.send(blockPacket);
-            if (blockEntityPacket != null) {
-                player.connection.send(blockEntityPacket);
+            for (ServerPlayer player : players) {
+                int playerPageY = VerticalPageLayout.pageYForBlockY(player.getBlockY());
+                if (Math.abs(playerPageY - changedPageY) > ENDLESS_PAGE_RADIUS) {
+                    continue;
+                }
+                player.connection.send(blockPacket);
+                if (blockEntityPacket != null) {
+                    player.connection.send(blockEntityPacket);
+                }
             }
         }
     }

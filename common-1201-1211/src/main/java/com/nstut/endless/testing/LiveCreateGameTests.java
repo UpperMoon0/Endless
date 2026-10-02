@@ -226,10 +226,12 @@ public final class LiveCreateGameTests {
             if (!data.contains("EndlessFixtureOnPercent", 99)) continue;
             var relative = block.getList("pos", 3); BlockPos pos = test.origin.offset(relative.getInt(0), relative.getInt(1), relative.getInt(2));
             Object threshold = level.getBlockEntity(pos);
-            int capacity = ((Number) threshold.getClass().getMethod("getMaxLevel").invoke(threshold)).intValue();
-            require(capacity > 0, "legacy threshold fixture has no native observed capacity");
-            threshold.getClass().getField("onWhenAbove").setInt(threshold, Math.round(capacity * data.getFloat("EndlessFixtureOnPercent")));
-            threshold.getClass().getField("offWhenBelow").setInt(threshold, Math.round(capacity * data.getFloat("EndlessFixtureOffPercent")));
+            int max = ((Number) threshold.getClass().getMethod("getMaxLevel").invoke(threshold)).intValue();
+            int min = ((Number) threshold.getClass().getMethod("getMinLevel").invoke(threshold)).intValue();
+            require(max > min, "legacy threshold fixture has no native observed range min=" + min + " max=" + max);
+            float capacity = (float) ((long) max - min);
+            threshold.getClass().getField("onWhenAbove").setInt(threshold, Math.round(min + capacity * data.getFloat("EndlessFixtureOnPercent")));
+            threshold.getClass().getField("offWhenBelow").setInt(threshold, Math.round(min + capacity * data.getFloat("EndlessFixtureOffPercent")));
         }
     }
     private static boolean chunksReady(ServerLevel level, BoundingBox box) {

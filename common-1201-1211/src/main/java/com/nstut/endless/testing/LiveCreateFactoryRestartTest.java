@@ -154,7 +154,21 @@ public final class LiveCreateFactoryRestartTest {
                 level.setBlock(BlockPos.containing(rider.position()).below(), Blocks.STONE.defaultBlockState(), 3);
             } else {
                 require(speed(level.getBlockEntity(bearing.below(4))) == -rpm, "scheduled gearshift did not reverse on world ticks");
-                require(rider.getVehicle() == null && Math.abs(rider.getY() - bearing.getY()) < 16, "native seat dismount shifted passenger height");
+                require(Math.abs(rider.getY() - bearing.getY()) < 16,
+                    "native seat recovery shifted height seam=" + seam + " position=" + rider.position() + " vehicle=" + rider.getVehicle());
+                // Native SeatInteractionBehaviour picks up eligible mobs that collide
+                // with an empty moving seat. A pig can therefore mount again after
+                // the immediately verified dismount. Check that native outcome too.
+                if (rider.getVehicle() != null) {
+                    Entity vehicle = level.getEntity(entry.getUUID("Windmill"));
+                    require(rider.getVehicle() == vehicle, "dismounted passenger entered an unrelated vehicle seam=" + seam);
+                    net.minecraft.world.phys.Vec3 expected = (net.minecraft.world.phys.Vec3) vehicle.getClass()
+                        .getMethod("getPassengerPosition", Entity.class, float.class).invoke(vehicle, rider, 0f);
+                    double offset = ((Number) Class.forName("com.simibubi.create.content.contraptions.actors.seat.SeatEntity")
+                        .getMethod("getCustomEntitySeatOffset", Entity.class).invoke(null, rider)).doubleValue();
+                    require(rider.position().distanceTo(expected.add(0, offset - .125, 0)) < .01,
+                        "native seat pickup lost transformed passenger position seam=" + seam + " actual=" + rider.position());
+                }
                 BlockPos sender = new BlockPos(34, seam - 1, 34), receiver = new BlockPos(38, seam - 1, 34);
                 Object packager = level.getBlockEntity(sender), unpacker = level.getBlockEntity(receiver);
                 require(((ChestBlockEntity) level.getBlockEntity(sender.below())).isEmpty(), "source duplicated after restart");

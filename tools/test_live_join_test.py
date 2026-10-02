@@ -244,6 +244,18 @@ class OutputEvidenceTest(unittest.TestCase):
         self.assertEqual("ready\n", pump.wait_for(("ready",), 1))
         pump.wait_until_seen(("mechanics pass",), 1)
 
+    def test_cold_restart_waits_for_native_world_lock(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            world = Path(tmp)
+            (world / "session.lock").write_bytes(b"lock")
+            self.assertTrue(live.world_session_unlocked(world))
+            with patch.object(live, "world_session_unlocked", side_effect=[False, False, True]), patch.object(live.time, "sleep") as pause:
+                live.wait_for_world_shutdown(world)
+                self.assertEqual(2, pause.call_count)
+            with patch.object(live, "world_session_unlocked", return_value=False):
+                with self.assertRaisesRegex(RuntimeError, "world lock still held"):
+                    live.wait_for_world_shutdown(world, timeout=0)
+
     def test_missing_marker_fails_even_when_process_exited_cleanly(self):
         pump = self.pump("joined\n")
         with self.assertRaisesRegex(RuntimeError, "missing required"):

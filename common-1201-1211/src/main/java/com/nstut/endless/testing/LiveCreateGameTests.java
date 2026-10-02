@@ -185,6 +185,18 @@ public final class LiveCreateGameTests {
         throw new NoSuchMethodException("pinned GameTestInfo constructor");
     }
     private static void dump(ServerLevel level, Running test) {
+        if (test.info.getTestName().equals("TestFluids.hosePulleyTransfer")) {
+            for (int x : new int[]{2, 8}) {
+                int sources = 0, water = 0;
+                for (BlockPos p : BlockPos.betweenClosed(test.origin.offset(x, 2, 2), test.origin.offset(x+2, 4, 4))) {
+                    var state = level.getBlockState(p);
+                    if (state.is(Blocks.WATER)) water++;
+                    if (state.getFluidState().isSource()) sources++;
+                    System.out.println("ENDLESS_CREATE_HOSE_CELL x="+x+" pos="+p+" state="+state);
+                }
+                System.out.println("ENDLESS_CREATE_HOSE_POOL x="+x+" water="+water+" sources="+sources);
+            }
+        }
         for (Entity e : level.getAllEntities()) if (!(e instanceof Player) && Math.abs(e.getX()-test.origin.getX()) < 20 && Math.abs(e.getZ()-test.origin.getZ()) < 20)
             System.out.println("ENDLESS_CREATE_GAMETEST_ENTITY type=" + e.getType() + " pos=" + e.position() + " fire=" + e.isOnFire() + " sky=" + level.canSeeSky(e.blockPosition()) + " vehicle=" + e.getVehicle());
         for (Entity e : level.getAllEntities()) if (e instanceof net.minecraft.world.entity.item.ItemEntity item

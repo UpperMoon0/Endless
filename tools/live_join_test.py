@@ -809,6 +809,45 @@ def launch_graphical_client(
     return process, OutputPump(process, prefix, log_path)
 
 
+def world_session_unlocked(world: Path) -> bool:
+    """Probe the same file/range lock held by Minecraft DirectoryLock (not flock)."""
+    try:
+        handle = (world / "session.lock").open("r+b")
+    except FileNotFoundError:
+        return True  # Matches DirectoryLock.isLocked for a world not created yet.
+    except PermissionError:
+        return False
+    with handle:
+        if os.name == "nt":
+            import msvcrt
+            try:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError:
+                return False
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import errno
+            import fcntl
+            try:
+                fcntl.lockf(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as error:
+                if error.errno in (errno.EACCES, errno.EAGAIN):
+                    return False
+                raise
+            fcntl.lockf(handle.fileno(), fcntl.LOCK_UN)
+    return True
+
+
+def wait_for_world_shutdown(world: Path, timeout: float = 60) -> None:
+    # A Gradle launcher can exit before its game JVM finishes SIGTERM cleanup.
+    # Never snapshot/reopen/replace the save while that JVM owns session.lock.
+    deadline = time.monotonic() + timeout
+    while not world_session_unlocked(world):
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"Minecraft world lock still held after launcher exit: {world}")
+        time.sleep(0.2)
+
+
 def stop_tree(process, graceful_server: bool = False) -> None:
     if process.poll() is not None:
         return
@@ -1013,6 +1052,8 @@ def run_live_session(
         if client is not None:
             stop_tree(client)
         stop_tree(server, graceful_server=True)
+        if scenario.cold_restart:
+            wait_for_world_shutdown(root / module / "run" / "live-join" / "server" / "live-join-world")
 
 
 def required_client_markers_for(target: str, scenario: Scenario) -> tuple[str, ...]:

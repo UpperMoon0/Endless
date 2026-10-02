@@ -77,7 +77,7 @@ public final class LiveCreateCartRestartTest {
         for (int i = 0; i < saved.size(); i++) {
             var entry = saved.getCompound(i); MinecartChest a = cart(level, entry, "A"), b = cart(level, entry, "B");
             linked(level, a, b); cargo(a, b);
-            require(a.getX() - entry.getDouble("StartA") > 2 && b.getX() - entry.getDouble("StartB") > 2, "coupled carts did not move on native powered-rail ticks");
+            require(a.getX() - entry.getDouble("StartA") > 2 && b.getX() - entry.getDouble("StartB") > 2, "coupled carts did not move on native powered-rail ticks seam=" + entry.getInt("Seam") + " startA=" + entry.getDouble("StartA") + " startB=" + entry.getDouble("StartB") + " a=" + a.position() + " b=" + b.position() + " velocityA=" + a.getDeltaMovement() + " velocityB=" + b.getDeltaMovement() + " ticksA=" + a.tickCount + " ticksB=" + b.tickCount + " railA=" + level.getBlockState(a.blockPosition()) + " railB=" + level.getBlockState(b.blockPosition()));
             require(a.position().distanceTo(b.position()) > 2 && a.position().distanceTo(b.position()) < 9, "native coupling failed to retain cart spacing");
             require(Math.abs(a.getY() - (entry.getInt("Seam") - .9375)) < .2 && Math.abs(b.getY()-a.getY()) < .01, "coupled moving carts aliased height");
         }

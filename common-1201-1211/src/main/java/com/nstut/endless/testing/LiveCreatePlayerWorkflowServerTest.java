@@ -132,7 +132,14 @@ public final class LiveCreatePlayerWorkflowServerTest {
             } else if (step == 13 && ticks >= 40) {
                 LiveCreateStockWorkflowTest.completeRepackager(level, base(lane)); step = 14; ticks = 0;
             } else if (step == 14 && LiveCreateStockWorkflowTest.verifyRepackager(level, base(lane))) {
-                System.out.println("ENDLESS_CREATE_PLAYER_CASE_PASS y=" + HEIGHTS[lane] + " toolboxPackets=true exactStock64=true copycat=true scaffolding=true symmetry=true extendoControl=true divingControl=true tankAirConsumed=3 stockTickerPacket=true redstoneRequester=true orderedDiamondsConserved=14 repackagerIncompleteControl=true fragmentsRepackedAndUnpacked=7");
+                LiveCreateStockWorkflowTest.prepareGauge(level, base(lane)); step = 15; ticks = 0;
+            } else if (step == 15 && ticks >= 40) {
+                LiveCreateStockWorkflowTest.supplyGauge(level, base(lane)); step = 16; ticks = 0;
+            } else if (step == 16 && LiveCreateStockWorkflowTest.unpackGauge(level, base(lane))) {
+                step = 17; ticks = 0;
+            } else if (step == 17 && ticks >= 40) {
+                LiveCreateStockWorkflowTest.verifyGauge(level, base(lane));
+                System.out.println("ENDLESS_CREATE_PLAYER_CASE_PASS y=" + HEIGHTS[lane] + " toolboxPackets=true exactStock64=true copycat=true scaffolding=true symmetry=true extendoControl=true divingControl=true tankAirConsumed=3 stockTickerPacket=true redstoneRequester=true orderedDiamondsConserved=14 repackagerIncompleteControl=true fragmentsRepackedAndUnpacked=7 factoryGaugeEmptyNetworkControl=true factoryGaugeRestocked=7 finalDiamonds=28");
                 level.setBlock(flag(lane), Blocks.LIME_WOOL.defaultBlockState(), 3); step = 12; ticks = 0;
             } else if (step == 12 && ticks > 20) {
                 // Allow the client to observe the acknowledgement before moving to the next origin.

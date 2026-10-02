@@ -53,6 +53,9 @@ public final class LiveCreateStockWorkflowTest {
         require(available == expected, "native stock-link summary mismatch expected=" + expected + " actual=" + available);
     }
     public static boolean unpack(ServerLevel level, BlockPos base, int expectedTotal) throws Exception {
+        return unpack(level, base, expectedTotal, 14 - expectedTotal);
+    }
+    private static boolean unpack(ServerLevel level, BlockPos base, int expectedTotal, int expectedSource) throws Exception {
         Object packager = level.getBlockEntity(source(base)), inventory = field(packager, "inventory");
         ItemStack box = (ItemStack) inventory.getClass().getMethod("extractItem", int.class, int.class, boolean.class).invoke(inventory, 0, 1, true);
         if (box.isEmpty()) return false;
@@ -67,9 +70,42 @@ public final class LiveCreateStockWorkflowTest {
         ItemStack leftover = (ItemStack) target.getClass().getMethod("insertItem", int.class, ItemStack.class, boolean.class).invoke(target, 0, box, false);
         require(leftover.isEmpty(), "native stock-order unpacking failed");
         require(count((ChestBlockEntity) level.getBlockEntity(output(base).below())) == expectedTotal
-            && count((ChestBlockEntity) level.getBlockEntity(source(base).below())) == 14 - expectedTotal, "stock request/unpacking failed exact conservation");
+            && count((ChestBlockEntity) level.getBlockEntity(source(base).below())) == expectedSource, "stock request/unpacking failed exact conservation");
         require(((ItemStack) field(packager, "heldBox")).isEmpty(), "stock request left a duplicate held package");
         return true;
+    }
+    private static Object gauge(ServerLevel level, BlockPos base) throws Exception {
+        return ((java.util.Map<?, ?>) field(level.getBlockEntity(output(base).above()), "panels")).values().iterator().next();
+    }
+    public static void prepareGauge(ServerLevel level, BlockPos base) throws Exception {
+        require(count((ChestBlockEntity) level.getBlockEntity(source(base).below())) == 0
+            && count((ChestBlockEntity) level.getBlockEntity(output(base).below())) == 21, "gauge setup changed prior conserved stock");
+        level.setBlock(output(base).above(), block("factory_gauge").setValue(BlockStateProperties.ATTACH_FACE, net.minecraft.world.level.block.state.properties.AttachFace.FLOOR), 3);
+        Object panel = gauge(level, base);
+        panel.getClass().getMethod("enable").invoke(panel);
+        Object linked = field(level.getBlockEntity(source(base).above()), "behaviour");
+        panel.getClass().getMethod("setNetwork", UUID.class).invoke(panel, field(linked, "freqId"));
+        panel.getClass().getMethod("setFilter", ItemStack.class).invoke(panel, new ItemStack(Items.DIAMOND));
+        fieldObject(panel, "count").setInt(panel, 28); fieldObject(panel, "upTo").setBoolean(panel, true);
+        fieldObject(panel, "recipeAddress").set(panel, "Endless-player-" + base.getY());
+    }
+    public static void supplyGauge(ServerLevel level, BlockPos base) throws Exception {
+        Object panel = gauge(level, base);
+        require((boolean) field(level.getBlockEntity(output(base).above()), "restocker"), "native gauge did not discover its attached packager");
+        require(!(boolean) field(panel, "satisfied") && ((Number) panel.getClass().getMethod("getLevelInStorage").invoke(panel)).intValue() == 21,
+            "gauge reported absent stock as satisfied");
+        require(((Number) panel.getClass().getMethod("getPromised").invoke(panel)).intValue() == 0, "empty-network gauge created a phantom restocking promise");
+        ((ChestBlockEntity) level.getBlockEntity(source(base).below())).setItem(0, new ItemStack(Items.DIAMOND, 7));
+    }
+    public static boolean unpackGauge(ServerLevel level, BlockPos base) throws Exception {
+        return unpack(level, base, 28, 0);
+    }
+    public static void verifyGauge(ServerLevel level, BlockPos base) throws Exception {
+        Object panel = gauge(level, base);
+        require((boolean) field(panel, "satisfied") && ((Number) panel.getClass().getMethod("getLevelInStorage").invoke(panel)).intValue() == 28,
+            "native gauge did not observe delivered restocking demand");
+        require(count((ChestBlockEntity) level.getBlockEntity(source(base).below())) == 0 && count((ChestBlockEntity) level.getBlockEntity(output(base).below())) == 28,
+            "native gauge restocking lost or duplicated conserved stock");
     }
     public static void trigger(ServerLevel level, BlockPos base) {
         level.setBlock(requester(base).east(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);

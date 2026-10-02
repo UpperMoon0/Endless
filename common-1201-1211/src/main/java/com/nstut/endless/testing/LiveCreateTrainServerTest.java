@@ -47,6 +47,14 @@ public final class LiveCreateTrainServerTest {
                     level.setBlock(p, p.getY() == origin().getY() - 1 ? Blocks.STONE.defaultBlockState() : Blocks.AIR.defaultBlockState(), 18);
                 for (int z = -72; z <= 40; z++) level.setBlock(origin().south(z), value(block("track"), "shape", "zo"), 3);
                 station(level, origin()); station(level, destination());
+                postbox(level, origin().east(4), origin().east(3), "Endless-source-" + HEIGHTS[lane]);
+                postbox(level, destination().east(4), destination().east(3), "Endless-mail-" + HEIGHTS[lane]);
+                postbox(level, destination().east(4).north(), destination().east(3), "Endless-wrong-" + HEIGHTS[lane]);
+                Class<?> packageType = Class.forName("com.simibubi.create.content.logistics.box.PackageItem");
+                ItemStack mail = (ItemStack) packageType.getMethod("containing", List.class).invoke(null, List.of(new ItemStack(Items.EMERALD, 7)));
+                packageType.getMethod("addAddress", ItemStack.class, String.class).invoke(null, mail, "Endless-mail-" + HEIGHTS[lane]);
+                Object sourceInventory = field(level.getBlockEntity(origin().east(4)), "inventory");
+                sourceInventory.getClass().getMethod("setStackInSlot", int.class, ItemStack.class).invoke(sourceInventory, 0, mail);
                 level.setBlock(origin().east(3).above(2), Blocks.STONE.defaultBlockState(), 3);
                 level.setBlock(origin().east(3).above(3), Blocks.STONE_BUTTON.defaultBlockState().setValue(BlockStateProperties.ATTACH_FACE, net.minecraft.world.level.block.state.properties.AttachFace.FLOOR), 3);
                 level.setBlock(destination().east(2).above(2), Blocks.STONE.defaultBlockState(), 3);
@@ -91,6 +99,7 @@ public final class LiveCreateTrainServerTest {
                 // carriage and graph packets arrive. A slow renderer cannot miss
                 // the entire movement and first observe this train at its end.
                 if (!level.getBlockState(origin().east(3).above(3)).getValue(BlockStateProperties.POWERED)) return;
+                if (postboxMail(level, origin().east(4)) != 0) return;
                 require((boolean) call(train, "hasForwardConductor"), "native blaze conductor not detected");
                 require(call(level.getBlockEntity(signal()), "getState").toString().equals("GREEN"), "unoccupied native track signal is not green actual=" + call(level.getBlockEntity(signal()), "getState"));
                 Object dest = call(level.getBlockEntity(destination().east(3)), "getStation"); require(dest != null, "destination station missing");
@@ -115,6 +124,8 @@ public final class LiveCreateTrainServerTest {
                 if (!level.getBlockState(destination().east(2).above(3)).getValue(BlockStateProperties.POWERED)) return;
                 step = 7; ticks = 0;
             } else if (step == 7 && ticks >= 40) {
+                require(postboxMail(level, origin().east(4)) == 0 && postboxMail(level, destination().east(4)) == 7
+                    && postboxMail(level, destination().east(4).north()) == 0, "native train postbox route lost, duplicated or misrouted its addressed package");
                 player.stopRiding(); require(Math.abs(player.getY() - HEIGHTS[lane]) < 8, "train dismount aliased height");
                 require((boolean) train.getClass().getMethod("disassemble", Direction.class, BlockPos.class).invoke(train, Direction.SOUTH, destination().above()), "native arrived train could not disassemble");
                 BlockPos chest = destination().south(2).above(3);
@@ -125,11 +136,36 @@ public final class LiveCreateTrainServerTest {
                 step = 5; ticks = 0;
             } else if (step == 5 && ticks >= 40) {
                 require(call(level.getBlockEntity(signal()), "getState").toString().equals("GREEN"), "native signal did not clear after train disassembly");
-                System.out.println("ENDLESS_CREATE_TRAIN_CASE_PASS y=" + HEIGHTS[lane] + " nativeAssembly=true conductorSchedule=true passengerRide=true nativeArrival=true signalOccupiedAndClear=true exactDiamonds=7 nativeDisassembly=true");
+                System.out.println("ENDLESS_CREATE_TRAIN_CASE_PASS y=" + HEIGHTS[lane] + " nativeAssembly=true conductorSchedule=true passengerRide=true nativeArrival=true signalOccupiedAndClear=true exactDiamonds=7 nativeDisassembly=true nativePostboxRoute=true mailEmeralds=7 wrongAddressControl=true");
                 if (++lane == HEIGHTS.length) { done = true; System.out.println("ENDLESS_CREATE_TRAIN_SERVER_PASS cases=9"); }
                 else { step = ticks = 0; train = null; carriage = null; }
             }
         } catch (Throwable failure) { done = true; System.out.println("ENDLESS_HIGH_Y_SERVER_FAIL trainWorkflow=" + failure); failure.printStackTrace(); }
+    }
+    private static void postbox(ServerLevel level, BlockPos pos, BlockPos station, String address) throws Exception {
+        level.setBlock(pos, block("red_postbox"), 3);
+        Object box = level.getBlockEntity(pos);
+        fieldObject(box, "addressFilter").set(box, address);
+        Object target = Class.forName("com.simibubi.create.content.logistics.packagePort.PackagePortTarget$TrainStationFrogportTarget")
+            .getConstructor(BlockPos.class).newInstance(station.subtract(pos));
+        fieldObject(box, "target").set(box, target);
+        call(box, "filterChanged");
+    }
+    private static int postboxMail(ServerLevel level, BlockPos pos) throws Exception {
+        Object inventory = field(level.getBlockEntity(pos), "inventory"); int emeralds = 0, boxes = 0;
+        for (int i = 0; i < ((Number) call(inventory, "getSlots")).intValue(); i++) {
+            ItemStack box = (ItemStack) inventory.getClass().getMethod("getStackInSlot", int.class).invoke(inventory, i);
+            if (box.isEmpty()) continue;
+            boxes += box.getCount();
+            Class<?> type = Class.forName("com.simibubi.create.content.logistics.box.PackageItem");
+            require(("Endless-mail-" + HEIGHTS[lane]).equals(type.getMethod("getAddress", ItemStack.class).invoke(null, box)), "train mail package address changed");
+            Object contents = type.getMethod("getContents", ItemStack.class).invoke(null, box);
+            for (int slot = 0; slot < ((Number) call(contents, "getSlots")).intValue(); slot++) {
+                ItemStack item = (ItemStack) contents.getClass().getMethod("getStackInSlot", int.class).invoke(contents, slot);
+                require(item.isEmpty() || item.is(Items.EMERALD), "train mail item identity changed"); emeralds += item.getCount();
+            }
+        }
+        require(boxes <= 1 && (boxes == 0 || emeralds == 7), "native postbox changed exact package contents"); return emeralds;
     }
     private static void station(ServerLevel level, BlockPos track) throws Exception {
         BlockPos pos = track.east(3); level.setBlock(pos, block("track_station"), 3);

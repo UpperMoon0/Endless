@@ -66,6 +66,8 @@ public abstract class ChunkHolderMixin {
         Set<ServerPlayer> recipients = endless$sparseChanges.computeIfAbsent(pos.immutable(), ignored -> new LinkedHashSet<>());
         for (ServerPlayer player : this.playerProvider.getPlayers(chunk.getPos(), false))
             if (Math.abs(VerticalPageLayout.pageYForBlockY(player.getBlockY()) - page) <= ENDLESS_PAGE_RADIUS) recipients.add(player);
+        if (Boolean.getBoolean("endless.liveCreatePlayerWorkflows") && pos.getX() == 32 && pos.getZ() == 34)
+            System.out.println("ENDLESS_SPARSE_CHANGE_TRACE pos="+pos+" state="+level.getBlockState(pos)+" recipients="+recipients.size()+" tick="+level.getGameTime());
     }
 
     @Inject(method = "broadcastChanges", at = @At("TAIL"))
@@ -84,6 +86,8 @@ public abstract class ChunkHolderMixin {
             if (change.getValue().isEmpty()) continue;
             BlockPos pos = change.getKey();
             BlockState state = level.getBlockState(pos);
+            if (Boolean.getBoolean("endless.liveCreatePlayerWorkflows") && pos.getX() == 32 && pos.getZ() == 34)
+                System.out.println("ENDLESS_SPARSE_BROADCAST_TRACE pos="+pos+" state="+state+" recipients="+change.getValue().size()+" tick="+level.getGameTime());
             ClientboundBlockUpdatePacket blockPacket = new ClientboundBlockUpdatePacket(pos, state);
             BlockEntity blockEntity = state.hasBlockEntity() ? level.getBlockEntity(pos) : null;
             Packet<ClientGamePacketListener> blockEntityPacket =

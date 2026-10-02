@@ -28,6 +28,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ClientPacketListener.class)
 public class ClientPacketListenerMixin {
 
+    @Inject(method = "handleBlockUpdate", at = @At("TAIL"))
+    private void endless$traceBlockUpdate(net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket packet, CallbackInfo ci) {
+        if (Boolean.getBoolean("endless.liveCreatePlayerWorkflows") && packet.getPos().getX() == 32 && packet.getPos().getZ() == 34)
+            System.out.println("ENDLESS_SPARSE_CLIENT_UPDATE_TRACE pos="+packet.getPos()+" packet="+packet.getBlockState()+" current="+Minecraft.getInstance().level.getBlockState(packet.getPos()));
+    }
+
     @Inject(method = "handleLogin", at = @At("HEAD"))
     private void endless$assertLoginRange(ClientboundLoginPacket packet, CallbackInfo ci) {
         EndlessHeights.applyVanillaBaselineIfUnapplied();

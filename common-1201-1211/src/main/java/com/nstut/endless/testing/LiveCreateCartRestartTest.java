@@ -21,7 +21,7 @@ public final class LiveCreateCartRestartTest {
     private static ListTag saved;
     private static int ticks;
     private LiveCreateCartRestartTest() {}
-    private static BlockPos rail(int seam) { return new BlockPos(160, seam - 1, 76); }
+    private static BlockPos rail(int seam) { return new BlockPos(16, seam - 1, 32); }
     private static java.nio.file.Path checkpoint(ServerLevel level) { return level.getServer().getWorldPath(LevelResource.ROOT).resolve("endless-create-cart-checkpoint.snbt"); }
     public static void prepare(ServerLevel level) throws Exception {
         ListTag cases = new ListTag();
@@ -32,7 +32,7 @@ public final class LiveCreateCartRestartTest {
             player.setGameMode(net.minecraft.world.level.GameType.SURVIVAL);
             for (int seam : SEAMS) {
                 BlockPos root = rail(seam);
-                for (int x = 10; x <= 12; x++) level.setChunkForced(x, 4, true);
+                for (int x = 1; x <= 3; x++) level.setChunkForced(x, 2, true);
                 for (int x = 0; x <= 40; x++) {
                     level.setBlock(root.east(x).below(), Blocks.STONE.defaultBlockState(), 3);
                     level.setBlock(root.east(x), Blocks.POWERED_RAIL.defaultBlockState().setValue(net.minecraft.world.level.block.PoweredRailBlock.SHAPE, net.minecraft.world.level.block.state.properties.RailShape.EAST_WEST).setValue(BlockStateProperties.POWERED, false), 3);
@@ -40,7 +40,7 @@ public final class LiveCreateCartRestartTest {
                 }
                 MinecartChest a = EntityType.CHEST_MINECART.create(level), b = EntityType.CHEST_MINECART.create(level);
                 require(a != null && b != null, "native cargo cart creation failed");
-                a.setPos(166.5, seam - .9375, 76.5); b.setPos(172.5, seam - .9375, 76.5);
+                a.setPos(22.5, seam - .9375, 32.5); b.setPos(28.5, seam - .9375, 32.5);
                 a.setItem(0, new ItemStack(Items.DIAMOND, 7)); b.setItem(0, new ItemStack(Items.IRON_INGOT, 3));
                 require(level.addFreshEntity(a) && level.addFreshEntity(b), "native cargo cart world insertion failed");
                 Class<?> capabilities = Class.forName("com.simibubi.create.content.contraptions.minecart.capability.CapabilityMinecartController");

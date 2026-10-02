@@ -130,6 +130,10 @@ public final class LiveCreateGameTests {
 
     private static Running place(ServerLevel level, TestFunction function, BlockPos origin) throws Exception {
         GameTestInfo info = createInfo(function, level);
+        // The normal dedicated-server config uses 150 fan processing ticks.
+        // A three-block belt at 4 RPM needs up to 360 additional travel ticks;
+        // upstream's ten-second fixture budget cannot cover that workflow.
+        if (name(function).equals("TestProcessing.sandWashing")) set(info, "timeoutTicks", 1000);
         for (Method m : GameTestInfo.class.getDeclaredMethods()) if (m.getName().equals("startExecution")) {
             m.setAccessible(true);
             if (m.getParameterCount() == 0) m.invoke(info); else m.invoke(info, 0);

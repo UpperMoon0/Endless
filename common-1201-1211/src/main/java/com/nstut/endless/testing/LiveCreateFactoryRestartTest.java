@@ -147,6 +147,11 @@ public final class LiveCreateFactoryRestartTest {
                 level.setBlock(bearing.below(2).west(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
                 require(rider.getVehicle() == level.getEntity(entry.getUUID("Windmill")), "seat passenger fell out while machine restarted/reversed");
                 rider.stopRiding();
+                require(rider.getVehicle() == null && Math.abs(rider.getY() - bearing.getY()) < 4,
+                    "native seat dismount changed height immediately seam=" + seam + " position=" + rider.position());
+                // Supply a landing platform: twenty later gravity ticks test safe
+                // recovery, rather than requiring a dismounted pig to hover.
+                level.setBlock(BlockPos.containing(rider.position()).below(), Blocks.STONE.defaultBlockState(), 3);
             } else {
                 require(speed(level.getBlockEntity(bearing.below(4))) == -rpm, "scheduled gearshift did not reverse on world ticks");
                 require(rider.getVehicle() == null && Math.abs(rider.getY() - bearing.getY()) < 16, "native seat dismount shifted passenger height");

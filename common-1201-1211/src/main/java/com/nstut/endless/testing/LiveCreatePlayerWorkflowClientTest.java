@@ -13,13 +13,14 @@ import net.minecraft.world.phys.Vec3;
 public final class LiveCreatePlayerWorkflowClientTest {
     private static int lane;
     private static Block last;
-    private static int readyTicks;
+    private static int readyTicks, ticks;
     private static boolean done;
     private LiveCreatePlayerWorkflowClientTest() {}
     public static void tick(Minecraft mc) {
         if (done || !Boolean.getBoolean(LiveCreatePlayerWorkflowServerTest.PROPERTY) || mc.player == null || mc.level == null) return;
         try {
             Block flag = mc.level.getBlockState(LiveCreatePlayerWorkflowServerTest.flag(lane)).getBlock();
+            if (++ticks % 100 == 0) System.out.println("ENDLESS_CREATE_PLAYER_CLIENT_WAIT lane="+lane+" flag="+flag+" last="+last+" player="+mc.player.position());
             if (flag == last || flag == Blocks.AIR) return;
             BlockPos base = LiveCreatePlayerWorkflowServerTest.base(lane);
             if (mc.player.position().distanceTo(Vec3.atCenterOf(base)) > 5) return;

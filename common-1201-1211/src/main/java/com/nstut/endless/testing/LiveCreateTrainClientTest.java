@@ -22,7 +22,7 @@ public final class LiveCreateTrainClientTest {
             if (entity == null && passed.size() == LiveCreateTrainServerTest.HEIGHTS.length && acknowledged != null) { done = true; System.out.println("ENDLESS_CREATE_TRAIN_CLIENT_PASS cases=9"); return; }
             if (entity == null || !entity.getClass().getSimpleName().equals("CarriageContraptionEntity")) return;
             if (!entity.getUUID().equals(vehicle)) { vehicle = entity.getUUID(); first = entity.position(); }
-            if (entity.position().distanceTo(first) < 16) return;
+            boolean travelled = entity.position().distanceTo(first) >= 16;
             int height = java.util.Arrays.stream(LiveCreateTrainServerTest.HEIGHTS).filter(y -> Math.abs(y-entity.getY()) < 4).findFirst().orElseThrow();
             Object carriage = entity.getClass().getMethod("getCarriage").invoke(entity);
             Object train = carriage.getClass().getField("train").get(carriage), graph = train.getClass().getField("graph").get(train);
@@ -34,9 +34,9 @@ public final class LiveCreateTrainClientTest {
                 if (Math.abs(location.y - height) > .01) throw new IllegalStateException("native synchronized graph truncated train height expected="+height+" actual="+location.y);
             }
             if (Math.abs(mc.player.getY()-entity.getY()) > 6) throw new IllegalStateException("client train passenger aliased height");
-            if (passed.add(height)) System.out.println("ENDLESS_CREATE_TRAIN_CLIENT_CASE_PASS y="+height+" nativeGraphPacket=true clientRideDistance=16");
-            var button = new net.minecraft.core.BlockPos(82, height + 3, 48);
-            if (ticks - lastButtonAt >= 40 && Math.abs(((Number) train.getClass().getField("speed").get(train)).doubleValue()) < .01
+            if (travelled && passed.add(height)) System.out.println("ENDLESS_CREATE_TRAIN_CLIENT_CASE_PASS y="+height+" nativeGraphPacket=true clientRideDistance=16");
+            var button = new net.minecraft.core.BlockPos(82, height + 3, travelled ? 48 : 104);
+            if (ticks - lastButtonAt >= 10
                     && mc.player.getEyePosition().distanceTo(Vec3.atCenterOf(button)) < 4.5 && mc.level.getBlockState(button).is(net.minecraft.world.level.block.Blocks.STONE_BUTTON)) {
                 mc.gameMode.useItemOn(mc.player, net.minecraft.world.InteractionHand.MAIN_HAND,
                     new net.minecraft.world.phys.BlockHitResult(Vec3.atCenterOf(button), net.minecraft.core.Direction.UP, button, false));

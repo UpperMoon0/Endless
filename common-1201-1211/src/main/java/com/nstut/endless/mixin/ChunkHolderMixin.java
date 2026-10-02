@@ -75,6 +75,11 @@ public abstract class ChunkHolderMixin {
         endless$sparseChanges.clear();
         Level level = chunk.getLevel();
         for (var change : changes.entrySet()) {
+            // Include players who began watching this page between the change and
+            // vanilla's broadcast, while retaining the original audience.
+            int page = VerticalPageLayout.pageYForBlockY(change.getKey().getY());
+            for (ServerPlayer player : this.playerProvider.getPlayers(chunk.getPos(), false))
+                if (Math.abs(VerticalPageLayout.pageYForBlockY(player.getBlockY()) - page) <= ENDLESS_PAGE_RADIUS) change.getValue().add(player);
             if (change.getValue().isEmpty()) continue;
             BlockPos pos = change.getKey();
             BlockState state = level.getBlockState(pos);

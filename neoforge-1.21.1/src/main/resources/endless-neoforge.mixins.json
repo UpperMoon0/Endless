@@ -6,7 +6,8 @@
   "plugin": "com.nstut.endless.neoforge.mixin.CreateDistMixinPlugin",
   "mixins": [
     "compat.CreateBlockHelperMixin",
-    "compat.CreateSymmetryMirrorDistMixin"
+    "compat.CreateSymmetryMirrorDistMixin",
+    "compat.CreateMinecartAttachmentMixin"
   ],
   "client": [
     "NeoForgeBlockStatePredictionHandlerMixin"

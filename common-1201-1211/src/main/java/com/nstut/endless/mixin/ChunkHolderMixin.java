@@ -31,12 +31,12 @@ import java.util.LinkedHashMap;
  * <p>Vanilla sizes {@code changedBlocksPerSection} from the bounded dense core.
  * A logical Y such as 1,000,000 therefore produces a section index far beyond
  * that array. Sparse positions are already represented by Endless storage, so
- * they are synchronized at vanilla's broadcast point with normal block/block-entity packets using
+ * they are synchronized after server ticking with normal block/block-entity packets using
  * the negotiated extended BlockPos codec instead of entering vanilla's dense
  * section batching path.</p>
  */
 @Mixin(ChunkHolder.class)
-public abstract class ChunkHolderMixin {
+public abstract class ChunkHolderMixin implements com.nstut.endless.vertical.SparseChunkUpdateQueue.Pending {
     private static final int ENDLESS_PAGE_RADIUS = 1;
 
     @Shadow @Final private ChunkHolder.PlayerProvider playerProvider;
@@ -59,24 +59,26 @@ public abstract class ChunkHolderMixin {
 
         // Never let a sparse section index reach vanilla's dense ShortSet[].
         ci.cancel();
-        // Match vanilla's deferred serialization. Create's BeltInventory.write
+        // Defer serialization until all server world ticks finish. Create's BeltInventory.write
         // drains pending insertions/removals, so calling getUpdatePacket here
         // can mutate the inventory while its native tick iterator is active.
         int page = VerticalPageLayout.pageYForBlockY(pos.getY());
         Set<ServerPlayer> recipients = endless$sparseChanges.computeIfAbsent(pos.immutable(), ignored -> new LinkedHashSet<>());
         for (ServerPlayer player : this.playerProvider.getPlayers(chunk.getPos(), false))
             if (Math.abs(VerticalPageLayout.pageYForBlockY(player.getBlockY()) - page) <= ENDLESS_PAGE_RADIUS) recipients.add(player);
+        com.nstut.endless.vertical.SparseChunkUpdateQueue.enqueue(this);
         if (Boolean.getBoolean("endless.liveCreatePlayerWorkflows") && pos.getX() == 32 && pos.getZ() == 34)
             System.out.println("ENDLESS_SPARSE_CHANGE_TRACE pos="+pos+" state="+level.getBlockState(pos)+" recipients="+recipients.size()+" tick="+level.getGameTime());
     }
 
-    @Inject(method = "broadcastChanges", at = @At("TAIL"))
-    private void endless$broadcastSparseChanges(LevelChunk chunk, CallbackInfo ci) {
+    @Unique @Override
+    public void endless$flushSparseUpdates() {
+        LevelChunk chunk = this.getTickingChunk();
+        if (chunk == null) { endless$sparseChanges.clear(); return; }
         if (endless$sparseChanges.isEmpty()) return;
         Map<BlockPos, Set<ServerPlayer>> changes = new LinkedHashMap<>(endless$sparseChanges);
         endless$sparseChanges.clear();
         Level level = chunk.getLevel();
-        Map<Integer, Set<ServerPlayer>> changedPages = new LinkedHashMap<>();
         for (var change : changes.entrySet()) {
             // Include players who began watching this page between the change and
             // vanilla's broadcast, while retaining the original audience.
@@ -97,19 +99,11 @@ public abstract class ChunkHolderMixin {
             // broadcast. Still reject delivery into another world.
             for (ServerPlayer player : change.getValue()) {
                 if (player.level() != level) continue;
-                changedPages.computeIfAbsent(page, ignored -> new LinkedHashSet<>()).add(player);
                 player.connection.send(blockPacket);
                 if (blockEntityPacket != null) {
                     player.connection.send(blockEntityPacket);
                 }
             }
         }
-        // NeoForge can apply a queued full-page payload after native block
-        // updates. Send one current revision per changed page/audience after
-        // the native packets: older in-flight snapshots then cannot restore
-        // stale state, and native BE callbacks still receive their packets.
-        for (var changedPage : changedPages.entrySet())
-            for (ServerPlayer player : changedPage.getValue())
-                com.nstut.endless.vertical.VerticalNetworkBridge.sendPage(player, chunk, changedPage.getKey());
     }
 }

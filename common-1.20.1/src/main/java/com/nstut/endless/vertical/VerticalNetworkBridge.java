@@ -85,11 +85,13 @@ public final class VerticalNetworkBridge {
                 }
             }
         }
+        SparseChunkUpdateQueue.flush();
     }
 
     public static synchronized void shutdown() {
         EndlessVerticalEngine.closeAll();
         PLAYER_WINDOWS.clear();
+        SparseChunkUpdateQueue.clear();
         // The sender is loader-global process state, not server-instance state.
         // Clearing it here breaks the second integrated-server session in the
         // same Minecraft JVM: the mod bootstrap does not run again, so saved
@@ -125,7 +127,7 @@ public final class VerticalNetworkBridge {
         denseInvariantChecked = true;
     }
 
-    public static void sendPage(ServerPlayer player, LevelChunk chunk, int pageY) {
+    private static void sendPage(ServerPlayer player, LevelChunk chunk, int pageY) {
         VerticalPagePos pos = new VerticalPagePos(chunk.getPos().x, pageY, chunk.getPos().z);
         MinecraftVerticalWorld world = EndlessVerticalEngine.world(player.level());
         if (!world.pageExists(pos)) {

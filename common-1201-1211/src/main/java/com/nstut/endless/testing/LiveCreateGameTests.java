@@ -97,14 +97,17 @@ public final class LiveCreateGameTests {
                 if (!test.info.hasStarted()) {
                     set(test.info, "startTick", level.getGameTime());
                     restoreLegacyThresholdSettings(level, test);
-                    if (test.info.getTestName().equals("TestProcessing.precisionMechanismCrafting")) {
-                        // Its native assertion requires both a successful item and a
-                        // random byproduct. A reproducible seed avoids an all-success
+                    if (test.info.getTestName().equals("TestProcessing.precisionMechanismCrafting") || test.info.getTestName().equals("TestItems.fanProcessing")) {
+                        // These native assertions require random recipe products.
+                        // Precision mechanisms need both a successful item and a byproduct. A reproducible seed avoids an all-success
                         // random draw; the native recipe and result pool remain intact.
-                        ((java.util.Random) Class.forName("com.simibubi.create.Create").getField("RANDOM").get(null)).setSeed(0L);
+                        LiveCreateNbt.seedRecipe(level);
                     }
                 }
+                boolean starting = !test.info.hasStarted();
                 Method tick = GameTestInfo.class.getDeclaredMethod("tickInternal"); tick.setAccessible(true); tick.invoke(test.info);
+                if (starting && test.info.getTestName().equals("TestFluids.openPipes"))
+                    for (var mob : level.getEntitiesOfClass(net.minecraft.world.entity.Mob.class, AABB.of(test.bounds))) mob.setNoAi(true);
                 if (!test.info.isDone()) continue;
                 if (!test.info.hasSucceeded()) {
                     dump(level, test);
@@ -205,7 +208,7 @@ public final class LiveCreateGameTests {
             catch (Exception failure) { throw new IllegalStateException(failure); }
         } catch (Exception failure) { throw new IllegalStateException(failure); }
     }
-    private static boolean seededRecipe(TestFunction function) { return name(function).equals("TestProcessing.precisionMechanismCrafting"); }
+    private static boolean seededRecipe(TestFunction function) { return name(function).equals("TestProcessing.precisionMechanismCrafting") || name(function).equals("TestItems.fanProcessing"); }
     static int normalizeLegacyThresholds(net.minecraft.nbt.CompoundTag template) {
         int changed = 0;
         for (net.minecraft.nbt.Tag entry : template.getList("blocks", 10)) {

@@ -42,6 +42,7 @@ final class LiveCreateNbt {
         var type = (net.minecraft.core.component.DataComponentType<Integer>) Class.forName("com.simibubi.create.AllDataComponents").getField("BACKTANK_AIR").get(null);
         stack.set(type, air);
     }
+    static void seedRecipe(ServerLevel level) { level.random.setSeed(0L); }
     static CompoundTag save(ServerLevel level, BlockEntity entity) { return entity.saveWithFullMetadata(level.registryAccess()); }
     static BlockEntity load(ServerLevel level, BlockPos pos, BlockState state, CompoundTag tag) {
         return BlockEntity.loadStatic(pos, state, tag, level.registryAccess());

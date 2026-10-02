@@ -67,6 +67,7 @@ public final class VerticalNetworkBridge {
         LiveColdRestartServerTest.tick(server);
         com.nstut.endless.testing.LiveCreateGameTests.tick(server);
         com.nstut.endless.testing.LiveCreatePlayerWorkflowServerTest.tick(server);
+        com.nstut.endless.testing.LiveCreateTrainServerTest.tick(server);
         com.nstut.endless.testing.LiveCreateSurvivalServerTest.tick(server);
 
         if (++ticks >= FLUSH_INTERVAL_TICKS) {

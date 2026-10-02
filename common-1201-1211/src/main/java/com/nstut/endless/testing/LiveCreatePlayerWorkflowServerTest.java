@@ -7,6 +7,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
@@ -26,6 +27,8 @@ public final class LiveCreatePlayerWorkflowServerTest {
         var level = server.overworld(); var player = server.getPlayerList().getPlayers().get(0);
         try {
             if (!prepared) {
+                level.getGameRules().getRule(net.minecraft.world.level.GameRules.RULE_DOMOBSPAWNING).set(false, server);
+                for (Entity mob : level.getAllEntities()) if (mob instanceof net.minecraft.world.entity.Mob) mob.discard();
                 level.setChunkForced(2, 2, true);
                 if (!level.getChunkSource().isPositionTicking(net.minecraft.world.level.ChunkPos.asLong(2, 2))) return;
                 BlockPos b = base(lane);
@@ -125,7 +128,11 @@ public final class LiveCreatePlayerWorkflowServerTest {
                 LiveCreateStockWorkflowTest.trigger(level, base(lane)); step = 11; ticks = 0;
             } else if (step == 11 && LiveCreateStockWorkflowTest.unpack(level, base(lane), 14)) {
                 LiveCreateStockWorkflowTest.assertRequester(level, base(lane));
-                System.out.println("ENDLESS_CREATE_PLAYER_CASE_PASS y=" + HEIGHTS[lane] + " toolboxPackets=true exactStock64=true copycat=true scaffolding=true symmetry=true extendoControl=true divingControl=true tankAirConsumed=3 stockTickerPacket=true redstoneRequester=true orderedDiamondsConserved=14");
+                LiveCreateStockWorkflowTest.prepareRepackager(level, base(lane)); step = 13; ticks = 0;
+            } else if (step == 13 && ticks >= 40) {
+                LiveCreateStockWorkflowTest.completeRepackager(level, base(lane)); step = 14; ticks = 0;
+            } else if (step == 14 && LiveCreateStockWorkflowTest.verifyRepackager(level, base(lane))) {
+                System.out.println("ENDLESS_CREATE_PLAYER_CASE_PASS y=" + HEIGHTS[lane] + " toolboxPackets=true exactStock64=true copycat=true scaffolding=true symmetry=true extendoControl=true divingControl=true tankAirConsumed=3 stockTickerPacket=true redstoneRequester=true orderedDiamondsConserved=14 repackagerIncompleteControl=true fragmentsRepackedAndUnpacked=7");
                 level.setBlock(flag(lane), Blocks.LIME_WOOL.defaultBlockState(), 3); step = 12; ticks = 0;
             } else if (step == 12 && ticks > 20) {
                 // Allow the client to observe the acknowledgement before moving to the next origin.

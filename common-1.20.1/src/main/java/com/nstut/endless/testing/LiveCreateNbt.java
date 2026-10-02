@@ -17,6 +17,7 @@ final class LiveCreateNbt {
     static BlockPos readPos(CompoundTag tag, String key) { return net.minecraft.nbt.NbtUtils.readBlockPos(tag.getCompound(key)); }
     static boolean symmetryEnabled(net.minecraft.world.item.ItemStack stack) { return stack.hasTag() && stack.getTag().getBoolean("enable"); }
     static void setBacktankAir(net.minecraft.world.item.ItemStack stack, int air) { stack.getOrCreateTag().putInt("Air", air); }
+    static void seedRecipe(ServerLevel level) throws Exception { ((java.util.Random) Class.forName("com.simibubi.create.Create").getField("RANDOM").get(null)).setSeed(0L); }
     static CompoundTag save(ServerLevel level, BlockEntity entity) { return entity.saveWithFullMetadata(); }
     static BlockEntity load(ServerLevel level, BlockPos pos, BlockState state, CompoundTag tag) {
         return BlockEntity.loadStatic(pos, state, tag);

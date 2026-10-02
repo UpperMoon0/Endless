@@ -20,9 +20,10 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.List;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.Map;
+import java.util.LinkedHashMap;
 
 /**
  * Keeps sparse block changes out of ChunkHolder's dense per-section update array.
@@ -39,7 +40,7 @@ public abstract class ChunkHolderMixin {
     private static final int ENDLESS_PAGE_RADIUS = 1;
 
     @Shadow @Final private ChunkHolder.PlayerProvider playerProvider;
-    @Unique private final Set<BlockPos> endless$sparseChanges = new LinkedHashSet<>();
+    @Unique private final Map<BlockPos, Set<ServerPlayer>> endless$sparseChanges = new LinkedHashMap<>();
 
     @Shadow
     public abstract LevelChunk getTickingChunk();
@@ -61,30 +62,31 @@ public abstract class ChunkHolderMixin {
         // Match vanilla's deferred serialization. Create's BeltInventory.write
         // drains pending insertions/removals, so calling getUpdatePacket here
         // can mutate the inventory while its native tick iterator is active.
-        endless$sparseChanges.add(pos.immutable());
+        int page = VerticalPageLayout.pageYForBlockY(pos.getY());
+        Set<ServerPlayer> recipients = endless$sparseChanges.computeIfAbsent(pos.immutable(), ignored -> new LinkedHashSet<>());
+        for (ServerPlayer player : this.playerProvider.getPlayers(chunk.getPos(), false))
+            if (Math.abs(VerticalPageLayout.pageYForBlockY(player.getBlockY()) - page) <= ENDLESS_PAGE_RADIUS) recipients.add(player);
     }
 
     @Inject(method = "broadcastChanges", at = @At("TAIL"))
     private void endless$broadcastSparseChanges(LevelChunk chunk, CallbackInfo ci) {
         if (endless$sparseChanges.isEmpty()) return;
-        List<BlockPos> changes = List.copyOf(endless$sparseChanges);
+        Map<BlockPos, Set<ServerPlayer>> changes = new LinkedHashMap<>(endless$sparseChanges);
         endless$sparseChanges.clear();
-        List<ServerPlayer> players = this.playerProvider.getPlayers(chunk.getPos(), false);
-        if (players.isEmpty()) return;
         Level level = chunk.getLevel();
-        for (BlockPos pos : changes) {
-            int changedPageY = VerticalPageLayout.pageYForBlockY(pos.getY());
+        for (var change : changes.entrySet()) {
+            if (change.getValue().isEmpty()) continue;
+            BlockPos pos = change.getKey();
             BlockState state = level.getBlockState(pos);
             ClientboundBlockUpdatePacket blockPacket = new ClientboundBlockUpdatePacket(pos, state);
             BlockEntity blockEntity = state.hasBlockEntity() ? level.getBlockEntity(pos) : null;
             Packet<ClientGamePacketListener> blockEntityPacket =
                 blockEntity == null ? null : blockEntity.getUpdatePacket();
 
-            for (ServerPlayer player : players) {
-                int playerPageY = VerticalPageLayout.pageYForBlockY(player.getBlockY());
-                if (Math.abs(playerPageY - changedPageY) > ENDLESS_PAGE_RADIUS) {
-                    continue;
-                }
+            // Preserve the event's audience when a player changes pages before
+            // broadcast. Still reject delivery into another world.
+            for (ServerPlayer player : change.getValue()) {
+                if (player.level() != level) continue;
                 player.connection.send(blockPacket);
                 if (blockEntityPacket != null) {
                     player.connection.send(blockEntityPacket);

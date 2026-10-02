@@ -78,6 +78,50 @@ public final class LiveCreateStockWorkflowTest {
         require((boolean) field(level.getBlockEntity(requester(base)), "lastRequestSucceeded"), "native redstone requester did not execute its linked order");
         assertStock(level, base, 0);
     }
+    private static BlockPos repackager(BlockPos base) { return base.offset(8, 0, 2); }
+    public static void prepareRepackager(ServerLevel level, BlockPos base) throws Exception {
+        BlockPos pos = repackager(base);
+        level.setBlock(pos.below(), Blocks.CHEST.defaultBlockState(), 18);
+        level.setBlock(pos, block("repackager").setValue(BlockStateProperties.FACING, Direction.UP), 3);
+        ((ChestBlockEntity) level.getBlockEntity(pos.below())).setItem(0, fragment(base, 0, 3, false));
+        level.setBlock(pos.east(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
+    }
+    private static ItemStack fragment(BlockPos base, int index, int diamonds, boolean last) throws Exception {
+        Class<?> type = Class.forName("com.simibubi.create.content.logistics.box.PackageItem");
+        ItemStack box = (ItemStack) type.getMethod("containing", List.class).invoke(null, List.of(new ItemStack(Items.DIAMOND, diamonds)));
+        type.getMethod("addAddress", ItemStack.class, String.class).invoke(null, box, "Endless-repack-" + base.getY());
+        type.getMethod("setOrder", ItemStack.class, int.class, int.class, boolean.class, int.class, boolean.class,
+            Class.forName("com.simibubi.create.content.logistics.stockTicker.PackageOrderWithCrafts"))
+            .invoke(null, box, base.getY() + 1_048_576, 0, true, index, last, null);
+        return box;
+    }
+    public static void completeRepackager(ServerLevel level, BlockPos base) throws Exception {
+        Object packager = level.getBlockEntity(repackager(base)), inventory = field(packager, "inventory");
+        require(((ItemStack) inventory.getClass().getMethod("extractItem", int.class, int.class, boolean.class).invoke(inventory, 0, 1, true)).isEmpty()
+            && ((ItemStack) field(packager, "heldBox")).isEmpty() && ((List<?>) field(packager, "queuedExitingPackages")).isEmpty(),
+            "repackager emitted an incomplete fragmented order");
+        ChestBlockEntity input = (ChestBlockEntity) level.getBlockEntity(repackager(base).below());
+        require(!input.getItem(0).isEmpty() && input.getItem(1).isEmpty(), "incomplete native fragment was consumed or duplicated");
+        input.setItem(1, fragment(base, 1, 4, true));
+    }
+    public static boolean verifyRepackager(ServerLevel level, BlockPos base) throws Exception {
+        Object packager = level.getBlockEntity(repackager(base)), inventory = field(packager, "inventory");
+        ItemStack box = (ItemStack) inventory.getClass().getMethod("extractItem", int.class, int.class, boolean.class).invoke(inventory, 0, 1, true);
+        if (box.isEmpty()) return false;
+        Class<?> type = Class.forName("com.simibubi.create.content.logistics.box.PackageItem");
+        require(box.getCount() == 1 && ("Endless-repack-"+base.getY()).equals(type.getMethod("getAddress", ItemStack.class).invoke(null, box))
+            && ((Number) type.getMethod("getOrderId", ItemStack.class).invoke(null, box)).intValue() == base.getY()+1_048_576,
+            "native repackager changed order identity or address");
+        Object contents = type.getMethod("getContents", ItemStack.class).invoke(null, box); int diamonds = 0;
+        for (int i = 0; i < 9; i++) { ItemStack item = (ItemStack) contents.getClass().getMethod("getStackInSlot", int.class).invoke(contents, i); require(item.isEmpty() || item.is(Items.DIAMOND), "repackaged item identity changed"); diamonds += item.getCount(); }
+        require(diamonds == 7 && ((ChestBlockEntity) level.getBlockEntity(repackager(base).below())).isEmpty(), "native repackager lost or duplicated fragments");
+        box = (ItemStack) inventory.getClass().getMethod("extractItem", int.class, int.class, boolean.class).invoke(inventory, 0, 1, false);
+        Object target = field(level.getBlockEntity(output(base)), "inventory");
+        require(((ItemStack) target.getClass().getMethod("insertItem", int.class, ItemStack.class, boolean.class).invoke(target, 0, box, false)).isEmpty(), "native repackaged box failed to unpack");
+        require(count((ChestBlockEntity) level.getBlockEntity(output(base).below())) == 21
+            && ((ItemStack) field(packager, "heldBox")).isEmpty() && ((List<?>) field(packager, "queuedExitingPackages")).isEmpty(), "native repackaged inventory conservation failed");
+        return true;
+    }
     private static int count(ChestBlockEntity chest) {
         int total = 0; for (int i = 0; i < chest.getContainerSize(); i++) { ItemStack item = chest.getItem(i); require(item.isEmpty() || item.is(Items.DIAMOND), "unexpected stock inventory item"); total += item.getCount(); } return total;
     }

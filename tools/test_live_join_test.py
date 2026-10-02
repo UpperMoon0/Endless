@@ -23,7 +23,7 @@ class VerificationPolicyTest(unittest.TestCase):
 
     def test_unique_matrix(self):
         self.assertEqual(len(live.SCENARIOS), len({s.id for s in live.SCENARIOS}))
-        self.assertEqual(42, len(live.LIVE_CASES))
+        self.assertEqual(44, len(live.LIVE_CASES))
         self.assertEqual(len(live.LIVE_CASES), len(set(live.LIVE_CASES)))
 
     def test_native_create_gameplay_groups_require_outputs_on_pinned_loaders(self):
@@ -51,6 +51,15 @@ class VerificationPolicyTest(unittest.TestCase):
         self.assertEqual("true", live.scenario_env(scenario)["ENDLESS_TEST_CREATE_PLAYER"])
         self.assertEqual(set(live.CREATE_TARGETS), {target for target, name in live.LIVE_CASES if name == scenario.id})
         self.assertEqual("false", live.scenario_env(live.SCENARIO_BY_ID["create-compat"])["ENDLESS_TEST_CREATE_PLAYER"])
+
+    def test_train_workflows_require_client_rides_and_native_server_arrivals(self):
+        scenario = live.SCENARIO_BY_ID["create-train-workflows"]
+        self.assertTrue(scenario.create)
+        self.assertIn("ENDLESS_CREATE_TRAIN_SERVER_PASS", scenario.required_server_markers)
+        self.assertIn("ENDLESS_CREATE_TRAIN_CLIENT_PASS", scenario.required_client_markers)
+        self.assertEqual("true", live.scenario_env(scenario)["ENDLESS_TEST_CREATE_TRAINS"])
+        self.assertEqual(set(live.CREATE_TARGETS), {target for target, name in live.LIVE_CASES if name == scenario.id})
+        self.assertEqual("false", live.scenario_env(live.SCENARIO_BY_ID["create-compat"])["ENDLESS_TEST_CREATE_TRAINS"])
 
     def test_million_gameplay_cannot_degrade_to_join_only(self):
         scenario = next(s for s in live.SCENARIOS if s.id == "million-gameplay")

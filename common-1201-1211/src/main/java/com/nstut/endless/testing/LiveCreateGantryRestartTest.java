@@ -34,7 +34,7 @@ public final class LiveCreateGantryRestartTest {
         ListTag cases = new ListTag();
         for (int seam : SEAMS) {
             BlockPos root = root(seam), carriage = root.east(), payload = root.east(2);
-            for (BlockPos p : BlockPos.betweenClosed(root.offset(-1, -1, -1), root.offset(3, 63, 2)))
+            for (BlockPos p : BlockPos.betweenClosed(root.offset(-1, -1, -1), root.offset(4, 63, 2)))
                 level.setBlock(p, Blocks.AIR.defaultBlockState(), 18);
             for (int i = 0; i < 64; i++)
                 level.setBlock(root.above(i), block("gantry_shaft").setValue(BlockStateProperties.FACING, Direction.UP), 3);
@@ -47,10 +47,17 @@ public final class LiveCreateGantryRestartTest {
             level.setBlock(carriage, pinion, 3);
             level.setBlock(payload, Blocks.SLIME_BLOCK.defaultBlockState(), 18);
             level.setBlock(payload.above(), block("mechanical_drill").setValue(BlockStateProperties.FACING, Direction.UP), 18);
+            // Native saw actors cut only with a horizontal facing. The translating
+            // gantry carries this east-facing blade up into a three-log trunk.
+            level.setBlock(payload.east(), Blocks.SLIME_BLOCK.defaultBlockState(), 18);
+            level.setBlock(payload.east().above(), block("mechanical_saw").setValue(BlockStateProperties.FACING, Direction.EAST), 18);
             level.setBlock(payload.south(), Blocks.CHEST.defaultBlockState(), 18);
             ((ChestBlockEntity) level.getBlockEntity(payload.south())).setItem(0, new ItemStack(Items.DIAMOND, 7));
             // Leave the first move unobstructed; native actors then mine these blocks across the seam.
-            for (int i = 4; i <= 6; i++) level.setBlock(payload.above(i), Blocks.STONE.defaultBlockState(), 18);
+            for (int i = 4; i <= 6; i++) {
+                level.setBlock(payload.above(i), Blocks.STONE.defaultBlockState(), 18);
+                level.setBlock(payload.east(2).above(i), Blocks.OAK_LOG.defaultBlockState(), 18);
+            }
             level.setBlock(root.below(), block("creative_motor").setValue(BlockStateProperties.FACING, Direction.UP), 3);
             Object motor = level.getBlockEntity(root.below());
             Object speed = field(motor, "generatedSpeed"); speed.getClass().getMethod("setValue", int.class).invoke(speed, -128);
@@ -71,13 +78,13 @@ public final class LiveCreateGantryRestartTest {
             // server/client startup without removing its powered shaft or controller.
             entity.getClass().getMethod("limitMovement", double.class).invoke(entity, 0d);
             Object contraption = call(entity, "getContraption");
-            require(((List<?>) call(contraption, "getActors")).size() == 1, "native gantry did not capture the drill actor");
+            require(((List<?>) call(contraption, "getActors")).size() == 2, "native gantry did not capture both drill and saw actors");
             require(count(contraption, Items.DIAMOND) == 7, "mounted chest was not captured exactly");
             CompoundTag entry = new CompoundTag(); entry.putInt("Seam", seam); entry.putUUID("Entity", entity.getUUID());
             entry.put("Contraption", LiveCreateNbt.writeContraption(level, contraption)); cases.add(entry);
         }
         CompoundTag root = new CompoundTag(); root.put("Cases", cases); Files.writeString(checkpoint(level), root.toString());
-        System.out.println("ENDLESS_CREATE_GANTRY_RESTART_PREPARED cases=9 nativeDrill=true mountedInventory=true");
+        System.out.println("ENDLESS_CREATE_GANTRY_RESTART_PREPARED cases=9 nativeDrill=true nativeSaw=true mountedInventory=true");
     }
     public static boolean verify(ServerLevel level) throws Exception {
         if (restored == null) {
@@ -99,7 +106,8 @@ public final class LiveCreateGantryRestartTest {
             Entity entity = level.getEntity(entry.getUUID("Entity")); require(entity != null && entity.isAlive(), "gantry lost its restored moving entity");
             Object contraption = call(entity, "getContraption");
             require(count(contraption, Items.DIAMOND) == 7, "moving drill lost or duplicated mounted inventory");
-            for (int y = 4; y <= 6; y++) if (!level.getBlockState(root.east(2).above(y)).isAir()) return false;
+            for (int y = 4; y <= 6; y++) if (!level.getBlockState(root.east(2).above(y)).isAir() || !level.getBlockState(root.east(4).above(y)).isAir()) return false;
+            require(count(contraption, Items.OAK_LOG) == 3, "native moving saw did not collect exactly three cut logs");
             require(count(contraption, Items.COBBLESTONE) == 3, "native moving drill did not collect exactly three mined drops");
             require(entity.getY() > root.getY() + 4 && entity.getY() < root.getY() + 60, "gantry translated to an incorrect full-height position");
         }
@@ -110,11 +118,11 @@ public final class LiveCreateGantryRestartTest {
             BlockPos carriage = BlockPos.containing(anchor.add(.5, .5, .5)); call(entity, "disassemble");
             require(level.getBlockState(carriage).getBlock() == block("gantry_carriage").getBlock(), "gantry carriage did not restore at its translated anchor");
             ChestBlockEntity chest = (ChestBlockEntity) level.getBlockEntity(carriage.east().south());
-            int diamonds = 0, cobble = 0;
-            for (int slot = 0; slot < chest.getContainerSize(); slot++) { ItemStack item = chest.getItem(slot); require(item.isEmpty() || item.is(Items.DIAMOND) || item.is(Items.COBBLESTONE), "unexpected restored mining inventory"); if (item.is(Items.DIAMOND)) diamonds += item.getCount(); if (item.is(Items.COBBLESTONE)) cobble += item.getCount(); }
-            require(diamonds == 7 && cobble == 3, "native disassembly changed mining inventory");
+            int diamonds = 0, cobble = 0, logs = 0;
+            for (int slot = 0; slot < chest.getContainerSize(); slot++) { ItemStack item = chest.getItem(slot); require(item.isEmpty() || item.is(Items.DIAMOND) || item.is(Items.COBBLESTONE) || item.is(Items.OAK_LOG), "unexpected restored mining inventory"); if (item.is(Items.DIAMOND)) diamonds += item.getCount(); if (item.is(Items.COBBLESTONE)) cobble += item.getCount(); if (item.is(Items.OAK_LOG)) logs += item.getCount(); }
+            require(diamonds == 7 && cobble == 3 && logs == 3, "native disassembly changed mining inventory");
         }
-        System.out.println("ENDLESS_CREATE_GANTRY_RESTART_PASS cases=9 freshJvm=true naturalWorldTicks=true nativeDrill=true stoneMined=3 exactMountedInventory=true nativeDisassembly=true");
+        System.out.println("ENDLESS_CREATE_GANTRY_RESTART_PASS cases=9 freshJvm=true naturalWorldTicks=true nativeDrill=true nativeSaw=true stoneMined=3 logsCut=3 exactMountedInventory=true nativeDisassembly=true");
         return true;
     }
     private static int count(Object contraption, net.minecraft.world.item.Item expected) throws Exception {

@@ -1060,7 +1060,7 @@ def cold_restart_server_markers(scenario: Scenario, phase: str) -> tuple[str, ..
         raise ValueError("cold-restart evidence requires phase A or B of a cold-restart scenario")
     markers = (f"ENDLESS_COLD_RESTART_PHASE_{phase}_PASS",) + scenario.required_server_markers
     if phase == "A" and scenario.create:
-        markers += ("ENDLESS_CREATE_MOVING_RESTART_PREPARED", "ENDLESS_CREATE_FACTORY_RESTART_PREPARED", "ENDLESS_CREATE_LOGISTICS_RESTART_PREPARED", "ENDLESS_CREATE_GANTRY_RESTART_PREPARED", "ENDLESS_CREATE_CLOCKWORK_RESTART_PREPARED",)
+        markers += ("ENDLESS_CREATE_MOVING_RESTART_PREPARED", "ENDLESS_CREATE_FACTORY_RESTART_PREPARED", "ENDLESS_CREATE_LOGISTICS_RESTART_PREPARED", "ENDLESS_CREATE_GANTRY_RESTART_PREPARED", "ENDLESS_CREATE_CLOCKWORK_RESTART_PREPARED", "ENDLESS_CREATE_CART_RESTART_PREPARED",)
     if phase == "B" and scenario.create:
         markers += (
             "ENDLESS_CREATE_MIGRATION_PASS",
@@ -1080,6 +1080,7 @@ def cold_restart_server_markers(scenario: Scenario, phase: str) -> tuple[str, ..
             "ENDLESS_CREATE_LOGISTICS_RESTART_PASS",
             "ENDLESS_CREATE_GANTRY_RESTART_PASS",
             "ENDLESS_CREATE_CLOCKWORK_RESTART_PASS",
+            "ENDLESS_CREATE_CART_RESTART_PASS",
         )
     return markers
 

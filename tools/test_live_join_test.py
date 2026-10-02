@@ -401,7 +401,7 @@ class OutputEvidenceTest(unittest.TestCase):
         markers = live.cold_restart_server_markers(cold, "B")
         for missing in ("ENDLESS_CREATE_POSITION_CODECS_PASS", "ENDLESS_CREATE_CHORUS_TELEPORT_PASS", "ENDLESS_CREATE_MOVING_RESTART_PASS",
                         "ENDLESS_CREATE_FACTORY_RESTART_PASS", "ENDLESS_CREATE_LOGISTICS_RESTART_PASS",
-                        "ENDLESS_CREATE_GANTRY_RESTART_PASS", "ENDLESS_CREATE_CLOCKWORK_RESTART_PASS"):
+                        "ENDLESS_CREATE_GANTRY_RESTART_PASS", "ENDLESS_CREATE_CLOCKWORK_RESTART_PASS", "ENDLESS_CREATE_CART_RESTART_PASS"):
             self.assertIn(missing, markers)
             server = self.pump("\n".join(marker for marker in markers if marker != missing) + "\n")
             client = self.pump(live.PASS_MARKER + "\n")

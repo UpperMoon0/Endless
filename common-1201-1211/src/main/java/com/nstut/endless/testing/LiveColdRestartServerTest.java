@@ -41,6 +41,7 @@ public final class LiveColdRestartServerTest {
     private static boolean logisticsRecovered;
     private static boolean gantryRecovered;
     private static boolean clockworkRecovered;
+    private static boolean cartRecovered;
     private static int ticks;
     private static int fixtureTickEligibleAt = -1;
 
@@ -77,6 +78,7 @@ public final class LiveColdRestartServerTest {
                     LiveCreateLogisticsRestartTest.prepare(level);
                     LiveCreateGantryRestartTest.prepare(level);
                     LiveCreateClockworkRestartTest.prepare(level);
+                    LiveCreateCartRestartTest.prepare(level);
                 }
                 ExtendedPoiStorage.flush(level, new ChunkPos(poiPos()));
                 EndlessVerticalEngine.world(level).flushDirty();
@@ -114,6 +116,10 @@ public final class LiveColdRestartServerTest {
                         gantryRecovered = true;
                     }
                     if (!clockworkRecovered) return;
+                    if (!cartRecovered) {
+                        if (!LiveCreateCartRestartTest.verify(level)) return;
+                        cartRecovered = true;
+                    }
                     LiveCreateMigrationTest.run(level);
                     CreateKineticStorageProbe.run(level.getServer().getWorldPath(LevelResource.ROOT)
                         .resolve("endless-live-allocator-probes"));

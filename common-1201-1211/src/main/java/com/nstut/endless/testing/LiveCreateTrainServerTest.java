@@ -47,8 +47,8 @@ public final class LiveCreateTrainServerTest {
                     level.setBlock(p, p.getY() == origin().getY() - 1 ? Blocks.STONE.defaultBlockState() : Blocks.AIR.defaultBlockState(), 18);
                 for (int z = -72; z <= 40; z++) level.setBlock(origin().south(z), value(block("track"), "shape", "zo"), 3);
                 station(level, origin()); station(level, destination());
-                level.setBlock(origin().east(2).above(2), Blocks.STONE.defaultBlockState(), 3);
-                level.setBlock(origin().east(2).above(3), Blocks.STONE_BUTTON.defaultBlockState().setValue(BlockStateProperties.ATTACH_FACE, net.minecraft.world.level.block.state.properties.AttachFace.FLOOR), 3);
+                level.setBlock(origin().east(3).above(2), Blocks.STONE.defaultBlockState(), 3);
+                level.setBlock(origin().east(3).above(3), Blocks.STONE_BUTTON.defaultBlockState().setValue(BlockStateProperties.ATTACH_FACE, net.minecraft.world.level.block.state.properties.AttachFace.FLOOR), 3);
                 level.setBlock(destination().east(2).above(2), Blocks.STONE.defaultBlockState(), 3);
                 level.setBlock(destination().east(2).above(3), Blocks.STONE_BUTTON.defaultBlockState().setValue(BlockStateProperties.ATTACH_FACE, net.minecraft.world.level.block.state.properties.AttachFace.FLOOR), 3);
                 level.setBlock(signal(), block("track_signal"), 3);
@@ -90,7 +90,7 @@ public final class LiveCreateTrainServerTest {
                 // Departure waits for a real client use request after the native
                 // carriage and graph packets arrive. A slow renderer cannot miss
                 // the entire movement and first observe this train at its end.
-                if (!level.getBlockState(origin().east(2).above(3)).getValue(BlockStateProperties.POWERED)) return;
+                if (!level.getBlockState(origin().east(3).above(3)).getValue(BlockStateProperties.POWERED)) return;
                 require((boolean) call(train, "hasForwardConductor"), "native blaze conductor not detected");
                 require(call(level.getBlockEntity(signal()), "getState").toString().equals("GREEN"), "unoccupied native track signal is not green actual=" + call(level.getBlockEntity(signal()), "getState"));
                 Object dest = call(level.getBlockEntity(destination().east(3)), "getStation"); require(dest != null, "destination station missing");

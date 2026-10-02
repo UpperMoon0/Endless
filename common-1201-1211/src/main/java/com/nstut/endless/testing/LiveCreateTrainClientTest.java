@@ -35,7 +35,7 @@ public final class LiveCreateTrainClientTest {
             }
             if (Math.abs(mc.player.getY()-entity.getY()) > 6) throw new IllegalStateException("client train passenger aliased height");
             if (travelled && passed.add(height)) System.out.println("ENDLESS_CREATE_TRAIN_CLIENT_CASE_PASS y="+height+" nativeGraphPacket=true clientRideDistance=16");
-            var button = new net.minecraft.core.BlockPos(82, height + 3, travelled ? 48 : 104);
+            var button = new net.minecraft.core.BlockPos(travelled ? 82 : 83, height + 3, travelled ? 48 : 104);
             if (ticks - lastButtonAt >= 10
                     && mc.player.getEyePosition().distanceTo(Vec3.atCenterOf(button)) < 4.5 && mc.level.getBlockState(button).is(net.minecraft.world.level.block.Blocks.STONE_BUTTON)) {
                 mc.gameMode.useItemOn(mc.player, net.minecraft.world.InteractionHand.MAIN_HAND,

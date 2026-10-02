@@ -34,7 +34,11 @@ public final class LiveCreateGantryRestartTest {
         ListTag cases = new ListTag();
         for (int seam : SEAMS) {
             BlockPos root = root(seam), carriage = root.east(), payload = root.east(2);
-            for (BlockPos p : BlockPos.betweenClosed(root.offset(-1, -1, -1), root.offset(4, 63, 2)))
+            // TreeCutter scans the 26 neighbours around each log before following
+            // leaves/attachments. The old east boundary ended at the trunk itself,
+            // allowing generated foliage outside the fixture into native saw drops.
+            // Keep an empty shell around the entire trunk and moving payload.
+            for (BlockPos p : BlockPos.betweenClosed(root.offset(-2, -1, -2), root.offset(6, 63, 3)))
                 level.setBlock(p, Blocks.AIR.defaultBlockState(), 18);
             for (int i = 0; i < 64; i++)
                 level.setBlock(root.above(i), block("gantry_shaft").setValue(BlockStateProperties.FACING, Direction.UP), 3);
@@ -119,7 +123,7 @@ public final class LiveCreateGantryRestartTest {
             require(level.getBlockState(carriage).getBlock() == block("gantry_carriage").getBlock(), "gantry carriage did not restore at its translated anchor");
             ChestBlockEntity chest = (ChestBlockEntity) level.getBlockEntity(carriage.east().south());
             int diamonds = 0, cobble = 0, logs = 0;
-            for (int slot = 0; slot < chest.getContainerSize(); slot++) { ItemStack item = chest.getItem(slot); require(item.isEmpty() || item.is(Items.DIAMOND) || item.is(Items.COBBLESTONE) || item.is(Items.OAK_LOG), "unexpected restored mining inventory"); if (item.is(Items.DIAMOND)) diamonds += item.getCount(); if (item.is(Items.COBBLESTONE)) cobble += item.getCount(); if (item.is(Items.OAK_LOG)) logs += item.getCount(); }
+            for (int slot = 0; slot < chest.getContainerSize(); slot++) { ItemStack item = chest.getItem(slot); require(item.isEmpty() || item.is(Items.DIAMOND) || item.is(Items.COBBLESTONE) || item.is(Items.OAK_LOG), "unexpected restored mining inventory seam=" + entry.getInt("Seam") + " slot=" + slot + " item=" + item); if (item.is(Items.DIAMOND)) diamonds += item.getCount(); if (item.is(Items.COBBLESTONE)) cobble += item.getCount(); if (item.is(Items.OAK_LOG)) logs += item.getCount(); }
             require(diamonds == 7 && cobble == 3 && logs == 3, "native disassembly changed mining inventory");
         }
         System.out.println("ENDLESS_CREATE_GANTRY_RESTART_PASS cases=9 freshJvm=true naturalWorldTicks=true nativeDrill=true nativeSaw=true stoneMined=3 logsCut=3 exactMountedInventory=true nativeDisassembly=true");

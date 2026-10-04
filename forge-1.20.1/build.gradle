@@ -2,10 +2,17 @@ plugins {
     id 'com.gradleup.shadow'
 }
 
+// Hidden-window framebuffer fixture, never included in normal/release builds.
+if (project.hasProperty('shaderPreview')) {
+    sourceSets.main.java.srcDir 'src/shaderPreview/java'
+    tasks.named('remapJar') { archiveClassifier = 'shader-preview' }
+}
+
 loom {
     forge {
         mixinConfig "endless.mixins.json"
         mixinConfig "endless-forge.mixins.json"
+        mixinConfig "endless-embeddium.mixins.json"
 
         runs {
             client {
@@ -86,6 +93,8 @@ configurations {
 }
 
 dependencies {
+    // Optional renderer integration, compiled/remapped against the supported release.
+    modCompileOnly("maven.modrinth:embeddium:UTbfe5d1") { transitive = false }
     forge "net.minecraftforge:forge:$forge_version"
 
     modImplementation "dev.architectury:architectury-forge:$architectury_api_version"
@@ -118,6 +127,10 @@ dependencies {
 }
 
 repositories {
+    maven {
+        url = uri('https://api.modrinth.com/maven')
+        content { includeGroup 'maven.modrinth' }
+    }
     flatDir {
         dirs 'libs'
     }

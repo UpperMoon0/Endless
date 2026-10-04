@@ -3,6 +3,7 @@ package com.nstut.endless.vertical;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
@@ -12,6 +13,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.DataLayer;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.FluidState;
@@ -69,6 +71,132 @@ public final class MinecraftVerticalWorld {
 
     public Level level() {
         return level;
+    }
+
+    /** Client render snapshots may read an existing page but must never allocate one. */
+    public synchronized LevelChunkSection getSectionForRendering(int chunkX, int sectionY, int chunkZ) {
+        return getSection(chunkX, chunkZ, sectionY, false);
+    }
+
+    /**
+     * Solve all 4096 target cells together. Only emitters within 14 blocks of
+     * the section can contribute. Palette checks skip empty/non-emissive
+     * sections, avoiding 4096 separate neighborhood searches for each clone.
+     * The returned layer is owned by the immutable render snapshot.
+     */
+    public synchronized DataLayer copyRenderBlockLight(SectionPos sectionPos) {
+        int minX = sectionPos.minBlockX() - BLOCK_LIGHT_SOURCE_RADIUS;
+        int maxX = sectionPos.maxBlockX() + BLOCK_LIGHT_SOURCE_RADIUS;
+        int minY = sectionPos.minBlockY() - BLOCK_LIGHT_SOURCE_RADIUS;
+        int maxY = sectionPos.maxBlockY() + BLOCK_LIGHT_SOURCE_RADIUS;
+        int minZ = sectionPos.minBlockZ() - BLOCK_LIGHT_SOURCE_RADIUS;
+        int maxZ = sectionPos.maxBlockZ() + BLOCK_LIGHT_SOURCE_RADIUS;
+        Map<BlockKey, Byte> local = new HashMap<>();
+        ArrayDeque<LightNode> queue = new ArrayDeque<>();
+        for (int cx = minX >> 4; cx <= maxX >> 4; cx++) {
+            for (int cz = minZ >> 4; cz <= maxZ >> 4; cz++) {
+                LevelChunk dense = level.getChunk(cx, cz);
+                for (int sy = minY >> 4; sy <= maxY >> 4; sy++) {
+                    int index = level.getSectionIndexFromSectionY(sy);
+                    LevelChunkSection source = index >= 0 && index < dense.getSections().length
+                        ? dense.getSections()[index] : getSection(cx, cz, sy, false);
+                    if (source == null || !source.maybeHas(state -> state.getLightEmission() > 0)) continue;
+                    for (int y = Math.max(minY, sy << 4); y <= Math.min(maxY, (sy << 4) + 15); y++) {
+                        if (!EndlessLogicalHeights.contains(y)) continue;
+                        for (int z = Math.max(minZ, cz << 4); z <= Math.min(maxZ, (cz << 4) + 15); z++) {
+                            for (int x = Math.max(minX, cx << 4); x <= Math.min(maxX, (cx << 4) + 15); x++) {
+                                int emission = source.getBlockState(x & 15, y & 15, z & 15).getLightEmission();
+                                if (emission > 0) {
+                                    BlockKey key = new BlockKey(x, y, z);
+                                    local.put(key, (byte) emission);
+                                    queue.addLast(new LightNode(key, emission));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        while (!queue.isEmpty()) {
+            LightNode node = queue.removeFirst();
+            if (node.light <= 1 || node.light < Byte.toUnsignedInt(local.getOrDefault(node.pos, (byte) 0))) continue;
+            BlockPos from = node.pos.toBlockPos();
+            BlockState fromState = level.getBlockState(from);
+            for (Direction direction : Direction.values()) {
+                BlockKey next = node.pos.relative(direction);
+                if (next.x < minX || next.x > maxX || next.y < minY || next.y > maxY
+                    || next.z < minZ || next.z > maxZ || !EndlessLogicalHeights.contains(next.y)) continue;
+                BlockPos to = next.toBlockPos();
+                BlockState toState = level.getBlockState(to);
+                int propagated = node.light - Math.max(1, toState.getLightBlock(level, to));
+                if (propagated <= Byte.toUnsignedInt(local.getOrDefault(next, (byte) 0))
+                    || lightFacesOcclude(fromState, from, toState, to, direction)) continue;
+                local.put(next, (byte) propagated);
+                queue.addLast(new LightNode(next, propagated));
+            }
+        }
+        DataLayer result = new DataLayer();
+        for (int y = 0; y < 16; y++) for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++) {
+            BlockKey key = new BlockKey(sectionPos.minBlockX() + x, sectionPos.minBlockY() + y, sectionPos.minBlockZ() + z);
+            byte value = local.getOrDefault(key, (byte) 0);
+            result.set(x, y, z, Byte.toUnsignedInt(value));
+            // Every target cell has a complete neighborhood in this solve.
+            blockLight.put(key, value);
+        }
+        return result;
+    }
+
+    /** Snapshot skylight with one height query per halo column, not per ray step. */
+    public synchronized DataLayer copyRenderSkyLight(SectionPos section) {
+        final int radius = 15;
+        final int width = 16 + radius * 2;
+        int minX = section.minBlockX() - radius;
+        int minZ = section.minBlockZ() - radius;
+        int[][] tops = new int[width][width];
+        for (int x = 0; x < width; x++) for (int z = 0; z < width; z++) {
+            tops[x][z] = skyOcclusionTop(minX + x, minZ + z);
+        }
+        DataLayer result = new DataLayer();
+        Direction[] paths = {Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST};
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        for (int x = 0; x < 16; x++) for (int z = 0; z < 16; z++) {
+            int centerX = x + radius, centerZ = z + radius;
+            int centerTop = tops[centerX][centerZ];
+            int lowestRayTop = centerTop;
+            for (int distance = 1; distance <= radius; distance++) {
+                lowestRayTop = Math.min(lowestRayTop, Math.min(
+                    Math.min(tops[centerX + distance][centerZ], tops[centerX - distance][centerZ]),
+                    Math.min(tops[centerX][centerZ + distance], tops[centerX][centerZ - distance])));
+            }
+            for (int localY = 0; localY < 16; localY++) {
+                int worldY = section.minBlockY() + localY;
+                int value = 0;
+                if (worldY > centerTop) {
+                    value = 15;
+                } else if (worldY + radius > centerTop || worldY > lowestRayTop) {
+                    // Same five rays, attenuation, bounds and exposure test as
+                    // computeSkyLight. The proven-dark case skips all block reads.
+                    for (Direction direction : paths) {
+                        cursor.set(section.minBlockX() + x, worldY, section.minBlockZ() + z);
+                        int cost = 0;
+                        for (int distance = 1; distance <= radius && cost < 15; distance++) {
+                            cursor.move(direction);
+                            if (!EndlessLogicalHeights.contains(cursor.getY())) break;
+                            BlockState state = level.getBlockState(cursor);
+                            cost += Math.max(1, state.getLightBlock(level, cursor));
+                            if (cost >= 15) break;
+                            if (cursor.getY() > tops[cursor.getX() - minX][cursor.getZ() - minZ]) {
+                                value = Math.max(value, 15 - cost);
+                                break;
+                            }
+                        }
+                    }
+                }
+                result.set(x, localY, z, value);
+                skyLight.put(new BlockKey(section.minBlockX() + x, worldY, section.minBlockZ() + z), value);
+            }
+        }
+        return result;
     }
 
     public synchronized BlockState getBlockState(BlockPos pos) {
@@ -431,11 +559,15 @@ public final class MinecraftVerticalWorld {
     }
 
     private boolean isSkyExposed(int x, int y, int z) {
+        return y > skyOcclusionTop(x, z);
+    }
+
+    private int skyOcclusionTop(int x, int z) {
         int extended = getExtendedHeight(Heightmap.Types.WORLD_SURFACE, x, z);
         int extendedTop = extended == Integer.MIN_VALUE ? Integer.MIN_VALUE : extended - 1;
         LevelChunk core = level.getChunk(x >> 4, z >> 4);
         int coreTop = core.getHeight(Heightmap.Types.WORLD_SURFACE, x & 15, z & 15);
-        return y > Math.max(coreTop, extendedTop);
+        return Math.max(coreTop, extendedTop);
     }
 
     private LevelChunkSection getSection(int chunkX, int chunkZ, int sectionY, boolean create) {

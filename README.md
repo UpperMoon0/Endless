@@ -85,6 +85,12 @@ Each dimension's `data/endless_create_kinetic_ids.dat` is part of the world back
 
 Display-link/redstone-link full-position persistence, arm interaction initialization, ejector selection, pulley limits, and elevator contact discovery use exact coordinates or the logical build envelope. The live gates exercise real APIs across the dense floor/ceiling, positive/negative sparse pages, packed-Y boundaries, and million-scale positions. Bearing, piston, and pulley fixtures reconstruct the moving entity, reattach it to its native controller, resume motion, and disassemble that restored entity, including mounted chest contents and drill actors. Separate phase-A world-saved machines must survive the fresh phase-B JVM. Elevator discovery searches occupied pages, including persisted pages, rather than scanning millions of empty cells. Train node packets preserve full doubled Y and pixel offsets, assembly-error NBT retains exact highlight positions, and chorus-potato destinations use logical bounds. Mining cracks use exact renderer-local coordinates, including Create's extra structure positions and their removal lifecycle.
 
+### Embeddium and Oculus (Forge 1.20.1)
+
+The optional client adapter targets Embeddium 0.3.31 and Oculus 1.8.0. It routes section snapshots through the dense core or sparse pages, keeps Embeddium's terrain grid in a camera-following 32-section window, and supplies sparse block/sky light snapshots, including the dense boundary sections. Oculus's normal and shadow passes share that main-camera window. Embeddium remains optional; the adapter is disabled when that mod is absent and does not target Rubidium or other Minecraft/loader versions.
+
+Development capture instructions and the supported validation scope are in [Embeddium compatibility](docs/Embeddium-Compatibility.md). The hidden-window capture fixture is excluded from ordinary release jars.
+
 ### Create contraption coordinates (#14)
 
 Endless 0.8 extends Create's paletted block entries with versioned full XYZ local coordinates for both disk and entity-spawn NBT. Native block states, block-entity data, and update tags remain attached to their original entries. Existing entries without the extension keep Create's legacy interpretation; malformed extended coordinates are refused. Previously truncated data cannot be reconstructed automatically.

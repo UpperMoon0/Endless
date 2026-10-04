@@ -1,0 +1,294 @@
+package com.nstut.endless.forge.testing;
+
+import com.google.gson.*;
+import com.nstut.endless.forge.compat.EmbeddiumSections;
+import com.nstut.endless.vertical.EndlessVerticalEngine;
+import me.jellysquid.mods.sodium.client.render.SodiumWorldRenderer;
+import me.jellysquid.mods.sodium.client.render.chunk.RenderSection;
+import me.jellysquid.mods.sodium.client.world.cloned.ClonedChunkSectionCache;
+import net.minecraft.client.*;
+import net.minecraft.core.*;
+import net.minecraft.world.level.*;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.ModList;
+import java.nio.file.*;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+
+/** Development-only copy-world fixture using the same framebuffer path as Tidal Terror. */
+@Mod.EventBusSubscriber(modid = "endless", value = Dist.CLIENT)
+public final class EmbeddiumShaderPreview {
+    private static final Minecraft MC = Minecraft.getInstance();
+    private static final boolean ARMED = Boolean.getBoolean("endless.shaderPreview")
+        || Files.isRegularFile(MC.gameDirectory.toPath().resolve("endless-preview-request.json"));
+    private static final Gson JSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final long START = System.nanoTime();
+    private static final int[] HEIGHTS = {-80, 320, 512, 1_000_000, -1_000_000};
+    private static JsonObject request;
+    private static Path out;
+    private static JsonArray shots;
+    private static final List<Map<String, Object>> records = new ArrayList<>();
+    private static CompletableFuture<Void> future;
+    private static boolean requested, prepared, done;
+    private static int index, frames;
+    private static long cameraAt;
+    private static long lastDiagnostic;
+
+    @SubscribeEvent public static void tick(TickEvent.ClientTickEvent event) {
+        if (!ARMED || done || event.phase != TickEvent.Phase.END) return;
+        try {
+            if (System.nanoTime() - START > 20L * 60 * 1_000_000_000L) throw new IllegalStateException("Preview timeout");
+            if (!requested && MC.getOverlay() == null) {
+                request = JsonParser.parseString(Files.readString(MC.gameDirectory.toPath().resolve("endless-preview-request.json"))).getAsJsonObject();
+                out = Path.of(request.get("output").getAsString()).toAbsolutePath();
+                Files.createDirectories(out);
+                Files.deleteIfExists(out.resolve("failure.txt"));
+                shots = request.getAsJsonArray("shots");
+                requested = true;
+                MC.options.pauseOnLostFocus = false;
+                MC.options.hideGui = true;
+                MC.options.bobView().set(false);
+                MC.options.enableVsync().set(false);
+                MC.options.framerateLimit().set(60);
+                MC.options.fov().set(65);
+                MC.options.renderDistance().set(8);
+                MC.options.simulationDistance().set(5);
+                MC.options.cloudStatus().set(CloudStatus.OFF);
+                MC.options.setCameraType(CameraType.FIRST_PERSON);
+                if (MC.getWindow().isFullscreen()) MC.getWindow().toggleFullScreen();
+                org.lwjgl.glfw.GLFW.glfwSetWindowAttrib(MC.getWindow().getWindow(), org.lwjgl.glfw.GLFW.GLFW_DECORATED, org.lwjgl.glfw.GLFW.GLFW_FALSE);
+                MC.getWindow().setWindowed(1920, 1080);
+                org.lwjgl.glfw.GLFW.glfwHideWindow(MC.getWindow().getWindow());
+                MC.createWorldOpenFlows().loadLevel(null, request.get("world").getAsString());
+            }
+            if (MC.level == null || MC.player == null || MC.getSingleplayerServer() == null) return;
+            if (MC.screen != null) MC.setScreen(null);
+            if (!prepared) {
+                prepared = true;
+                var server = MC.getSingleplayerServer();
+                future = CompletableFuture.runAsync(() -> {
+                    var level = server.overworld();
+                    level.getGameRules().getRule(GameRules.RULE_DAYLIGHT).set(false, server);
+                    level.getGameRules().getRule(GameRules.RULE_WEATHER_CYCLE).set(false, server);
+                    level.setDayTime(6000);
+                    level.setWeatherParameters(0, 6000, false, false);
+                    for (int y : HEIGHTS) {
+                        level.getChunk(4, 4);
+                        for (int x = 62; x <= 70; x++) for (int z = 62; z <= 70; z++) {
+                            level.setBlockAndUpdate(new BlockPos(x, y, z), Blocks.SMOOTH_STONE.defaultBlockState());
+                        }
+                        level.setBlockAndUpdate(new BlockPos(66, y + 1, 66), Blocks.GLOWSTONE.defaultBlockState());
+                        level.setBlockAndUpdate(new BlockPos(67, y + 1, 66), Blocks.GLASS.defaultBlockState());
+                        level.setBlockAndUpdate(new BlockPos(66, y + 1, 67), Blocks.CHEST.defaultBlockState());
+                        level.setBlockAndUpdate(new BlockPos(65, y + 1, 66), Blocks.STONE_SLAB.defaultBlockState());
+                        level.setBlockAndUpdate(new BlockPos(66, y + 2, 66), Blocks.DIAMOND_BLOCK.defaultBlockState());
+                        var vertical = EndlessVerticalEngine.world(level);
+                        BlockPos emitter = new BlockPos(66, y + 1, 66);
+                        BlockPos[] samples = {emitter, emitter.east(), emitter.north(), emitter.south(), emitter.west(), emitter.offset(4, 0, 0)};
+                        int[] reference = Arrays.stream(samples).mapToInt(pos -> vertical.getBrightness(LightLayer.BLOCK, pos)).toArray();
+                        int[] skyReference = Arrays.stream(samples).mapToInt(pos -> vertical.getBrightness(LightLayer.SKY, pos)).toArray();
+                        var batch = vertical.copyRenderBlockLight(SectionPos.of(emitter));
+                        var skyBatch = vertical.copyRenderSkyLight(SectionPos.of(emitter));
+                        for (int i = 0; i < samples.length; i++) {
+                            BlockPos pos = samples[i];
+                            if (batch.get(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15) != reference[i]) {
+                                throw new IllegalStateException("Batch lighting differs from independent point solve: " + pos);
+                            }
+                            if (skyBatch.get(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15) != skyReference[i]) {
+                                throw new IllegalStateException("Batch skylight differs from independent point solve: " + pos);
+                            }
+                        }
+                        System.out.println("ENDLESS_EMBEDDIUM_BATCH_LIGHT_PASS y=" + y);
+                    }
+                }, server);
+                return;
+            }
+            if (future != null && !future.isDone()) return;
+            if (future != null) future.join();
+            if (index >= shots.size()) {
+                Files.writeString(out.resolve("capture-manifest.json"), JSON.toJson(records));
+                System.out.println("ENDLESS_EMBEDDIUM_PREVIEW_PASS shots=" + records.size());
+                done = true;
+                MC.stop();
+                return;
+            }
+            if (cameraAt == 0) {
+                JsonObject shot = shots.get(index).getAsJsonObject();
+                Vec3 eye = vector(shot.getAsJsonArray("eye"));
+                Vec3 target = vector(shot.getAsJsonArray("target"));
+                Vec3 delta = target.subtract(eye);
+                float yaw = (float) Math.toDegrees(Math.atan2(-delta.x, delta.z));
+                float pitch = (float) -Math.toDegrees(Math.atan2(delta.y, Math.hypot(delta.x, delta.z)));
+                var server = MC.getSingleplayerServer();
+                UUID uuid = MC.player.getUUID();
+                future = CompletableFuture.runAsync(() -> {
+                    var player = server.getPlayerList().getPlayer(uuid);
+                    if (shot.has("edit") && shot.get("edit").getAsBoolean()) {
+                        int y = shot.get("fixtureY").getAsInt();
+                        server.overworld().setBlockAndUpdate(new BlockPos(66, y + 1, 66), Blocks.REDSTONE_TORCH.defaultBlockState());
+                        server.overworld().setBlockAndUpdate(new BlockPos(66, y + 2, 66), Blocks.EMERALD_BLOCK.defaultBlockState());
+                        server.overworld().setBlockAndUpdate(new BlockPos(66, y + 1, 67), Blocks.AIR.defaultBlockState());
+                    }
+                    player.setGameMode(GameType.CREATIVE);
+                    player.teleportTo(server.overworld(), eye.x, eye.y - player.getEyeHeight(), eye.z, yaw, pitch);
+                    player.setNoGravity(true);
+                    player.getAbilities().flying = true;
+                    player.onUpdateAbilities();
+                }, server);
+                MC.player.setPos(eye.x, eye.y - MC.player.getEyeHeight(), eye.z);
+                MC.player.setYRot(yaw); MC.player.yRotO = yaw;
+                MC.player.setXRot(pitch); MC.player.xRotO = pitch;
+                MC.player.setDeltaMovement(Vec3.ZERO);
+                MC.player.setNoGravity(true);
+                MC.player.getAbilities().flying = true;
+                if (shot.has("reload") && shot.get("reload").getAsBoolean()) MC.levelRenderer.allChanged();
+                cameraAt = System.nanoTime(); frames = 0;
+                System.out.println("ENDLESS_EMBEDDIUM_PREVIEW_CAMERA " + shot.get("name").getAsString() + " eye=" + eye);
+            }
+        } catch (Throwable error) { fail(error); }
+    }
+
+    @SubscribeEvent public static void render(TickEvent.RenderTickEvent event) {
+        if (ARMED && !done && event.phase == TickEvent.Phase.END) {
+            // Background clients may skip game ticks while a loading screen is
+            // paused. Keep the fixture's startup/settlement state machine moving.
+            tick(new TickEvent.ClientTickEvent(TickEvent.Phase.END));
+            if (System.nanoTime() - lastDiagnostic > 10_000_000_000L) {
+                lastDiagnostic = System.nanoTime();
+                System.out.println("ENDLESS_PREVIEW_STATE level=" + (MC.level != null) + " player=" + (MC.player != null)
+                    + " server=" + (MC.getSingleplayerServer() != null) + " paused=" + MC.isPaused()
+                    + " prepared=" + prepared + " future=" + (future == null ? "none" : future.isDone()) + " index=" + index);
+                if (out != null) {
+                    try {
+                        Map<String, Object> progress = new LinkedHashMap<>();
+                        progress.put("index", index); progress.put("paused", MC.isPaused());
+                        progress.put("frames", frames);
+                        progress.put("camera", MC.gameRenderer.getMainCamera().getPosition().toString());
+                        progress.put("screen", MC.screen == null ? "none" : MC.screen.getClass().getSimpleName());
+                        progress.put("overlay", MC.getOverlay() == null ? "none" : MC.getOverlay().getClass().getSimpleName());
+                        progress.put("futureDone", future == null || future.isDone());
+                        if (MC.player != null) progress.put("player", MC.player.position().toString());
+                        if (shots != null && index < shots.size() && MC.level != null) {
+                            BlockPos target = BlockPos.containing(vector(shots.get(index).getAsJsonObject().getAsJsonArray("target")));
+                            progress.put("target", target.toString());
+                            progress.put("targetState", MC.level.getBlockState(target).toString());
+                            progress.put("targetBuilt", sectionReady(target));
+                        }
+                        Files.writeString(out.resolve("progress.json"), JSON.toJson(progress));
+                    } catch (Exception diagnosticFailure) { diagnosticFailure.printStackTrace(); }
+                }
+            }
+        }
+        if (!ARMED || done || event.phase != TickEvent.Phase.END
+            || cameraAt == 0 || MC.level == null || MC.getOverlay() != null || MC.screen != null) return;
+        if (++frames < 180 || System.nanoTime() - cameraAt < 10_000_000_000L || future != null && !future.isDone()) return;
+        try {
+            JsonObject shot = shots.get(index).getAsJsonObject();
+            Vec3 eye = vector(shot.getAsJsonArray("eye"));
+            if (MC.gameRenderer.getMainCamera().getPosition().distanceTo(eye) > .1) throw new IllegalStateException("Camera not settled");
+            boolean shaders = false;
+            String pack = "none";
+            try {
+                Class<?> iris = Class.forName("net.irisshaders.iris.Iris");
+                shaders = (boolean) iris.getMethod("isPackInUseQuick").invoke(null);
+                pack = String.valueOf(iris.getMethod("getCurrentPackName").invoke(null));
+            } catch (ClassNotFoundException absent) { /* Embeddium-only baseline. */ }
+            if (shaders != request.get("expectShaders").getAsBoolean()) throw new IllegalStateException("Unexpected shader state: " + shaders);
+            if (shaders && !pack.contains("Complementary")) throw new IllegalStateException("Wrong shader pack: " + pack);
+            BlockPos target = BlockPos.containing(vector(shot.getAsJsonArray("target")));
+            boolean embeddium = ModList.get().isLoaded("embeddium");
+            if (embeddium != request.get("expectEmbeddium").getAsBoolean()) throw new IllegalStateException("Wrong renderer backend");
+            if (!sectionReady(target)) return;
+            if (embeddium) {
+                verifyWindow();
+                if (shot.has("fixtureY")) verifySnapshot(shot.get("fixtureY").getAsInt(), shot.has("edit") && shot.get("edit").getAsBoolean());
+            }
+            Map<String, Object> record = new LinkedHashMap<>();
+            record.put("file", shot.get("name").getAsString() + ".png");
+            record.put("camera", eye.toString()); record.put("shadersActive", shaders); record.put("shaderPack", pack);
+            record.put("embeddium", embeddium);
+            if (shot.has("fixtureY")) record.put("fixtureY", shot.get("fixtureY").getAsInt());
+            record.put("captureMethod", "Screenshot.takeScreenshot(mainRenderTarget), RenderTick END, hidden GLFW window");
+            record.put("capturedAtUtc", java.time.Instant.now().toString());
+            record.put("warmupFrames", frames);
+            record.put("warmupSeconds", (System.nanoTime() - cameraAt) / 1_000_000_000.0);
+            try (var image = Screenshot.takeScreenshot(MC.getMainRenderTarget())) {
+                image.writeToFile(out.resolve((String) record.get("file")));
+                record.put("width", image.getWidth()); record.put("height", image.getHeight());
+            }
+            records.add(record);
+            Files.writeString(out.resolve("capture-manifest.json"), JSON.toJson(records));
+            System.out.println("ENDLESS_EMBEDDIUM_PREVIEW_CAPTURE " + record);
+            index++; cameraAt = 0;
+        } catch (Throwable error) { fail(error); }
+    }
+
+    private static void verifyWindow() throws Exception {
+        Object manager = field(SodiumWorldRenderer.instance(), "renderSectionManager");
+        var sections = (it.unimi.dsi.fastutil.longs.Long2ReferenceMap<RenderSection>) field(manager, "sectionByPosition");
+        Map<Long, Integer> counts = new HashMap<>();
+        for (RenderSection section : sections.values()) {
+            long key = ChunkPos.asLong(section.getChunkX(), section.getChunkZ());
+            if (counts.merge(key, 1, Integer::sum) > 32) throw new IllegalStateException("Unbounded vertical render column");
+            if (section.isDisposed()) throw new IllegalStateException("Disposed section retained in render grid");
+        }
+        if (counts.isEmpty()) throw new IllegalStateException("No ready render columns");
+    }
+
+    private static boolean sectionReady(BlockPos target) {
+        return ModList.get().isLoaded("embeddium")
+            ? SodiumWorldRenderer.instance().isSectionReady(target.getX() >> 4, target.getY() >> 4, target.getZ() >> 4)
+            : MC.levelRenderer.hasRenderedAllChunks();
+    }
+
+    private static void verifySnapshot(int y, boolean edited) throws Exception {
+        BlockPos emitter = new BlockPos(66, y + 1, 66);
+        var emitterBlock = edited ? Blocks.REDSTONE_TORCH : Blocks.GLOWSTONE;
+        if (!MC.level.getBlockState(emitter).is(emitterBlock)) throw new IllegalStateException("Sparse page not received");
+        var sectionPos = SectionPos.of(emitter);
+        var vertical = EndlessVerticalEngine.world(MC.level);
+        BlockPos[] samples = {emitter, emitter.east(), emitter.north(), emitter.south(), emitter.west(), emitter.offset(4, 0, 0)};
+        int[] expectedLight = new int[samples.length];
+        for (int i = 0; i < samples.length; i++) expectedLight[i] = vertical.getBrightness(LightLayer.BLOCK, samples[i]);
+        var cache = new ClonedChunkSectionCache(MC.level);
+        var clone = cache.acquire(sectionPos.getX(), sectionPos.getY(), sectionPos.getZ());
+        if (!clone.getBlockData().get(2, (y + 1) & 15, 2).is(emitterBlock)) throw new IllegalStateException("Sparse palette missing");
+        if (!clone.getBlockData().get(2, (y + 2) & 15, 2).is(edited ? Blocks.EMERALD_BLOCK : Blocks.DIAMOND_BLOCK)) throw new IllegalStateException("Marker palette not refreshed");
+        BlockPos chest = emitter.south();
+        boolean hasChest = clone.getBlockEntityMap() != null
+            && clone.getBlockEntityMap().values().stream().anyMatch(be -> be.getBlockPos().equals(chest));
+        if (hasChest == edited) {
+            throw new IllegalStateException(edited ? "Removed chest retained in render snapshot" : "Sparse chest missing from render snapshot");
+        }
+        if (edited && MC.level.getChunk(4, 4).getBlockEntities().containsKey(chest)) {
+            throw new IllegalStateException("Removed chest retained in client chunk map");
+        }
+        var light = clone.getLightArray(LightLayer.BLOCK);
+        for (int i = 0; i < samples.length; i++) {
+            BlockPos pos = samples[i];
+            int expected = expectedLight[i];
+            if (light.get(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15) != expected) throw new IllegalStateException("Sparse light mismatch at " + pos);
+        }
+        int emission = edited ? 7 : 15;
+        if (light.get(2, (y + 1) & 15, 2) != emission) throw new IllegalStateException("Emitter lost its light");
+        if (light.get(3, (y + 1) & 15, 2) != emission - 1) throw new IllegalStateException("Glass lost adjacent light");
+        if (EmbeddiumSections.get(MC.level, MC.level.getChunk(4, 4), sectionPos.getY()) == null) throw new IllegalStateException("Section route failed");
+        System.out.println("ENDLESS_EMBEDDIUM_SNAPSHOT_PASS y=" + y + " palette/light/blockEntity");
+    }
+
+    private static Object field(Object object, String name) throws Exception {
+        var field = object.getClass().getDeclaredField(name); field.setAccessible(true); return field.get(object);
+    }
+    private static Vec3 vector(JsonArray values) { return new Vec3(values.get(0).getAsDouble(), values.get(1).getAsDouble(), values.get(2).getAsDouble()); }
+    private static void fail(Throwable error) {
+        error.printStackTrace();
+        System.out.println("ENDLESS_EMBEDDIUM_PREVIEW_FAIL " + error);
+        try { if (out != null) Files.writeString(out.resolve("failure.txt"), error.toString()); } catch (Exception ignored) {}
+        done = true; MC.stop();
+    }
+}

@@ -77,6 +77,12 @@ if args.launcher:
                 assert all(record['shadersActive'] == args.shaders for record in records)
                 assert all(record['embeddium'] != args.vanilla for record in records)
                 assert all(record['width'] == 1920 and record['height'] == 1080 for record in records)
+                for record in records:
+                    if record['embeddium'] and record.get('fixtureY') is not None and record['file'] != '12-fixture-edit.png':
+                        checks = record.get('compatibilityRegressions', '')
+                        assert 'native initial/dynamic sort, crack aliases/removal' in checks
+                        if record['fixtureY'] >= 320:
+                            assert 'distant sky page/removal' in checks
                 print(f'Validated {len(records)} native framebuffer captures: {manifest}')
                 break
         time.sleep(1)

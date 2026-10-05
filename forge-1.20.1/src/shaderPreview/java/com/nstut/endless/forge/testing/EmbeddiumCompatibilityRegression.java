@@ -1,0 +1,157 @@
+package com.nstut.endless.forge.testing;
+
+import com.nstut.endless.compat.create.DestructionPositionLookup;
+import java.lang.reflect.Method;
+import java.util.Map;
+import java.util.List;
+import java.util.LinkedHashMap;
+import com.nstut.endless.vertical.*;
+import me.jellysquid.mods.sodium.client.render.SodiumWorldRenderer;
+import me.jellysquid.mods.sodium.client.render.chunk.RenderSection;
+import me.jellysquid.mods.sodium.client.render.chunk.RenderSectionManager;
+import me.jellysquid.mods.sodium.client.render.chunk.compile.ChunkBufferSorter;
+import me.jellysquid.mods.sodium.client.render.chunk.compile.tasks.ChunkBuilderMeshingTask;
+import me.jellysquid.mods.sodium.client.render.chunk.compile.tasks.ChunkBuilderSortTask;
+import me.jellysquid.mods.sodium.client.render.chunk.terrain.DefaultTerrainRenderPasses;
+import me.jellysquid.mods.sodium.client.util.NativeBuffer;
+import me.jellysquid.mods.sodium.client.world.cloned.ChunkRenderContext;
+import me.jellysquid.mods.sodium.client.world.cloned.ClonedChunkSectionCache;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.phys.Vec3;
+import org.embeddedt.embeddium.render.chunk.sorting.TranslucentQuadAnalyzer;
+
+/** Runs against the transformed release renderer, including native index buffers. */
+final class EmbeddiumCompatibilityRegression {
+    static void verify(int fixtureY) throws Exception {
+        Minecraft mc = Minecraft.getInstance();
+        var state = new TranslucentQuadAnalyzer.SortState(TranslucentQuadAnalyzer.Level.DYNAMIC,
+            new float[] {0, .25f, 0, 0, .75f, 0}, null, null);
+        var origin = SectionPos.of(4, fixtureY >> 4, 4);
+        // Its Fabric view interface is bundled by Embeddium at runtime only.
+        var context = (ChunkRenderContext) Class.forName("me.jellysquid.mods.sodium.client.world.WorldSlice")
+            .getMethod("prepare", net.minecraft.world.level.Level.class, SectionPos.class, ClonedChunkSectionCache.class)
+            .invoke(null, mc.level, origin, new ClonedChunkSectionCache(mc.level));
+        if (context == null) throw new IllegalStateException("Missing meshing regression context");
+        // Meshing's redirect is invoked on a native task with its real world slice.
+        Method meshSort = hook(ChunkBuilderMeshingTask.class, "endless$sort");
+        var manager = (RenderSectionManager) field(SodiumWorldRenderer.instance(), "renderSectionManager");
+        var cameraField = manager.getClass().getDeclaredField("cameraPosition");
+        cameraField.setAccessible(true);
+        int cases = 0;
+        int nativeNegativeControls = 0;
+        for (int y : new int[] {0, 1_000_000, -1_000_000, 7_999_984, -8_000_000}) {
+            var render = new RenderSection(null, 0, y >> 4, 0);
+            var mesh = new ChunkBuilderMeshingTask(new RenderSection(null, 4, y >> 4, 4), context, 0);
+            render.setSortState(state);
+            for (double fraction : new double[] {.49, .51}) {
+                Vec3 camera = new Vec3(0, y + fraction, 0);
+                int expected = fraction < .5 ? 4 : 0;
+                Object previousCamera = cameraField.get(manager);
+                ChunkBuilderSortTask task;
+                try {
+                    cameraField.set(manager, camera);
+                    task = manager.createSortTask(render, 0);
+                } finally { cameraField.set(manager, previousCamera); }
+                var output = task.execute(null, null);
+                try {
+                    int first = output.meshes.get(DefaultTerrainRenderPasses.TRANSLUCENT).getIndexData().getDirectBuffer().getInt(0);
+                    if (first != expected) throw new IllegalStateException("Dynamic sort lost camera precision at " + camera);
+                } finally { output.delete(); }
+                var legacy = new NativeBuffer(ChunkBufferSorter.getIndexBufferSize(2));
+                try {
+                    ChunkBufferSorter.sort(legacy, state, 0, (float) camera.y - y, 0);
+                    if (legacy.getDirectBuffer().getInt(0) != expected) nativeNegativeControls++;
+                } finally { legacy.free(); }
+                // Move the camera relative to the actual fixture section, and
+                // verify the independently patched initial mesh sort as well.
+                mesh.withCameraPosition(new Vec3(64, y + fraction, 64));
+                var buffer = new NativeBuffer(ChunkBufferSorter.getIndexBufferSize(2));
+                try {
+                    meshSort.invoke(mesh, buffer, state, 0f, 0f, 0f);
+                    if (buffer.getDirectBuffer().getInt(0) != expected) throw new IllegalStateException("Initial mesh sort lost camera precision");
+                } finally { buffer.free(); }
+                cases++;
+            }
+        }
+        // Prove the original absolute-float path cannot distinguish these sides.
+        if ((float) (7_999_984 + .49) != (float) (7_999_984 + .51)) throw new IllegalStateException("Invalid precision negative control");
+        if (nativeNegativeControls == 0) throw new IllegalStateException("Original native sorting path unexpectedly passed every precision regression");
+        BlockPos chest = new BlockPos(66, fixtureY + 1, 67);
+        BlockPos alias = chest.offset(0, 4096, 0);
+        Method crack = hook(SodiumWorldRenderer.class, "endless$destructionKey");
+        var lookup = (DestructionPositionLookup) mc.levelRenderer;
+        mc.levelRenderer.destroyBlockProgress(2_000_001, chest, 4);
+        mc.levelRenderer.destroyBlockProgress(2_000_002, alias, 7);
+        try {
+            long first = (long) crack.invoke(null, chest), second = (long) crack.invoke(null, alias);
+            if (chest.asLong() != alias.asLong() || first == second
+                || first != lookup.endless$destructionKey(chest) || second != lookup.endless$destructionKey(alias)) {
+                throw new IllegalStateException("Embeddium block-entity crack lookup aliases full positions");
+            }
+        } finally {
+            mc.levelRenderer.destroyBlockProgress(2_000_001, chest, -1);
+            mc.levelRenderer.destroyBlockProgress(2_000_002, alias, -1);
+        }
+        if ((long) crack.invoke(null, chest) != Long.MIN_VALUE) throw new IllegalStateException("Removed crack retained");
+        if (fixtureY >= 320) verifyDistantSkyPage(mc, origin);
+        System.out.println("ENDLESS_EMBEDDIUM_COMPAT_REGRESSION_PASS sorting=" + cases + " initialMesh/crackAliases/removal distantSkyPage=" + (fixtureY >= 320) + " y=" + fixtureY);
+    }
+
+    private static void verifyDistantSkyPage(Minecraft mc, SectionPos origin) throws Exception {
+        Object manager = field(SodiumWorldRenderer.instance(), "renderSectionManager");
+        var cache = (ClonedChunkSectionCache) field(manager, "sectionCache");
+        var before = cache.acquire(origin.getX(), origin.getY(), origin.getZ());
+        int oldSky = before.getLightArray(LightLayer.SKY).get(2, 15, 2);
+        int roofSection = origin.getY() + 64; // Outside both camera window and local dirty halo.
+        var vertical = EndlessVerticalEngine.world(mc.level);
+        var originals = new LinkedHashMap<VerticalPagePos, VerticalPageSnapshot>();
+        var roof = new LevelChunkSection(mc.level.registryAccess().registryOrThrow(Registries.BIOME));
+        for (int x = 0; x < 16; x++) for (int z = 0; z < 16; z++) roof.setBlockState(x, 0, z, Blocks.STONE.defaultBlockState());
+        try {
+            // Cover the entire fifteen-block exposure halo, including neighboring columns.
+            for (int x = origin.getX() - 1; x <= origin.getX() + 1; x++) for (int z = origin.getZ() - 1; z <= origin.getZ() + 1; z++) {
+                var pagePos = VerticalPagePos.fromChunkAndSection(x, roofSection, z);
+                var original = vertical.snapshot(pagePos, false);
+                originals.put(pagePos, original);
+                var page = new VerticalPage<LevelChunkSection>(pagePos.pageY());
+                page.putSection(roofSection, roof);
+                VerticalClientUpdates.apply(mc, VerticalPageSnapshot.fromPage(pagePos, original == null ? 0 : original.revision(), page));
+            }
+            var after = cache.acquire(origin.getX(), origin.getY(), origin.getZ());
+            int sky = after.getLightArray(LightLayer.SKY).get(2, 15, 2);
+            BlockPos sample = new BlockPos(origin.minBlockX() + 2, origin.minBlockY() + 15, origin.minBlockZ() + 2);
+            if (before == after || sky >= oldSky || sky != vertical.getBrightness(LightLayer.SKY, sample)) {
+                throw new IllegalStateException("Distant roof page retained a stale visible sky snapshot: " + oldSky + " -> " + sky);
+            }
+        } finally {
+            for (var entry : originals.entrySet()) {
+                var pos = entry.getKey();
+                VerticalClientUpdates.apply(mc, entry.getValue() == null
+                    ? new VerticalPageSnapshot(pos.chunkX(), pos.pageY(), pos.chunkZ(), 0, List.of()) : entry.getValue());
+            }
+        }
+        if (cache.acquire(origin.getX(), origin.getY(), origin.getZ()).getLightArray(LightLayer.SKY).get(2, 15, 2) != oldSky) {
+            throw new IllegalStateException("Distant roof removal retained stale sky lighting");
+        }
+    }
+
+    private static Object field(Object object, String name) throws Exception {
+        var field = object.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(object);
+    }
+
+    private static Method hook(Class<?> type, String name) {
+        for (Method method : type.getDeclaredMethods()) if (method.getName().contains(name)) {
+            method.setAccessible(true);
+            return method;
+        }
+        throw new IllegalStateException("Renderer compatibility hook missing: " + name);
+    }
+}

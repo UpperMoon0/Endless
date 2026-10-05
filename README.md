@@ -89,7 +89,7 @@ Display-link/redstone-link full-position persistence, arm interaction initializa
 
 The optional client adapter targets Embeddium 0.3.31 and Oculus 1.8.0. It routes section snapshots through the dense core or sparse pages, keeps Embeddium's terrain grid in a camera-following 32-section window, and supplies sparse block/sky light snapshots, including the dense boundary sections. Oculus's normal and shadow passes share that main-camera window. Embeddium remains optional; the adapter is disabled when that mod is absent and does not target Rubidium or other Minecraft/loader versions.
 
-Development capture instructions and the supported validation scope are in [Embeddium compatibility](docs/Embeddium-Compatibility.md). The hidden-window capture fixture is excluded from ordinary release jars.
+Initial and subsequent transparent mesh sorting preserve fractional camera movement at extreme heights. Block-entity mining overlays use Endless's exact position keys. Distant sparse page updates invalidate visible sky-light snapshots in nearby ready columns. Development capture instructions and the supported validation scope are in [Embeddium compatibility](docs/Embeddium-Compatibility.md). The hidden-window capture fixture is excluded from ordinary release jars.
 
 ### Create contraption coordinates (#14)
 

@@ -213,6 +213,10 @@ public final class EmbeddiumShaderPreview {
             record.put("camera", eye.toString()); record.put("shadersActive", shaders); record.put("shaderPack", pack);
             record.put("embeddium", embeddium);
             if (shot.has("fixtureY")) record.put("fixtureY", shot.get("fixtureY").getAsInt());
+            if (embeddium && shot.has("fixtureY") && !(shot.has("edit") && shot.get("edit").getAsBoolean())) {
+                record.put("compatibilityRegressions", "native initial/dynamic sort, crack aliases/removal"
+                    + (shot.get("fixtureY").getAsInt() >= 320 ? ", distant sky page/removal" : ""));
+            }
             record.put("captureMethod", "Screenshot.takeScreenshot(mainRenderTarget), RenderTick END, hidden GLFW window");
             record.put("capturedAtUtc", java.time.Instant.now().toString());
             record.put("warmupFrames", frames);
@@ -278,6 +282,7 @@ public final class EmbeddiumShaderPreview {
         if (light.get(2, (y + 1) & 15, 2) != emission) throw new IllegalStateException("Emitter lost its light");
         if (light.get(3, (y + 1) & 15, 2) != emission - 1) throw new IllegalStateException("Glass lost adjacent light");
         if (EmbeddiumSections.get(MC.level, MC.level.getChunk(4, 4), sectionPos.getY()) == null) throw new IllegalStateException("Section route failed");
+        if (!edited) EmbeddiumCompatibilityRegression.verify(y);
         System.out.println("ENDLESS_EMBEDDIUM_SNAPSHOT_PASS y=" + y + " palette/light/blockEntity");
     }
 

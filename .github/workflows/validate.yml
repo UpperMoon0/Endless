@@ -51,10 +51,11 @@ jobs:
       - run: rm -rf "$GRADLE_USER_HOME/caches/fabric-loom"
       - run: chmod +x gradlew
       - run: ./gradlew :fabric-1.20.1:build :forge-1.20.1:build --stacktrace --no-daemon
-      - name: Verify packaged Create Minecraft selectors
+      - name: Verify packaged optional-mod Minecraft selectors
         run: |
           version=$(sed -n 's/^mod_version=//p' gradle.properties)
           python3 tools/check_create_mixin_refmap.py "forge-1.20.1/build/libs/endless-forge-1.20.1-${version}.jar"
+          python3 tools/check_embeddium_mixin_refmap.py "forge-1.20.1/build/libs/endless-forge-1.20.1-${version}.jar"
 
   build-1211:
     name: Build Minecraft 1.21.1

@@ -9,7 +9,11 @@
     "WorldSliceMixin",
     "ClonedChunkSectionMixin",
     "RenderSectionManagerMixin",
-    "OcclusionCullerMixin"
+    "OcclusionCullerMixin",
+    "ChunkBuilderMeshingTaskMixin",
+    "ChunkBuilderSortTaskMixin",
+    "SodiumWorldRendererMixin",
+    "VerticalClientUpdatesMixin"
   ],
   "injectors": { "defaultRequire": 1 }
 }

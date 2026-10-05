@@ -12,6 +12,10 @@ Palette and biome containers retain Embeddium's native cloning. Before its nativ
 
 Skylight queries each column in a 15-block halo once, shares those heights across the existing five-ray exposure rule, and skips ray reads for sections proven to be below every possible exposure path. This avoids repeating sparse heightmap queries for every voxel and ray step while retaining the point-solver results.
 
+A page arriving outside the render window can still change sky exposure below it. Page application invalidates snapshots and schedules native rebuilds in the ready 3-by-3 horizontal column halo across the current 32-section window, including removal of a distant roof. Dimensions without skylight skip this extra work.
+
+Both the initial meshing task and subsequent transparency sorting subtract the section origin in double precision before converting to float. Subsequent tasks retain the manager's immutable double camera snapshot; they never read a moving camera on the worker thread. Embeddium's replacement block-entity renderer also uses the same full-position destruction keys as Endless's LevelRenderer, including cleanup and simultaneous vanilla packed-Y aliases.
+
 ## Repeatable hidden framebuffer capture
 
 Use an **isolated copy** of a world. The fixture creates small lighting/chest/glass fixtures at Y=-80, 320, 512 and ±1,000,000, changes time/weather in the copy, and teleports its integrated-server player. Do not point it at a world you want preserved unchanged.
@@ -24,6 +28,10 @@ Use an **isolated copy** of a world. The fixture creates small lighting/chest/gl
 6. Inspect `capture-manifest.json`, `progress.json`, PNGs and `failure.txt`. Require all requested images and no failure. Review pixels too: a built section alone does not prove that its geometry appeared in the final frame.
 
 The manifest records actual camera, dimensions, shader enablement/pack and capture method. The fixture checks the 32-section limit, disposed-node removal, sparse palettes, chest snapshots and light values. Its server preparation compares the batch solve to the existing per-point solver before render snapshots populate the client cache. The edit shot replaces glowstone with a lower-emission redstone torch, changes the marker, and removes the chest to check updated palette/light data and stale block-entity removal. The tower return and reload shots cover repeated rebasing and a renderer reload.
+
+Each unedited Embeddium fixture additionally checks native transparent index order on both sides of a fractional camera boundary at Y=0, ±1,000,000 and the ±8,000,000 envelope. The re-sort task comes from the transformed native manager; initial sorting invokes the transformed native meshing hook and the real native index-buffer sorter. The original absolute-float algorithm is a failing negative control. Crack checks call Embeddium's transformed block-entity lookup with two simultaneous positions separated by 4,096 Y, then check removal. Positive-height fixtures apply and remove a 48-by-48 roof page group 1,024 blocks above the fixture through the normal client-page update path, requiring fresh cached sky snapshots and restored light. These client-only roof snapshots are restored before capture. Successful manifests record these checks under `compatibilityRegressions`.
+
+`python tools/check_embeddium_mixin_refmap.py PATH_TO_NORMAL_FORGE_JAR` checks all nine optional client hooks, their Minecraft runtime selectors, and exclusion of renderer/preview classes from ordinary jars. The Minecraft 1.20.1 build job runs this packaging gate; framebuffer checks remain local integration tests.
 
 Ordinary builds omit this fixture and its requests. Captures and world copies are not release assets. The integration does not claim compatibility with Rubidium, arbitrary Sodium forks, dynamic-light mods, every shader pack, or other Minecraft/loader versions.
 
@@ -42,3 +50,20 @@ Forge 47.4.16 client, Embeddium 0.3.31, Oculus 1.8.0 and Complementary Reimagine
 | Normal Forge jar inspection | No preview fixture or bundled renderer; Create runtime refmap check passed |
 
 The full runs include tower base/boundary/upper/crown, Y=-80/320/512 and ±1,000,000 fixtures, return travel, renderer reload, and palette/light edits. The focused shaders-disabled run additionally verifies chest removal from both cloned data and the client chunk map. Reviewed final-frame pixels include upper tower, crown and the positive million-height fixture. These are local integration results; CI and release/publication are separate. Dedicated-server behavior and moving Create contraptions were not exercised by this capture fixture.
+
+## Follow-up compatibility audit, 2026-10-06
+
+The follow-up found and fixed three remaining adapter mismatches: absolute-float transparency sorting, truncated block-entity destruction lookups, and cached visible skylight after distant page updates. The audit checked upstream source and the pinned 0.3.31 artifact; native task creation and transformed hooks were exercised in the release-loader client.
+
+| Run | Result |
+| --- | --- |
+| Embeddium, Oculus absent | All 12 captures passed; new native sorting, crack and distant-sky-page checks passed |
+| Embeddium + Oculus, Complementary active | All 12 captures passed; new native regressions passed with the active pipeline |
+| Embeddium + Oculus, shaders disabled | Million-height fixture and edit/removal: 2 captures passed; new native regressions passed |
+| Vanilla renderer, Embeddium/Oculus absent | Upper tower and renderer reload: 2 captures passed |
+| Normal Forge/Fabric 1.20.1 builds; shared 1.21.1 compile | Passed |
+| Common/common-1.20.1 unit tests | 101 passed, one existing skip |
+| Python harness and metadata checks | 49 tests passed; five-target metadata passed |
+| Packaged Forge Create/Embeddium selectors | Passed; normal jar excludes preview and renderer classes |
+
+Positive million-height frames with and without Complementary, and the upper tower without shaders, were visually reviewed. Native transparency checks cover Y=0, ±1,000,000 and the ±8,000,000 envelope; the captured terrain fixtures remain at the five stated heights. The old absolute-float sorter fails the native index-order negative control. Distant-sky checks require both roof arrival and removal to replace the cached visible light data, while the section-count assertions retain the 32-section bound. This does not expand the supported renderer/version scope or certify moving contraptions, arbitrary renderer addons or shader packs.

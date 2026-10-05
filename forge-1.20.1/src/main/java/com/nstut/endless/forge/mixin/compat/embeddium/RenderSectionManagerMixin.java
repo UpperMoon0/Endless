@@ -2,6 +2,12 @@ package com.nstut.endless.forge.mixin.compat.embeddium;
 
 import com.nstut.endless.forge.compat.EmbeddiumSections;
 import com.nstut.endless.forge.compat.EmbeddiumWindowBounds;
+import com.nstut.endless.forge.compat.EmbeddiumSortCamera;
+import com.nstut.endless.forge.compat.EmbeddiumSnapshotInvalidation;
+import me.jellysquid.mods.sodium.client.render.chunk.RenderSection;
+import me.jellysquid.mods.sodium.client.render.chunk.compile.tasks.ChunkBuilderSortTask;
+import net.minecraft.world.phys.Vec3;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import com.nstut.endless.vertical.VerticalRenderWindow;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
@@ -19,16 +25,33 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Pseudo
 @Mixin(targets = "me.jellysquid.mods.sodium.client.render.chunk.RenderSectionManager", remap = false)
-public abstract class RenderSectionManagerMixin {
+public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInvalidation {
     @Shadow @Final private ClientLevel world;
     @Shadow @Final private ClonedChunkSectionCache sectionCache;
     @Shadow @Final private OcclusionCuller occlusionCuller;
     @Shadow public abstract void onSectionAdded(int x, int y, int z);
     @Shadow public abstract void onSectionRemoved(int x, int y, int z);
+    @Shadow public abstract void scheduleRebuild(int x, int y, int z, boolean important);
     @Shadow private void resetRenderLists() { throw new AssertionError(); }
     @Shadow private boolean needsUpdate;
+    @Shadow private Vec3 cameraPosition;
     @Unique private final VerticalRenderWindow endless$window = new VerticalRenderWindow();
     @Unique private final LongSet endless$readyChunks = new LongOpenHashSet();
+
+    @Override public void endless$invalidateSkyColumns(int chunkX, int chunkZ) {
+        if (!EndlessLogicalHeights.isActive() || !world.dimensionType().hasSkyLight()) return;
+        // The five-ray solver reads at most fifteen horizontal blocks away.
+        // Rebuild only ready columns in that halo, bounded by the camera window.
+        for (int x = chunkX - 1; x <= chunkX + 1; x++) for (int z = chunkZ - 1; z <= chunkZ + 1; z++) {
+            if (!endless$readyChunks.contains(ChunkPos.asLong(x, z))) continue;
+            for (int y = endless$window.minSection(); y < endless$window.maxSection(); y++) scheduleRebuild(x, y, z, false);
+        }
+    }
+
+    @Inject(method = "createSortTask", at = @At("RETURN"))
+    private void endless$preserveSortCamera(RenderSection render, int frame, CallbackInfoReturnable<ChunkBuilderSortTask> cir) {
+        if (cir.getReturnValue() != null) ((EmbeddiumSortCamera) cir.getReturnValue()).endless$setSortCamera(cameraPosition);
+    }
 
     @Inject(method = "onChunkAdded", at = @At("HEAD"), cancellable = true)
     private void endless$addChunk(int x, int z, CallbackInfo ci) {

@@ -99,8 +99,38 @@ final class EmbeddiumCompatibilityRegression {
             mc.levelRenderer.destroyBlockProgress(2_000_002, alias, -1);
         }
         if ((long) crack.invoke(null, chest) != Long.MIN_VALUE) throw new IllegalStateException("Removed crack retained");
+        verifyDenseSkyUpdate(mc, origin);
         if (fixtureY >= 320) verifyDistantSkyPage(mc, origin);
-        System.out.println("ENDLESS_EMBEDDIUM_COMPAT_REGRESSION_PASS sorting=" + cases + " initialMesh/crackAliases/removal distantSkyPage=" + (fixtureY >= 320) + " y=" + fixtureY);
+        System.out.println("ENDLESS_EMBEDDIUM_COMPAT_REGRESSION_PASS sorting=" + cases + " initialMesh/crackAliases/removal denseSkyUpdate/snapshotHalo distantSkyPage=" + (fixtureY >= 320) + " y=" + fixtureY);
+    }
+
+    private static void verifyDenseSkyUpdate(Minecraft mc, SectionPos origin) throws Exception {
+        Object manager = field(SodiumWorldRenderer.instance(), "renderSectionManager");
+        var cache = (ClonedChunkSectionCache) field(manager, "sectionCache");
+        // Exercise a real dense palette/heightmap edit and vanilla's client
+        // dirty notification, including insertion and removal outside the window.
+        BlockPos roof = new BlockPos(origin.minBlockX() + 2, 300, origin.minBlockZ() + 2);
+        var chunk = mc.level.getChunk(roof);
+        var old = chunk.getBlockState(roof);
+        var changed = old.isAir() ? Blocks.STONE.defaultBlockState() : Blocks.AIR.defaultBlockState();
+        var renderMethod = manager.getClass().getDeclaredMethod("getRenderSection", int.class, int.class, int.class);
+        renderMethod.setAccessible(true);
+        var render = (RenderSection) renderMethod.invoke(manager, origin.getX(), origin.getY(), origin.getZ());
+        try {
+            for (var state : List.of(changed, old)) {
+                var before = cache.acquire(origin.getX(), origin.getY(), origin.getZ());
+                if (render != null) render.setPendingUpdate(null);
+                var previous = chunk.setBlockState(roof, state, false);
+                mc.level.setBlocksDirty(roof, previous, state);
+                if (before == cache.acquire(origin.getX(), origin.getY(), origin.getZ())
+                    || render == null || render.getPendingUpdate() == null) {
+                    throw new IllegalStateException("Dense roof edit retained sparse snapshot or omitted mesh rebuild");
+                }
+            }
+        } finally {
+            var previous = chunk.setBlockState(roof, old, false);
+            if (previous != null) mc.level.setBlocksDirty(roof, previous, old);
+        }
     }
 
     private static void verifyDistantSkyPage(Minecraft mc, SectionPos origin) throws Exception {
@@ -108,6 +138,11 @@ final class EmbeddiumCompatibilityRegression {
         var cache = (ClonedChunkSectionCache) field(manager, "sectionCache");
         var before = cache.acquire(origin.getX(), origin.getY(), origin.getZ());
         int oldSky = before.getLightArray(LightLayer.SKY).get(2, 15, 2);
+        var window = (VerticalRenderWindow) field(manager, "endless$window");
+        var haloPositions = List.of(SectionPos.of(origin.getX(), window.minSection() - 1, origin.getZ()),
+            SectionPos.of(origin.getX(), window.maxSection(), origin.getZ()));
+        var haloBefore = haloPositions.stream().map(pos -> cache.acquire(pos.getX(), pos.getY(), pos.getZ())).toList();
+        var haloRoof = new java.util.ArrayList<me.jellysquid.mods.sodium.client.world.cloned.ClonedChunkSection>();
         int roofSection = origin.getY() + 64; // Outside both camera window and local dirty halo.
         var vertical = EndlessVerticalEngine.world(mc.level);
         var originals = new LinkedHashMap<VerticalPagePos, VerticalPageSnapshot>();
@@ -123,6 +158,16 @@ final class EmbeddiumCompatibilityRegression {
                 page.putSection(roofSection, roof);
                 VerticalClientUpdates.apply(mc, VerticalPageSnapshot.fromPage(pagePos, original == null ? 0 : original.revision(), page));
             }
+            for (int i = 0; i < haloPositions.size(); i++) {
+                var pos = haloPositions.get(i);
+                var fresh = cache.acquire(pos.getX(), pos.getY(), pos.getZ());
+                var sampleHalo = new BlockPos(pos.minBlockX() + 2, pos.minBlockY() + 15, pos.minBlockZ() + 2);
+                haloRoof.add(fresh);
+                if (fresh == haloBefore.get(i) || (EndlessVerticalEngine.isExtendedY(mc.level, sampleHalo.getY())
+                    && fresh.getLightArray(LightLayer.SKY).get(2, 15, 2) != vertical.getBrightness(LightLayer.SKY, sampleHalo))) {
+                    throw new IllegalStateException("Distant roof retained stale window-edge halo: " + pos);
+                }
+            }
             var after = cache.acquire(origin.getX(), origin.getY(), origin.getZ());
             int sky = after.getLightArray(LightLayer.SKY).get(2, 15, 2);
             BlockPos sample = new BlockPos(origin.minBlockX() + 2, origin.minBlockY() + 15, origin.minBlockZ() + 2);
@@ -134,6 +179,14 @@ final class EmbeddiumCompatibilityRegression {
                 var pos = entry.getKey();
                 VerticalClientUpdates.apply(mc, entry.getValue() == null
                     ? new VerticalPageSnapshot(pos.chunkX(), pos.pageY(), pos.chunkZ(), 0, List.of()) : entry.getValue());
+            }
+        }
+        for (int i = 0; i < haloPositions.size(); i++) {
+            var pos = haloPositions.get(i);
+            var restored = cache.acquire(pos.getX(), pos.getY(), pos.getZ());
+            if (restored == haloRoof.get(i) || restored.getLightArray(LightLayer.SKY).get(2, 15, 2)
+                != haloBefore.get(i).getLightArray(LightLayer.SKY).get(2, 15, 2)) {
+                throw new IllegalStateException("Roof removal retained stale window-edge halo: " + pos);
             }
         }
         if (cache.acquire(origin.getX(), origin.getY(), origin.getZ()).getLightArray(LightLayer.SKY).get(2, 15, 2) != oldSky) {

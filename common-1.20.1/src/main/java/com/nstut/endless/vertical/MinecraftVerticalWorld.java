@@ -630,6 +630,11 @@ public final class MinecraftVerticalWorld {
         }
     }
 
+    /** Dense heightmaps also participate in sparse sky exposure. */
+    public synchronized void invalidateSkyLight() {
+        skyLight.clear();
+    }
+
     private void invalidateForBlockChange(BlockPos pos) {
         long key = ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4);
         int local = (pos.getX() & 15) | ((pos.getZ() & 15) << 4);

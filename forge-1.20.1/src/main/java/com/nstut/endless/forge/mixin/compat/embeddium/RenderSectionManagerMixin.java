@@ -41,10 +41,15 @@ public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInva
     @Override public void endless$invalidateSkyColumns(int chunkX, int chunkZ) {
         if (!EndlessLogicalHeights.isActive() || !world.dimensionType().hasSkyLight()) return;
         // The five-ray solver reads at most fifteen horizontal blocks away.
-        // Rebuild only ready columns in that halo, bounded by the camera window.
+        // WorldSlice clones a one-section halo outside the node window too.
+        // Clear those snapshots even for columns without a render node.
         for (int x = chunkX - 1; x <= chunkX + 1; x++) for (int z = chunkZ - 1; z <= chunkZ + 1; z++) {
-            if (!endless$readyChunks.contains(ChunkPos.asLong(x, z))) continue;
-            for (int y = endless$window.minSection(); y < endless$window.maxSection(); y++) scheduleRebuild(x, y, z, false);
+            for (int y = endless$window.minSection() - 1; y <= endless$window.maxSection(); y++) {
+                sectionCache.invalidate(x, y, z);
+                if (endless$window.contains(y) && endless$readyChunks.contains(ChunkPos.asLong(x, z))) {
+                    scheduleRebuild(x, y, z, false);
+                }
+            }
         }
     }
 

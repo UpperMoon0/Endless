@@ -214,8 +214,8 @@ public final class EmbeddiumShaderPreview {
             record.put("embeddium", embeddium);
             if (shot.has("fixtureY")) record.put("fixtureY", shot.get("fixtureY").getAsInt());
             if (embeddium && shot.has("fixtureY") && !(shot.has("edit") && shot.get("edit").getAsBoolean())) {
-                record.put("compatibilityRegressions", "native initial/dynamic sort, crack aliases/removal"
-                    + (shot.get("fixtureY").getAsInt() >= 320 ? ", distant sky page/removal" : ""));
+                record.put("compatibilityRegressions", "native initial/dynamic sort, crack aliases/removal, dense roof edits"
+                    + (shot.get("fixtureY").getAsInt() >= 320 ? ", distant sky page/removal and snapshot halo" : ""));
             }
             record.put("captureMethod", "Screenshot.takeScreenshot(mainRenderTarget), RenderTick END, hidden GLFW window");
             record.put("capturedAtUtc", java.time.Instant.now().toString());

@@ -1,0 +1,73 @@
+name: Renderer smoke
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: endless-render-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  framebuffer:
+    name: Framebuffer (${{ matrix.backend }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [embeddium, oculus]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ matrix.backend == 'oculus' }}
+          gradle-home-cache-excludes: |
+            caches/fabric-loom
+      - name: Prepare display and dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1-mesa-dri mesa-utils
+          rm -rf "$GRADLE_USER_HOME/caches/fabric-loom"
+          mkdir -p "$GRADLE_USER_HOME/init.d"
+          cp .github/gradle/ci-maven-central-mirror.init.gradle "$GRADLE_USER_HOME/init.d/"
+          chmod +x gradlew
+      - name: Capture generated fixture world
+        env:
+          BACKEND: ${{ matrix.backend }}
+        run: |
+          args=()
+          if [[ "$BACKEND" == oculus ]]; then args+=(--oculus); fi
+          python3 tools/render_smoke_test.py "${args[@]}"
+      - name: Require exact-head rendering receipt
+        env:
+          EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          receipts = list(Path('build/render-smoke').glob('*/pass.json'))
+          assert len(receipts) == 1
+          receipt = json.loads(receipts[0].read_text())
+          assert receipt['head'] == os.environ['EXACT_HEAD']
+          assert receipt['dirty'] is False
+          PY
+      - name: Upload frames, measurements and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: renderer-smoke-${{ matrix.backend }}
+          path: |
+            build/render-smoke/**
+            forge-1.20.1/run/shader-preview/.minecraft/logs/**
+            forge-1.20.1/run/shader-preview/.minecraft/crash-reports/**
+          if-no-files-found: error

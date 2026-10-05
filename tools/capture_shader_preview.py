@@ -17,13 +17,19 @@ parser.add_argument('--instance', type=Path, required=True)
 parser.add_argument('--output', type=Path, required=True)
 parser.add_argument('--world', default='Endless Shader Preview')
 parser.add_argument('--shaders', action='store_true')
+parser.add_argument('--fixture-only', action='store_true', help='Use generated scenes, return/reload and edit shots; no tower required')
+parser.add_argument('--create-world', action='store_true', help='Create a new vanilla-registry fixture world; reject existing folders')
 parser.add_argument('--shots', help='Comma-separated shot names for a focused rerun')
 parser.add_argument('--vanilla', action='store_true', help='Verify a baseline without Embeddium/Oculus')
 parser.add_argument('--launcher', type=Path, help='Optionally launch Prism and wait for complete captures')
 parser.add_argument('--timeout', type=int, default=1200)
 args = parser.parse_args()
 game = args.instance / '.minecraft'
-if not (game / 'saves' / args.world / 'level.dat').is_file():
+if args.create_world and (game / 'saves' / args.world).exists():
+    parser.error('Fresh fixture world already exists; use a new world name.')
+if args.create_world and not args.fixture_only:
+    parser.error('--create-world requires --fixture-only; generated worlds have no tower.')
+if not args.create_world and not (game / 'saves' / args.world / 'level.dat').is_file():
     parser.error('Copy the world into the isolated instance before capturing.')
 shots = [
     dict(name='01-tower-base', eye=[-78, 112, -39], target=[-114, 99, -81]),
@@ -38,9 +44,16 @@ shots += [
     dict(name='11-tower-reload', eye=[-73, 525, -34], target=[-114, 512, -81], reload=True),
     dict(name='12-fixture-edit', eye=[80, 1_000_007, 80], target=[66, 1_000_001, 66], fixtureY=1_000_000, edit=True),
 ]
+if args.fixture_only:
+    shots = [shot for shot in shots if 'fixtureY' in shot and not shot.get('edit')]
+    shots += [dict(name='fixture-nether', eye=[80, 519, 80], target=[66, 513, 66], fixtureY=512, dimension='minecraft:the_nether'),
+              dict(name='fixture-dimension-return', eye=[80, 327, 80], target=[66, 321, 66], fixtureY=320, dimension='minecraft:overworld'),
+              dict(name='fixture-return', eye=[80, 327, 80], target=[66, 321, 66], fixtureY=320),
+              dict(name='fixture-reload', eye=[80, 1_000_007, 80], target=[66, 1_000_001, 66], fixtureY=1_000_000, reload=True),
+              dict(name='12-fixture-edit', eye=[80, 1_000_007, 80], target=[66, 1_000_001, 66], fixtureY=1_000_000, edit=True)]
 if args.vanilla and args.shaders:
     parser.error('The vanilla baseline cannot enable Oculus shaders.')
-request = dict(world=args.world, output=str(args.output.resolve()), expectShaders=args.shaders, expectEmbeddium=not args.vanilla, shots=shots)
+request = dict(createWorld=args.create_world, world=args.world, output=str(args.output.resolve()), expectShaders=args.shaders, expectEmbeddium=not args.vanilla, shots=shots)
 if args.shots:
     requested = set(args.shots.split(','))
     selected = [shot for shot in shots if shot['name'] in requested]
@@ -81,7 +94,10 @@ if args.launcher:
                     if record['embeddium'] and record.get('fixtureY') is not None and record['file'] != '12-fixture-edit.png':
                         checks = record.get('compatibilityRegressions', '')
                         assert 'native initial/dynamic sort, crack aliases/removal' in checks
-                        if record['fixtureY'] >= 320:
+                        assert all(check in checks for check in ('complete mesh output', 'unload/cancel/late upload'))
+                        sky = record['dimension'] == 'minecraft:overworld'
+                        assert ('dense roof edits' if sky else 'no-skylight dimension skip') in checks
+                        if sky and record['fixtureY'] >= 320:
                             assert 'distant sky page/removal' in checks
                 print(f'Validated {len(records)} native framebuffer captures: {manifest}')
                 break

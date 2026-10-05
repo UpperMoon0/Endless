@@ -21,6 +21,13 @@ loom {
                 vmArg "-Xmx6G"
                 vmArg "-Xms2G"
             }
+            shaderPreviewClient {
+                client()
+                runDir("run/shader-preview/.minecraft")
+                vmArg "-Xmx3G"
+                property "endless.shaderPreview", "true"
+                programArgs "--width", "640", "--height", "360"
+            }
             server {
                 server()
                 runDir("run/server")
@@ -104,7 +111,15 @@ dependencies {
 
     // Compatibility CI stays pinned to its established exact CurseForge files
     // for Waystones 14.1.20 and Balm 7.3.38; normal dev runs use current releases.
-    if (System.getenv('ENDLESS_TEST_WAYSTONES') == 'true') {
+    if (project.hasProperty('shaderPreview')) {
+        modRuntimeOnly("maven.modrinth:embeddium:UTbfe5d1") { transitive = false }
+        modRuntimeOnly("io.github.llamalad7:mixinextras-forge:0.4.1") { transitive = false }
+        forgeRuntimeLibrary("io.github.llamalad7:mixinextras-common:0.4.1") { transitive = false }
+        if (project.hasProperty('previewOculus')) {
+            modRuntimeOnly("maven.modrinth:oculus:iQ1SwGc3") { transitive = false }
+            forgeRuntimeLibrary("org.anarres:jcpp:1.4.14") { transitive = false }
+        }
+    } else if (System.getenv('ENDLESS_TEST_WAYSTONES') == 'true') {
         modRuntimeOnly "curse.maven:balm-531761:7420617"
         modRuntimeOnly "curse.maven:waystones-245755:7682270"
     } else {

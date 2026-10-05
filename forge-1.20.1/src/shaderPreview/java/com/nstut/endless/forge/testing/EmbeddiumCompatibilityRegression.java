@@ -9,6 +9,10 @@ import com.nstut.endless.vertical.*;
 import me.jellysquid.mods.sodium.client.render.SodiumWorldRenderer;
 import me.jellysquid.mods.sodium.client.render.chunk.RenderSection;
 import me.jellysquid.mods.sodium.client.render.chunk.RenderSectionManager;
+import me.jellysquid.mods.sodium.client.render.chunk.compile.ChunkBuildContext;
+import me.jellysquid.mods.sodium.client.render.chunk.compile.ChunkBuildOutput;
+import me.jellysquid.mods.sodium.client.render.chunk.vertex.format.ChunkVertexType;
+import me.jellysquid.mods.sodium.client.util.task.CancellationToken;
 import me.jellysquid.mods.sodium.client.render.chunk.compile.ChunkBufferSorter;
 import me.jellysquid.mods.sodium.client.render.chunk.compile.tasks.ChunkBuilderMeshingTask;
 import me.jellysquid.mods.sodium.client.render.chunk.compile.tasks.ChunkBuilderSortTask;
@@ -28,7 +32,20 @@ import org.embeddedt.embeddium.render.chunk.sorting.TranslucentQuadAnalyzer;
 
 /** Runs against the transformed release renderer, including native index buffers. */
 final class EmbeddiumCompatibilityRegression {
+    private static final Map<String, Object> metrics = new LinkedHashMap<>();
+    static Map<String, Object> measurements() { return new LinkedHashMap<>(metrics); }
+    @FunctionalInterface private interface Probe { void run() throws Exception; }
+    private static void measure(String name, Probe probe) throws Exception {
+        long start = System.nanoTime(), before = EmbeddiumShaderPreview.allocatedBytes();
+        try { probe.run(); }
+        finally {
+            metrics.put(name + "Ms", (System.nanoTime() - start) / 1_000_000.0);
+            long after = EmbeddiumShaderPreview.allocatedBytes();
+            metrics.put(name + "RenderThreadBytes", before < 0 || after < 0 ? -1 : after - before);
+        }
+    }
     static void verify(int fixtureY) throws Exception {
+        metrics.clear();
         Minecraft mc = Minecraft.getInstance();
         var state = new TranslucentQuadAnalyzer.SortState(TranslucentQuadAnalyzer.Level.DYNAMIC,
             new float[] {0, .25f, 0, 0, .75f, 0}, null, null);
@@ -99,9 +116,104 @@ final class EmbeddiumCompatibilityRegression {
             mc.levelRenderer.destroyBlockProgress(2_000_002, alias, -1);
         }
         if ((long) crack.invoke(null, chest) != Long.MIN_VALUE) throw new IllegalStateException("Removed crack retained");
-        verifyDenseSkyUpdate(mc, origin);
-        if (fixtureY >= 320) verifyDistantSkyPage(mc, origin);
+        measure("completeMeshing", () -> verifyCompleteMesh(mc, manager, context, origin));
+        measure("chunkLifecycle", () -> verifyChunkRemoval(mc, manager, context, origin));
+        if (mc.level.dimensionType().hasSkyLight()) {
+            measure("denseRoof", () -> verifyDenseSkyUpdate(mc, origin));
+            if (fixtureY >= 320) measure("skyPageBurst", () -> verifyDistantSkyPage(mc, origin));
+        }
         System.out.println("ENDLESS_EMBEDDIUM_COMPAT_REGRESSION_PASS sorting=" + cases + " initialMesh/crackAliases/removal denseSkyUpdate/snapshotHalo distantSkyPage=" + (fixtureY >= 320) + " y=" + fixtureY);
+    }
+
+    private static void verifyCompleteMesh(Minecraft mc, RenderSectionManager manager, ChunkRenderContext context, SectionPos origin) throws Exception {
+        var build = new ChunkBuildContext(mc.level, (ChunkVertexType) field(manager, "vertexType"));
+        int oldFailures = 0;
+        try {
+            for (double fraction : new double[] {1.49, 1.51}) {
+                Vec3 camera = new Vec3(67.5, origin.minBlockY() + fraction, 66.5);
+                var task = new ChunkBuilderMeshingTask(new RenderSection(null, origin.getX(), origin.getY(), origin.getZ()), context, 0)
+                    .withCameraPosition(camera);
+                var output = task.execute(build, token());
+                if (output == null) throw new IllegalStateException("Full meshing task unexpectedly cancelled");
+                try {
+                    var mesh = output.meshes.get(DefaultTerrainRenderPasses.TRANSLUCENT);
+                    if (mesh == null || mesh.getIndexData() == null || mesh.getIndexData().getLength() == 0) {
+                        throw new IllegalStateException("Full meshing task omitted translucent fixture geometry");
+                    }
+                    var expected = new NativeBuffer(mesh.getIndexData().getLength());
+                    var legacy = new NativeBuffer(mesh.getIndexData().getLength());
+                    try {
+                        ChunkBufferSorter.sort(expected, mesh.getSortState(),
+                            (float) (camera.x - origin.minBlockX()), (float) (camera.y - origin.minBlockY()),
+                            (float) (camera.z - origin.minBlockZ()));
+                        if (mesh.getIndexData().getDirectBuffer().mismatch(expected.getDirectBuffer()) != -1) {
+                            throw new IllegalStateException("Complete meshing output has incorrect initial transparency order");
+                        }
+                        ChunkBufferSorter.sort(legacy, mesh.getSortState(),
+                            (float) camera.x - origin.minBlockX(), (float) camera.y - origin.minBlockY(),
+                            (float) camera.z - origin.minBlockZ());
+                        if (legacy.getDirectBuffer().mismatch(expected.getDirectBuffer()) != -1) oldFailures++;
+                    } finally { expected.free(); legacy.free(); }
+                } finally { output.delete(); }
+            }
+        } finally { build.cleanup(); }
+        if (Math.abs(origin.minBlockY()) >= 1_000_000 && oldFailures == 0) {
+            throw new IllegalStateException("Full-mesh precision fixture failed to expose the old sorter");
+        }
+    }
+
+    private static CancellationToken token() {
+        return new CancellationToken() {
+            private boolean cancelled;
+            public boolean isCancelled() { return cancelled; }
+            public void setCancelled() { cancelled = true; }
+        };
+    }
+
+    private static void verifyChunkRemoval(Minecraft mc, RenderSectionManager manager, ChunkRenderContext context, SectionPos origin) throws Exception {
+        var sections = (it.unimi.dsi.fastutil.longs.Long2ReferenceMap<RenderSection>) field(manager, "sectionByPosition");
+        var departing = sections.values().stream().filter(section -> section.getChunkX() == origin.getX()
+            && section.getChunkZ() == origin.getZ()).toList();
+        if (departing.size() != 32) throw new IllegalStateException("Chunk lifecycle fixture has no full render column");
+        var render = departing.stream().filter(section -> section.getChunkY() == origin.getY()).findFirst().orElseThrow();
+        var cancellation = token();
+        var previous = render.getBuildCancellationToken();
+        if (previous != null) previous.setCancelled();
+        render.setBuildCancellationToken(cancellation);
+        var build = new ChunkBuildContext(mc.level, (ChunkVertexType) field(manager, "vertexType"));
+        var task = new ChunkBuilderMeshingTask(render, context, 0);
+        try {
+            // Unload after execution has entered its native section loop. The
+            // native node deletion must cancel the task and dispose all nodes.
+            var output = task.execute(build, new CancellationToken() {
+                int polls;
+                public boolean isCancelled() {
+                    if (++polls == 2) manager.onChunkRemoved(origin.getX(), origin.getZ());
+                    return cancellation.isCancelled();
+                }
+                public void setCancelled() { cancellation.setCancelled(); }
+            });
+            if (output != null) { output.delete(); throw new IllegalStateException("Unload did not cancel active native meshing"); }
+            if (departing.stream().anyMatch(section -> !section.isDisposed())
+                || sections.values().stream().anyMatch(section -> section.getChunkX() == origin.getX() && section.getChunkZ() == origin.getZ())) {
+                throw new IllegalStateException("Chunk unload retained native nodes");
+            }
+            // A late completed job for an unloaded node must never reach GPU upload.
+            var stale = new ChunkBuildOutput(render, null, new java.util.HashMap<>(), 0);
+            var filter = manager.getClass().getDeclaredMethod("filterChunkBuildResults", java.util.ArrayList.class);
+            filter.setAccessible(true);
+            try {
+                var results = (List<?>) filter.invoke(null, new java.util.ArrayList<>(List.of(stale)));
+                if (!results.isEmpty()) throw new IllegalStateException("Disposed node's late result survived upload filtering");
+            } finally { stale.delete(); }
+        } finally {
+            build.cleanup();
+            manager.onChunkAdded(origin.getX(), origin.getZ());
+        }
+        long count = sections.values().stream().filter(section -> section.getChunkX() == origin.getX() && section.getChunkZ() == origin.getZ()).count();
+        if (count != 32 || sections.get(SectionPos.asLong(origin.getX(), origin.getY(), origin.getZ())) == render) {
+            throw new IllegalStateException("Chunk reload failed to create a fresh bounded column");
+        }
     }
 
     private static void verifyDenseSkyUpdate(Minecraft mc, SectionPos origin) throws Exception {

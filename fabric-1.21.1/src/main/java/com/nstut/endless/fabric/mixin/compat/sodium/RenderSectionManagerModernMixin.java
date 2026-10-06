@@ -41,7 +41,21 @@ public abstract class RenderSectionManagerModernMixin implements EmbeddiumSnapsh
     @Override public void endless$invalidateSnapshot(int x, int y, int z) { sectionCache.invalidate(x, y, z); }
     @Override public void endless$addSection(int x, int y, int z) { onSectionAdded(x, y, z); }
     @Override public void endless$removeSection(int x, int y, int z) { onSectionRemoved(x, y, z); }
-    @Override public void endless$rebuildSection(int x, int y, int z) { scheduleRebuild(x, y, z, false); }
+    @Override public boolean endless$rebuildSection(int x, int y, int z) {
+        var node = getRenderSection(x, y, z);
+        if (node == null || node.isDisposed()) return true;
+        // Native scheduleRebuild ignores unbuilt nodes. Keep a notification
+        // until the first build uploads, then rebuild from the fresh snapshot.
+        if (!node.isBuilt()) return false;
+        scheduleRebuild(x, y, z, false);
+        return true;
+    }
+    @Inject(method = "scheduleRebuild", at = @At("RETURN"))
+    private void endless$retainInitialBuildEdits(int x, int y, int z, boolean important, CallbackInfo ci) {
+        if (!EndlessLogicalHeights.isActive()) return;
+        var node = getRenderSection(x, y, z);
+        if (node != null && !node.isBuilt() && !node.isDisposed()) endless$sections.deferRebuild(x, y, z);
+    }
     @Override public void endless$setBounds(int min, int max) {
         ((EmbeddiumWindowBounds) occlusionCuller).endless$setWindowBounds(min, max);
     }

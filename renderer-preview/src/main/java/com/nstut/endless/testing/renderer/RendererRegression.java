@@ -93,6 +93,23 @@ final class RendererRegression {
             metrics.put("lateUploadFiltered", true);
         } finally {call(manager,"onChunkAdded",4,4);}
         if(section(manager,4,node.getChunkY(),4).nativeSection==node.nativeSection) throw new IllegalStateException("Reload reused disposed node");
+        verifyInitialBuildNotification(manager, node.getChunkY());
+    }
+    private static void verifyInitialBuildNotification(Object manager, int y) {
+        Object state;
+        try { state = field(manager, "endless$sections"); }
+        catch (IllegalStateException absent) {
+            if (!absent.getMessage().startsWith("Missing native field")) throw absent;
+            return; // Older Embeddium and 26.1.2 use their own manager adapters.
+        }
+        var replacement = section(manager, 4, y, 4);
+        if (replacement == null || replacement.isBuilt()) throw new IllegalStateException("Initial-build regression requires a new unbuilt native node");
+        call(manager, "scheduleRebuild", 4, y, 4, false);
+        var deferred = (Set<?>) field(state, "deferredRebuilds");
+        if (deferred.stream().noneMatch(key -> (int) field(key, "x") == 4
+            && (int) field(key, "y") == y && (int) field(key, "z") == 4))
+            throw new IllegalStateException("Native initial-build edit was dropped");
+        metrics.put("initialBuildNotificationRetained", true);
     }
     private static void verifyDenseBurst(Minecraft mc, Object manager, BlockPos roof) {
         var invalidation = manager;

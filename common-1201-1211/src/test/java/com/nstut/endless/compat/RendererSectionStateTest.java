@@ -10,10 +10,15 @@ class RendererSectionStateTest {
     private static final class Native implements RendererSectionState.NativeSections {
         final List<Section> added = new ArrayList<>(), removed = new ArrayList<>(), invalidated = new ArrayList<>(), rebuilt = new ArrayList<>();
         int min, max, resets, pointInvalidations;
+        boolean initialBuildRunning;
         public void endless$invalidateSnapshot(int x, int y, int z) { invalidated.add(new Section(x, y, z)); }
         public void endless$addSection(int x, int y, int z) { added.add(new Section(x, y, z)); }
         public void endless$removeSection(int x, int y, int z) { removed.add(new Section(x, y, z)); }
-        public void endless$rebuildSection(int x, int y, int z) { rebuilt.add(new Section(x, y, z)); }
+        public boolean endless$rebuildSection(int x, int y, int z) {
+            if (initialBuildRunning) return false;
+            rebuilt.add(new Section(x, y, z));
+            return true;
+        }
         public boolean endless$needsDenseRebuild(int x, int y, int z) { return y == 0; }
         public void endless$setBounds(int min, int max) { this.min = min; this.max = max; }
         public void endless$resetGraph() { resets++; }
@@ -89,5 +94,32 @@ class RendererSectionStateTest {
         assertEquals(5, nativeSections.rebuilt.size());
         assertTrue(nativeSections.rebuilt.stream().allMatch(s -> s.y >= -2 && s.y < 3));
         assertEquals(9 * 7, nativeSections.invalidated.size());
+    }
+
+    @Test void initialBuildEditsRetryOnceAfterUploadAndDiscardUnloadedNotifications() {
+        var nativeSections = new Native();
+        var state = new RendererSectionState(nativeSections);
+        state.updateWindow(0, -1000, 1000);
+        state.addChunk(0, 0);
+        nativeSections.initialBuildRunning = true;
+        for (int i = 0; i < 120; i++) state.deferRebuild(0, 0, 0);
+        state.deferRebuild(9, 0, 9); // Unloaded column.
+        state.deferRebuild(0, 100, 0); // Outside the render window.
+        state.updateWindow(0, -1000, 1000);
+        assertTrue(nativeSections.rebuilt.isEmpty());
+        nativeSections.initialBuildRunning = false;
+        state.updateWindow(0, -1000, 1000);
+        state.updateWindow(0, -1000, 1000);
+        assertEquals(List.of(new Section(0, 0, 0)), nativeSections.rebuilt);
+        nativeSections.initialBuildRunning = true;
+        state.deferRebuild(0, 1, 0);
+        state.removeChunk(0, 0);
+        nativeSections.initialBuildRunning = false;
+        state.updateWindow(0, -1000, 1000);
+        assertEquals(1, nativeSections.rebuilt.size());
+        state.addChunk(0, 0);
+        state.deferRebuild(0, 1, 0);
+        state.updateWindow(100, -1000, 1000);
+        assertEquals(1, nativeSections.rebuilt.size()); // Departed window notification discarded.
     }
 }

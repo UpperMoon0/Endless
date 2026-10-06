@@ -66,6 +66,8 @@ def validate(output: Path, request: dict, oculus: bool, target: str = "forge-1.2
             raise RuntimeError('Unexpected renderer/Oculus/shader state')
         if active and 'Complementary' not in record.get('shaderPack', ''):
             raise RuntimeError('Expected active Complementary pipeline')
+        if active and target != 'forge-1.20.1' and not record.get('shaderPipeline', '').endswith('.IrisRenderingPipeline'):
+            raise RuntimeError('Expected actual Iris shader pipeline')
         if (record['width'], record['height']) != (640, 360) or record['sampledColors'] < 16 or (not active and record.get('markerPixels', 0) < 1):
             raise RuntimeError('Wrong framebuffer dimensions or blank frame')
         if record['frameTimeP95Ms'] <= 0 or record['renderThreadAllocatedBytes'] < -1:
@@ -184,7 +186,9 @@ def main() -> None:
             dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).strip())
             (output / 'pass.json').write_text(json.dumps({
                 'head': head, 'dirty': dirty, 'backend': backend, 'captures': len(records),
-                'shaderScope': 'Oculus loaded with shaders disabled' if args.oculus else 'Oculus absent',
+                'shaderScope': ('Complementary active' if args.shader_pack else
+                    ('Iris loaded with shaders disabled' if args.iris else
+                     ('Oculus loaded with shaders disabled' if args.oculus else 'Shader loader absent'))),
             }, indent=2))
             print(f'ENDLESS_RENDER_SMOKE_PASS {head} {backend}: {len(records)} captures ({output})')
         finally:

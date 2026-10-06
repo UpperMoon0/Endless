@@ -166,8 +166,24 @@ if (project.hasProperty("shaderPreview")) {
     def previewBackend = project.findProperty("previewRenderer") ?: "embeddium"
     def previewPin = previewBackend == "embeddium" ? 'J7b96IEd' : (project.findProperty("previewSodiumPin") ?: "Pb3OXVqC")
     if (previewPin == null) throw new GradleException("No Embeddium release for neoforge-1.21.1")
+    // Sodium 0.8 ships a LIBRARY bootstrap containing the actual mod as a
+    // nested jar. FML 4's userdev locator selects the bootstrap itself for the
+    // nested sodium identity when it is a Maven runtime dependency. Exercise
+    // the unchanged release jar through the normal mods-folder locator.
+    def bootstrapPreview = previewBackend == "sodium" && previewPin == "uMOpc5uV"
+    if (bootstrapPreview) configurations.create("rendererBootstrapPreview")
     dependencies {
-        runtimeOnly("maven.modrinth:${previewBackend}:${previewPin}") { transitive = false }
+        if (bootstrapPreview) rendererBootstrapPreview("maven.modrinth:${previewBackend}:${previewPin}") { transitive = false }
+        else runtimeOnly("maven.modrinth:${previewBackend}:${previewPin}") { transitive = false }
         if (project.hasProperty("previewIris")) runtimeOnly("maven.modrinth:iris:t3ruzodq") { transitive = false }
+    }
+    tasks.named("runShaderPreviewClient").configure {
+        doFirst {
+            def destination = project.file("run/shader-preview/.minecraft/mods/endless-preview-sodium.jar")
+            if (bootstrapPreview) {
+                destination.parentFile.mkdirs()
+                java.nio.file.Files.copy(configurations.rendererBootstrapPreview.singleFile.toPath(), destination.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            } else java.nio.file.Files.deleteIfExists(destination.toPath())
+        }
     }
 }

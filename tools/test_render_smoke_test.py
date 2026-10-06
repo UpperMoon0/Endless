@@ -153,9 +153,16 @@ class RenderSmokeTest(unittest.TestCase):
     def test_active_shader_receipt_requires_expected_pipeline(self):
         self.modern_receipt()
         self.request['expectShaders'] = True
-        self.record.update(shadersActive=True, shaderPack='ComplementaryReimagined_r5.9.3.zip', markerPixels=0)
+        self.record.update(shadersActive=True, shaderPack='ComplementaryReimagined_r5.9.3.zip', markerPixels=0,
+            shaderPipeline='net.irisshaders.iris.pipeline.IrisRenderingPipeline')
         self.write()
         self.assertEqual(1, len(smoke.validate(self.root, self.request, False, 'fabric-1.21.1', 'sodium')))
+        for pipeline in ('', 'net.irisshaders.iris.pipeline.VanillaRenderingPipeline'):
+            self.record['shaderPipeline'] = pipeline
+            self.write()
+            with self.assertRaisesRegex(RuntimeError, 'actual Iris shader pipeline'):
+                smoke.validate(self.root, self.request, False, 'fabric-1.21.1', 'sodium')
+        self.record['shaderPipeline'] = 'net.irisshaders.iris.pipeline.IrisRenderingPipeline'
         self.record['shaderPack'] = ''
         self.write()
         with self.assertRaisesRegex(RuntimeError, 'Complementary'):

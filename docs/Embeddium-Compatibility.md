@@ -7,14 +7,16 @@ Endless 0.10 extends the client adapter across every existing Endless release ta
 | Forge 1.20.1 | Embeddium 0.3.31 | Oculus 1.8.0 |
 | Fabric 1.20.1 | Embeddium 0.3.25 or Sodium 0.5.13 | Iris 1.7.6 with Sodium |
 | Fabric 1.21.1 | Sodium 0.6.13 or 0.8.13 | Iris 1.8.8 with Sodium 0.6.13 |
-| NeoForge 1.21.1 | Embeddium 1.0.15 or Sodium 0.6.13 / 0.8.13 | See the Iris artifact limitation below |
+| NeoForge 1.21.1 | Embeddium 1.0.15 or Sodium 0.6.13 / 0.8.13 | Iris 1.8.12 with Sodium 0.6.13 |
 | NeoForge 26.1.2 | Sodium 0.9.2 | Iris 1.11.4 |
 
 Embeddium and Oculus also have historical releases for Minecraft versions outside this repository's five targets. Of the versions Endless currently builds, Oculus is available only for Forge 1.20.1. Fabric 1.21.1 and NeoForge 26.1.2 use upstream Sodium/Iris instead. See upstream [Embeddium](https://modrinth.com/mod/embeddium/versions), [Oculus](https://modrinth.com/mod/oculus/versions), [Sodium](https://modrinth.com/mod/sodium/versions) and [Iris](https://modrinth.com/mod/iris/versions) release lists.
 
-Choose one renderer. Iris profiles use their declared Sodium dependency; Iris is not paired with Embeddium. The checked NeoForge Iris 1.8.8, 1.8.12 and 1.8.14 beta artifacts are listed for 1.21.1 upstream, but their own `minecraft` dependency range is `[1.21,1.21.1)`, excluding 1.21.1. Endless does not patch those upstream jars or suppress loader dependency checks. NeoForge 1.21.1 shader support cannot be certified with these artifacts.
+Choose one renderer. Iris profiles use their declared Sodium dependency; Iris is not paired with Embeddium. NeoForge Iris declares Minecraft `[1.21,1.21.1)`, but NeoForge's own `VersionSupportMatrix` explicitly accepts 1.21 constraints on 1.21.1. The unchanged upstream Iris artifact loads and passes the native regression. The pinned Modrinth 1.8.12 artifact (`t3ruzodq`) reports `1.8.12-snapshot+mc1.21.1-local` internally. Endless does not patch it or suppress loader checks.
 
 The loader plugins select the renderer's actual mod ID and API family. Legacy Fabric Sodium and Embeddium share a namespace; NeoForge Embeddium has its own namespace. Sodium 0.6 and 0.8 use separate pending-job adapters. Sodium 0.9 additionally carries an immutable relative height origin through its native deferred mesh-job queue, preventing its 10-bit height field from aliasing million-height jobs. Cancelled asynchronous culls retain their graph update request. Only client mixins are registered.
+
+NeoForge uses its own render-frame events for batching, including early renderer bootstraps. On 26.1.2 real worlds explicitly implement logical build bounds so an Iris bootstrap cannot leave inherited vanilla height checks active; dense chunk arrays retain their physical bounds.
 
 ## Rendering contract
 
@@ -44,12 +46,15 @@ python tools/render_smoke_test.py --target fabric-1.21.1 --renderer sodium --iri
 python tools/render_smoke_test.py --target fabric-1.21.1 --renderer sodium --sodium-pin SMxNOGZ6
 python tools/render_smoke_test.py --target neoforge-1.21.1 --renderer embeddium
 python tools/render_smoke_test.py --target neoforge-1.21.1 --renderer sodium --sodium-pin uMOpc5uV
+python tools/render_smoke_test.py --target neoforge-1.21.1 --renderer sodium --iris
 python tools/render_smoke_test.py --target neoforge-26.1.2 --renderer sodium --iris
 ```
 
 Omit `--oculus`/`--iris` to test the renderer alone. Add `--shader-pack PATH_TO_ComplementaryReimagined_r5.9.3.zip` to an Iris/Oculus profile to require the actual active shader pipeline; shader mods otherwise run with shaders disabled. `--shots fixture-1000000,fixture-reload,12-fixture-edit` focuses a run. Evidence lands in `build/render-smoke/<target>-<backend>-<uuid>`, including frames, native assertions, frame intervals, allocation counters and the checked-out revision. The native fixture excludes unrelated development-only Balm/Waystones runtime dependencies; this matrix does not certify their combined behavior.
 
 Sodium 0.8.13 Fabric was built with Loom 1.16.1. This development runner uses Loom's explicit `loom.ignoreDependencyLoomVersionValidation` opt-out for that exact pin, preserving the upstream artifact and its static mixins. Acceptance still requires real client startup, complete meshing and all framebuffer regressions. Production loaders do not use this Gradle check. Normal builds compile against the Iris-compatible 0.6 API and select the 0.8 adapter by the installed mod version.
+
+The NeoForge 1.21.1 Sodium 0.8 preview places the unchanged upstream bootstrap jar in the isolated profile's `mods` folder. FML 4's development Maven locator otherwise selects the outer library for its nested mod identity and silently drops the actual renderer. Other profiles remove only that harness-owned jar before launch. Production installation uses the ordinary `mods` folder as usual.
 
 The steps below describe the separate Forge packaged-preview workflow and earlier tower audits.
 

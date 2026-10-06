@@ -27,6 +27,7 @@ jobs:
           - {target: fabric-1.21.1, backend: iris, renderer: sodium}
           - {target: neoforge-1.21.1, backend: embeddium, renderer: embeddium}
           - {target: neoforge-1.21.1, backend: sodium, renderer: sodium}
+          - {target: neoforge-1.21.1, backend: iris, renderer: sodium}
           - {target: neoforge-1.21.1, backend: sodium-0.8, renderer: sodium, pin: uMOpc5uV}
           - {target: neoforge-26.1.2, backend: sodium, renderer: sodium}
           - {target: neoforge-26.1.2, backend: iris, renderer: sodium}

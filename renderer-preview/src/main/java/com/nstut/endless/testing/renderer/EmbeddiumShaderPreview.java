@@ -110,7 +110,7 @@ public final class EmbeddiumShaderPreview {
                         level.setBlockAndUpdate(new BlockPos(65, y + 1, 66), Blocks.STONE_SLAB.defaultBlockState());
                         level.setBlockAndUpdate(new BlockPos(66, y + 2, 66), Blocks.DIAMOND_BLOCK.defaultBlockState());
                         if (!level.getBlockState(new BlockPos(66, y + 1, 66)).is(Blocks.GLOWSTONE)
-                            || level.isOutsideBuildHeight(y) || !level.isInsideBuildHeight(new BlockPos(66, y, 66)))
+                            || level.isOutsideBuildHeight(y) || level.isOutsideBuildHeight(new BlockPos(66, y, 66)))
                             throw new IllegalStateException("Server rejected logical-height fixture at " + y);
                         var vertical = EndlessVerticalEngine.world(level);
                         BlockPos emitter = new BlockPos(66, y + 1, 66);
@@ -226,6 +226,8 @@ public final class EmbeddiumShaderPreview {
             || cameraAt == 0 || MC.level == null || MC.getOverlay() != null || MC.screen != null) return;
         long now = System.nanoTime();
         JsonObject currentShot = shots.get(index).getAsJsonObject();
+        String currentDimension = currentShot.has("dimension") ? currentShot.get("dimension").getAsString() : "minecraft:overworld";
+        if (!MC.level.dimension().location().toString().equals(currentDimension) || future != null && !future.isDone()) return;
         if (currentShot.has("fixtureY")) {
             int y = currentShot.get("fixtureY").getAsInt();
             boolean edited = currentShot.has("edit") && currentShot.get("edit").getAsBoolean();
@@ -248,10 +250,16 @@ public final class EmbeddiumShaderPreview {
             if (MC.gameRenderer.getMainCamera().getPosition().distanceTo(eye) > .1) throw new IllegalStateException("Camera not settled");
             boolean shaders = false;
             String pack = "none";
+            String pipelineName = "none";
             try {
                 Class<?> iris = Class.forName("net.irisshaders.iris.Iris");
                 shaders = (boolean) iris.getMethod("isPackInUseQuick").invoke(null);
                 pack = String.valueOf(iris.getMethod("getCurrentPackName").invoke(null));
+                var pipelineManager = iris.getMethod("getPipelineManager").invoke(null);
+                var pipeline = NativeRenderer.call(pipelineManager, "getPipelineNullable");
+                pipelineName = pipeline == null ? "none" : pipeline.getClass().getName();
+                if (shaders && !pipelineName.endsWith(".IrisRenderingPipeline"))
+                    throw new IllegalStateException("Requested shader pack fell back to a vanilla pipeline: " + pipelineName);
             } catch (ClassNotFoundException absent) { /* Embeddium-only baseline. */ }
             if (shaders != request.get("expectShaders").getAsBoolean()) throw new IllegalStateException("Unexpected shader state: " + shaders);
             if (shaders && !pack.contains("Complementary")) throw new IllegalStateException("Wrong shader pack: " + pack);
@@ -307,6 +315,7 @@ public final class EmbeddiumShaderPreview {
             record.put("dimension", MC.level.dimension().location().toString());
             record.put("managerLifecycle", lifecycleVerified ? "old manager/cache replaced; workers stopped; GPU resources released" : "not requested");
             record.put("camera", eye.toString()); record.put("shadersActive", shaders); record.put("shaderPack", pack);
+            record.put("shaderPipeline", pipelineName);
             record.put("embeddium", loaded("embeddium")); record.put("sodium", loaded("sodium")); record.put("iris", loaded("iris")); record.put("oculus", loaded("oculus"));
             if (shot.has("fixtureY")) record.put("fixtureY", shot.get("fixtureY").getAsInt());
             if (embeddium && shot.has("fixtureY") && !(shot.has("edit") && shot.get("edit").getAsBoolean())) {

@@ -13,8 +13,7 @@
     "ChunkBuilderMeshingTaskMixin",
     "ChunkBuilderSortTaskMixin",
     "SodiumWorldRendererMixin",
-    "VerticalClientUpdatesMixin",
-    "MinecraftFrameMixin"
+    "VerticalClientUpdatesMixin"
   ],
   "injectors": {
     "defaultRequire": 1

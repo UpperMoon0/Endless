@@ -24,6 +24,12 @@ public final class NativeRenderer {
     }
     public static boolean loaded(String id) {
         try {
+            if (exists("com.nstut.endless.neoforge.compat.EmbeddiumFrameClock")) {
+                // Match the production gate, including bootstrap-discovered
+                // renderer files absent from the runtime container ModList.
+                Class<?> loader = Class.forName("net.neoforged.fml.loading.LoadingModList");
+                return loader.getMethod("getModFileById", String.class).invoke(loader.getMethod("get").invoke(null), id) != null;
+            }
             Class<?> loader = Class.forName("net.fabricmc.loader.api.FabricLoader");
             return (boolean) loader.getMethod("isModLoaded", String.class).invoke(loader.getMethod("getInstance").invoke(null), id);
         } catch (ClassNotFoundException absent) {
@@ -56,7 +62,7 @@ public final class NativeRenderer {
     }
     public static Object manager() { return field(renderer(), "renderSectionManager"); }
     public static void arm(Runnable callback) {
-        String loader = exists("net.fabricmc.loader.api.FabricLoader") ? "fabric" : "neoforge";
+        String loader = exists("com.nstut.endless.neoforge.compat.EmbeddiumFrameClock") ? "neoforge" : "fabric";
         try { Class.forName("com.nstut.endless." + loader + ".compat.EmbeddiumFrameClock").getField("afterFrame").set(null, callback); }
         catch (ReflectiveOperationException e) { throw new IllegalStateException(e); }
     }

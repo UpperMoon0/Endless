@@ -7,7 +7,6 @@
   "client": [
     "ClonedChunkSectionCacheMixin",
     "ClonedChunkSectionMixin",
-    "MinecraftFrameMixin",
     "VanillaDestructionLookupMixin",
     "OcclusionCullerMixin",
     "RenderSectionManagerMixin",

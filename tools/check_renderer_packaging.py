@@ -20,6 +20,8 @@ def check_jar(path: Path) -> list[str]:
                 mappings.update(json.loads(jar.read(name)).get('mappings', {}))
         for name in configs:
             config = json.loads(jar.read(name))
+            if 'fabric.mod.json' in names and config.get('refmap') not in names:
+                errors.append(f'{name}: missing registered production refmap')
             if name not in metadata or not config.get('client') or config.get('mixins') or config.get('server'):
                 errors.append(f'{name}: renderer hooks must be registered and client-only')
             plugin = config.get('plugin', '').replace('.', '/') + '.class'
@@ -41,8 +43,9 @@ def check_jar(path: Path) -> list[str]:
                     if not selectors and b'Lnet/minecraft/class_' not in bytecode:
                         errors.append(f'{mixin}: missing intermediary Minecraft injection selectors')
         for name in names:
-            if name.startswith(('me/jellysquid/mods/sodium/', 'net/caffeinemc/mods/sodium/', 'org/embeddedt/embeddium/')):
-                errors.append('Renderer classes bundled in normal artifact')
+            if name.startswith(('me/jellysquid/mods/sodium/', 'net/caffeinemc/mods/sodium/', 'org/embeddedt/embeddium/',
+                                'net/irisshaders/iris/', 'net/coderbot/iris/')):
+                errors.append('Renderer or shader classes bundled in normal artifact')
                 break
             if '/testing/renderer/' in name or '/testing/Embeddium' in name:
                 errors.append('Development fixture bundled in normal artifact')

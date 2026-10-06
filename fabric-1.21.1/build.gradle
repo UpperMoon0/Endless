@@ -112,8 +112,17 @@ if (project.hasProperty("shaderPreview")) {
     def previewBackend = project.findProperty("previewRenderer") ?: "sodium"
     def previewPin = previewBackend == "embeddium" ? null : (project.findProperty("previewSodiumPin") ?: "u1OEbNKx")
     if (previewPin == null) throw new GradleException("No Embeddium release for fabric-1.21.1")
+    if (project.hasProperty("previewIris")) configurations.create("irisPreviewArchive")
     dependencies {
         modRuntimeOnly("maven.modrinth:${previewBackend}:${previewPin}") { transitive = false }
         if (project.hasProperty("previewIris")) modRuntimeOnly("maven.modrinth:iris:zsoi0dso") { transitive = false }
+        if (project.hasProperty("previewIris")) {
+            irisPreviewArchive("maven.modrinth:iris:zsoi0dso") { transitive = false }
+            runtimeOnly(files(provider {
+                zipTree(configurations.irisPreviewArchive.singleFile).matching {
+                    include "META-INF/jars/antlr4-runtime-*.jar", "META-INF/jars/glsl-transformer-*.jar", "META-INF/jars/jcpp-*.jar"
+                }.files
+            }))
+        }
     }
 }

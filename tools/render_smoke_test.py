@@ -18,7 +18,8 @@ SHOTS = ('fixture--80', 'fixture-512', 'fixture-1000000', 'fixture-nether', 'fix
          'fixture-reload', '12-fixture-edit')
 
 
-def prepare(instance: Path, output: Path, shots=SHOTS, shader_pack: Path | None = None) -> dict:
+def prepare(instance: Path, output: Path, shots=SHOTS, shader_pack: Path | None = None,
+            shader_config: str = 'iris.properties') -> dict:
     """Use only generated scenes in a uniquely named world; never delete saves."""
     game = instance / '.minecraft'
     (game / 'config').mkdir(parents=True, exist_ok=True)
@@ -42,13 +43,13 @@ def prepare(instance: Path, output: Path, shots=SHOTS, shader_pack: Path | None 
         packs = game / 'shaderpacks'
         packs.mkdir(exist_ok=True)
         shutil.copy2(shader_pack, packs / shader_pack.name)
-        (game / 'config/iris.properties').write_text(
+        (game / 'config' / shader_config).write_text(
             'enableShaders=true\nshaderPack=' + shader_pack.name + '\n', encoding='utf-8')
         request['expectShaders'] = True
     else:
         # Each run owns this isolated profile. A preceding active-pack run must
         # not silently leave shaders enabled in the next disabled test.
-        (game / 'config/iris.properties').write_text('enableShaders=false\n', encoding='utf-8')
+        (game / 'config' / shader_config).write_text('enableShaders=false\n', encoding='utf-8')
     path.write_text(json.dumps(request, indent=2), encoding='utf-8')
     return request
 
@@ -66,7 +67,7 @@ def validate(output: Path, request: dict, oculus: bool, target: str = "forge-1.2
             raise RuntimeError('Unexpected renderer/Oculus/shader state')
         if active and 'Complementary' not in record.get('shaderPack', ''):
             raise RuntimeError('Expected active Complementary pipeline')
-        if active and target != 'forge-1.20.1' and not record.get('shaderPipeline', '').endswith('.IrisRenderingPipeline'):
+        if active and not record.get('shaderPipeline', '').endswith('.IrisRenderingPipeline'):
             raise RuntimeError('Expected actual Iris shader pipeline')
         if (record['width'], record['height']) != (640, 360) or record['sampledColors'] < 16 or (not active and record.get('markerPixels', 0) < 1):
             raise RuntimeError('Wrong framebuffer dimensions or blank frame')
@@ -142,7 +143,8 @@ def main() -> None:
     backend = 'oculus' if args.oculus else ('iris' if args.iris else args.renderer)
     output = ROOT / 'build/render-smoke' / (args.target + '-' + backend + '-' + uuid.uuid4().hex)
     output.mkdir(parents=True)
-    request = prepare(ROOT / args.target / 'run/shader-preview', output, args.shots.split(','), args.shader_pack)
+    request = prepare(ROOT / args.target / 'run/shader-preview', output, args.shots.split(','), args.shader_pack,
+                      'oculus.properties' if args.oculus else 'iris.properties')
     if args.prepare_only:
         print(output)
         return

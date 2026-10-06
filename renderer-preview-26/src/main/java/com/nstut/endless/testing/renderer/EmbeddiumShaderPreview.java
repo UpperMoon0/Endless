@@ -374,7 +374,7 @@ public final class EmbeddiumShaderPreview {
                             int pixel = image.getPixelsABGR()[y * image.getWidth() + x];
                             int red = pixel & 255, green = (pixel >> 8) & 255, blue = (pixel >> 16) & 255;
                             if (green >= 40 && green > red * 1.3
-                                && (edited ? green > blue * 1.3 : green > blue * 1.01 && blue > red * 1.3)) markerPixels++;
+                                && (edited ? green > blue * 1.3 : green >= blue && blue > red * 1.3)) markerPixels++;
                         }
                     }
                     if (markerPixels == 0) {

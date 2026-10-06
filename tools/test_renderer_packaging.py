@@ -16,7 +16,7 @@ class RendererPackagingTest(unittest.TestCase):
         self.selector = 'Lnet/minecraft/world/level/chunk/LevelChunk;getSections()[Lnet/minecraft/world/level/chunk/LevelChunkSection;'
         self.files = {
             'fabric.mod.json': json.dumps({'mixins': ['endless-sodium.mixins.json']}),
-            'endless-sodium.mixins.json': json.dumps({'package': 'com.example', 'client': ['WorldSliceMixin'], 'plugin': 'com.example.Gate'}),
+            'endless-sodium.mixins.json': json.dumps({'package': 'com.example', 'client': ['WorldSliceMixin'], 'plugin': 'com.example.Gate', 'refmap': 'release-refmap.json'}),
             'com/example/Gate.class': b'gate',
             self.hook + '.class': self.selector.encode(),
             'release-refmap.json': json.dumps({'mappings': {self.hook: {self.selector: 'Lnet/minecraft/class_2818;method_12006()[Lnet/minecraft/class_2826;'}}}),
@@ -35,12 +35,20 @@ class RendererPackagingTest(unittest.TestCase):
         self.files.pop('release-refmap.json')
         self.assertTrue(any('production refmap' in e for e in self.check()))
 
+    def test_unregistered_production_mapping_is_rejected(self):
+        config = json.loads(self.files['endless-sodium.mixins.json'])
+        for refmap in (None, 'missing-refmap.json'):
+            config['refmap'] = refmap
+            self.files['endless-sodium.mixins.json'] = json.dumps(config)
+            self.assertTrue(any('registered production refmap' in e for e in self.check()))
+
     def test_server_registration_is_rejected(self):
         self.files['endless-sodium.mixins.json'] = json.dumps({'package': 'com.example', 'client': ['WorldSliceMixin'], 'server': ['WorldSliceMixin'], 'plugin': 'com.example.Gate'})
         self.assertTrue(any('client-only' in e for e in self.check()))
 
     def test_bundled_renderer_and_fixture_are_rejected(self):
-        for name in ('net/caffeinemc/mods/sodium/Library.class', 'com/example/testing/renderer/NativeRenderer.class'):
+        for name in ('net/caffeinemc/mods/sodium/Library.class', 'net/irisshaders/iris/Iris.class',
+                     'com/example/testing/renderer/NativeRenderer.class'):
             self.files[name] = b'forbidden'
             self.assertTrue(any('bundled' in e for e in self.check()))
             self.files.pop(name)

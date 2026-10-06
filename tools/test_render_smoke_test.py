@@ -198,11 +198,23 @@ class RenderSmokeTest(unittest.TestCase):
 
     def test_disabled_profile_clears_previous_active_shader_selection(self):
         instance = self.root / 'instance'
-        config = instance / '.minecraft/config/iris.properties'
-        config.parent.mkdir(parents=True)
-        config.write_text('enableShaders=true\nshaderPack=OldPack.zip\n')
-        smoke.prepare(instance, self.root / 'evidence')
-        self.assertEqual('enableShaders=false\n', config.read_text())
+        for name in ('iris.properties', 'oculus.properties'):
+            config = instance / '.minecraft/config' / name
+            config.parent.mkdir(parents=True, exist_ok=True)
+            config.write_text('enableShaders=true\nshaderPack=OldPack.zip\n')
+            smoke.prepare(instance, self.root / 'evidence', shader_config=name)
+            self.assertEqual('enableShaders=false\n', config.read_text())
+
+    def test_active_pack_selects_the_requested_shader_loader(self):
+        pack = self.root / 'Complementary.zip'
+        pack.write_bytes(b'fixture pack')
+        for name in ('iris.properties', 'oculus.properties'):
+            instance = self.root / name
+            request = smoke.prepare(instance, self.root / 'evidence', shader_pack=pack, shader_config=name)
+            self.assertTrue(request['expectShaders'])
+            self.assertEqual('enableShaders=true\nshaderPack=Complementary.zip\n',
+                (instance / '.minecraft/config' / name).read_text())
+            self.assertEqual(pack.read_bytes(), (instance / '.minecraft/shaderpacks' / pack.name).read_bytes())
 
 
 if __name__ == '__main__':

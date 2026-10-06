@@ -240,10 +240,14 @@ public final class EmbeddiumShaderPreview {
             if (MC.gameRenderer.getMainCamera().getPosition().distanceTo(eye) > .1) throw new IllegalStateException("Camera not settled");
             boolean shaders = false;
             String pack = "none";
+            String pipelineName = "none";
             try {
                 Class<?> iris = Class.forName("net.irisshaders.iris.Iris");
                 shaders = (boolean) iris.getMethod("isPackInUseQuick").invoke(null);
                 pack = String.valueOf(iris.getMethod("getCurrentPackName").invoke(null));
+                var pipelineManager = iris.getMethod("getPipelineManager").invoke(null);
+                var pipeline = pipelineManager.getClass().getMethod("getPipelineNullable").invoke(pipelineManager);
+                pipelineName = pipeline == null ? "none" : pipeline.getClass().getName();
             } catch (ClassNotFoundException absent) { /* Embeddium-only baseline. */ }
             if (shaders != request.get("expectShaders").getAsBoolean()) throw new IllegalStateException("Unexpected shader state: " + shaders);
             if (shaders && !pack.contains("Complementary")) throw new IllegalStateException("Wrong shader pack: " + pack);
@@ -263,6 +267,8 @@ public final class EmbeddiumShaderPreview {
                 return; // Let actual terrain preparation/workers run between batches.
             }
             if (!sectionReady(target)) return;
+            if (shaders && !pipelineName.endsWith(".IrisRenderingPipeline"))
+                throw new IllegalStateException("Requested shader pack fell back to a vanilla pipeline: " + pipelineName);
             if (embeddium) {
                 verifyWindow();
                 if (lifecyclePending) {
@@ -286,6 +292,7 @@ public final class EmbeddiumShaderPreview {
             record.put("dimension", MC.level.dimension().location().toString());
             record.put("managerLifecycle", lifecycleVerified ? "old manager/cache replaced; workers stopped; GPU resources released" : "not requested");
             record.put("camera", eye.toString()); record.put("shadersActive", shaders); record.put("shaderPack", pack);
+            record.put("shaderPipeline", pipelineName);
             record.put("embeddium", embeddium); record.put("oculus", ModList.get().isLoaded("oculus"));
             if (shot.has("fixtureY")) record.put("fixtureY", shot.get("fixtureY").getAsInt());
             if (embeddium && shot.has("fixtureY") && !(shot.has("edit") && shot.get("edit").getAsBoolean())) {
@@ -327,7 +334,7 @@ public final class EmbeddiumShaderPreview {
                             int pixel = image.getPixelRGBA(x, y);
                             int red = pixel & 255, green = (pixel >> 8) & 255, blue = (pixel >> 16) & 255;
                             if (green >= 40 && green > red * 1.3
-                                && (edited ? green > blue * 1.3 : green > blue * 1.01 && blue > red * 1.3)) markerPixels++;
+                                && (edited ? green > blue * 1.3 : green >= blue && blue > red * 1.3)) markerPixels++;
                         }
                     }
                     if (markerPixels == 0) {

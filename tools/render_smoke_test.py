@@ -58,6 +58,13 @@ def validate(output: Path, request: dict, oculus: bool) -> list[dict]:
             raise RuntimeError('Manifest references a missing framebuffer')
         if record['file'] in ('fixture-nether.png', 'fixture-dimension-return.png', 'fixture-reload.png') and record['managerLifecycle'] != 'old manager/cache replaced; workers stopped; GPU resources released':
             raise RuntimeError('Manager lifecycle receipt missing')
+        if record['file'] == 'fixture-512.png':
+            workload = record.get('denseEditWorkload', {})
+            if (workload.get('frames') != 120 or workload.get('edits') != 7680
+                or workload.get('dirtyNotifications') != 130680
+                or workload.get('frameTimeP95Ms', 0) <= 0
+                or workload.get('renderThreadAllocatedBytes', -2) < -1):
+                raise RuntimeError('Sustained dense-edit frame measurements missing')
         if record['file'] != '12-fixture-edit.png':
             checks = record.get('compatibilityRegressions', '')
             sky = record['dimension'] == 'minecraft:overworld'
@@ -73,6 +80,17 @@ def validate(output: Path, request: dict, oculus: bool) -> list[dict]:
                 names += ['denseRoof']
                 if record['fixtureY'] >= 320:
                     names += ['skyPageBurst']
+            if sky:
+                if (measurements.get('denseBurstFrames') != 120
+                    or measurements.get('denseBurstEdits') != 7680
+                    or measurements.get('denseBurstNotifications') != 130560
+                    or measurements.get('denseBurstRefreshedColumns') != 1080):
+                    raise RuntimeError('Dense burst batching receipt missing')
+                if record['fixtureY'] == -80:
+                    exposed = measurements.get('denseRoofExposedSky', -1)
+                    inserted = measurements.get('denseRoofInsertedSky', -1)
+                    if not (0 <= inserted < exposed <= 15) or measurements.get('denseRoofRemovedSky') != exposed:
+                        raise RuntimeError('Dense roof lighting values missing or stale')
             if any(measurements.get(name + 'Ms', -1) < 0
                    or measurements.get(name + 'RenderThreadBytes', -2) < -1 for name in names):
                 raise RuntimeError('Native probe measurements missing')

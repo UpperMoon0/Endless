@@ -234,14 +234,141 @@ final class EmbeddiumCompatibilityRegression {
                 if (render != null) render.setPendingUpdate(null);
                 var previous = chunk.setBlockState(roof, state, false);
                 mc.level.setBlocksDirty(roof, previous, state);
+                ((com.nstut.endless.forge.compat.EmbeddiumSnapshotInvalidation) manager).endless$flushDenseSkyColumns();
                 if (before == cache.acquire(origin.getX(), origin.getY(), origin.getZ())
                     || render == null || render.getPendingUpdate() == null) {
                     throw new IllegalStateException("Dense roof edit retained sparse snapshot or omitted mesh rebuild");
                 }
             }
+            verifyDenseBurst(mc, manager, roof);
+            verifyDenseFrameGuard(manager, cache, origin);
+            verifyDenseEmptySection(manager, cache, origin);
+            if (origin.getY() == -5) verifyDenseRoofValues(mc, manager, cache, origin);
         } finally {
             var previous = chunk.setBlockState(roof, old, false);
             if (previous != null) mc.level.setBlocksDirty(roof, previous, old);
+        }
+    }
+
+    private static void verifyDenseEmptySection(Object manager, ClonedChunkSectionCache cache, SectionPos origin) throws Exception {
+        var window = (VerticalRenderWindow) field(manager, "endless$window");
+        var lookup = manager.getClass().getDeclaredMethod("getRenderSection", int.class, int.class, int.class);
+        lookup.setAccessible(true);
+        for (int y = window.minSection(); y < window.maxSection(); y++) {
+            var node = (RenderSection) lookup.invoke(manager, origin.getX(), y, origin.getZ());
+            var level = Minecraft.getInstance().level;
+            var section = com.nstut.endless.forge.compat.EmbeddiumSections.get(level, level.getChunk(origin.getX(), origin.getZ()), y);
+            if (node == null || node.getFlags() != 0 || node.getPendingUpdate() != null || section != null && !section.hasOnlyAir()) continue;
+            var before = cache.acquire(origin.getX(), y, origin.getZ());
+            var invalidation = (com.nstut.endless.forge.compat.EmbeddiumSnapshotInvalidation) manager;
+            invalidation.endless$queueDenseSkyColumns(origin.getX(), origin.getZ());
+            invalidation.endless$flushDenseSkyColumns();
+            if (node.getPendingUpdate() != null || before == cache.acquire(origin.getX(), y, origin.getZ()))
+                throw new IllegalStateException("Empty dense-batch section rebuilt or retained stale snapshot");
+            return;
+        }
+        throw new IllegalStateException("No settled empty section for dense batching regression");
+    }
+
+    private static void verifyDenseFrameGuard(Object manager, ClonedChunkSectionCache cache, SectionPos origin) throws Exception {
+        var renderer = SodiumWorldRenderer.instance();
+        var invalidation = (com.nstut.endless.forge.compat.EmbeddiumSnapshotInvalidation) manager;
+        var flush = hook(renderer.getClass(), "endless$flushSkyFrame");
+        com.nstut.endless.forge.compat.EmbeddiumFrameClock.render(new net.minecraftforge.event.TickEvent.RenderTickEvent(net.minecraftforge.event.TickEvent.Phase.START, 0));
+        flush.invoke(renderer, null, null, -1000, false, false, new org.spongepowered.asm.mixin.injection.callback.CallbackInfo("setupTerrain", false));
+        var before = cache.acquire(origin.getX(), origin.getY(), origin.getZ());
+        invalidation.endless$queueDenseSkyColumns(origin.getX(), origin.getZ());
+        flush.invoke(renderer, null, null, -999, false, false, new org.spongepowered.asm.mixin.injection.callback.CallbackInfo("setupTerrain", false));
+        if (before != cache.acquire(origin.getX(), origin.getY(), origin.getZ()))
+            throw new IllegalStateException("Repeated terrain pass flushed dense columns twice in one frame");
+        com.nstut.endless.forge.compat.EmbeddiumFrameClock.render(new net.minecraftforge.event.TickEvent.RenderTickEvent(net.minecraftforge.event.TickEvent.Phase.START, 0));
+        flush.invoke(renderer, null, null, -999, false, false, new org.spongepowered.asm.mixin.injection.callback.CallbackInfo("setupTerrain", false));
+        if (before == cache.acquire(origin.getX(), origin.getY(), origin.getZ()))
+            throw new IllegalStateException("Next frame dropped queued dense columns");
+    }
+
+    private static void verifyDenseBurst(Minecraft mc, Object manager, BlockPos roof) {
+        var invalidation = (com.nstut.endless.forge.compat.EmbeddiumSnapshotInvalidation) manager;
+        invalidation.endless$flushDenseSkyColumns();
+        var chunk = mc.level.getChunk(roof);
+        var old = chunk.getBlockState(roof);
+        int columns = 0;
+        try {
+            for (int frame = 0; frame < 120; frame++) {
+                // Actual dense palette edits plus repeated light/dirty notifications.
+                // Stone/dirt substitutions keep sky exposure unchanged.
+                for (int edit = 0; edit < 64; edit++) {
+                    var next = (edit % 2 == 0 ? Blocks.STONE : Blocks.DIRT).defaultBlockState();
+                    var previous = chunk.setBlockState(roof, next, false);
+                    mc.level.setBlocksDirty(roof, previous, next);
+                    for (int repeat = 0; repeat < 16; repeat++)
+                        SodiumWorldRenderer.instance().scheduleRebuildForChunk(roof.getX() >> 4, roof.getY() >> 4, roof.getZ() >> 4, false);
+                }
+                int flushed = invalidation.endless$flushDenseSkyColumns();
+                if (flushed != 9 || invalidation.endless$flushDenseSkyColumns() != 0)
+                    throw new IllegalStateException("Dense burst repeated or dropped column refreshes: " + flushed);
+                columns += flushed;
+            }
+        } finally {
+            var previous = chunk.setBlockState(roof, old, false);
+            mc.level.setBlocksDirty(roof, previous, old);
+            invalidation.endless$flushDenseSkyColumns();
+        }
+        metrics.put("denseBurstFrames", 120);
+        metrics.put("denseBurstEdits", 120 * 64);
+        metrics.put("denseBurstNotifications", 120 * 64 * 17);
+        metrics.put("denseBurstRefreshedColumns", columns);
+    }
+
+    private static void verifyDenseRoofValues(Minecraft mc, Object manager, ClonedChunkSectionCache cache, SectionPos origin) {
+        var invalidation = (com.nstut.endless.forge.compat.EmbeddiumSnapshotInvalidation) manager;
+        var vertical = EndlessVerticalEngine.world(mc.level);
+        var originals = new LinkedHashMap<net.minecraft.world.level.chunk.LevelChunk, LevelChunkSection[]>();
+        var heights = new LinkedHashMap<net.minecraft.world.level.chunk.LevelChunk, Map<net.minecraft.world.level.levelgen.Heightmap.Types, long[]>>();
+        BlockPos sample = new BlockPos(origin.minBlockX() + 15, origin.minBlockY() + 15, origin.minBlockZ() + 15);
+        try {
+            // Client-only empty dense core makes the negative sparse sample exposed.
+            // Preserve every section and heightmap; the integrated server is untouched.
+            for (int x = origin.getX() - 1; x <= origin.getX() + 1; x++) for (int z = origin.getZ() - 1; z <= origin.getZ() + 1; z++) {
+                var chunk = mc.level.getChunk(x, z);
+                originals.put(chunk, chunk.getSections().clone());
+                var saved = new LinkedHashMap<net.minecraft.world.level.levelgen.Heightmap.Types, long[]>();
+                for (var entry : chunk.getHeightmaps()) saved.put(entry.getKey(), entry.getValue().getRawData().clone());
+                heights.put(chunk, saved);
+                for (int i = 0; i < chunk.getSections().length; i++)
+                    chunk.getSections()[i] = new LevelChunkSection(mc.level.registryAccess().registryOrThrow(Registries.BIOME));
+                for (var height : saved.entrySet()) chunk.setHeightmap(height.getKey(), new long[height.getValue().length]);
+            }
+            invalidation.endless$queueDenseSkyColumns(origin.getX(), origin.getZ());
+            invalidation.endless$flushDenseSkyColumns();
+            int exposed = cache.acquire(origin.getX(), origin.getY(), origin.getZ()).getLightArray(LightLayer.SKY).get(15, 15, 15);
+            if (exposed <= 0 || vertical.getBrightness(LightLayer.SKY, sample) != exposed)
+                throw new IllegalStateException("Dense roof fixture lacks exposed sparse skylight: " + exposed + "/" + vertical.getBrightness(LightLayer.SKY, sample));
+            for (boolean insert : new boolean[] {true, false}) {
+                // Warm the point cache before edits, so stale cached values fail too.
+                vertical.getBrightness(LightLayer.SKY, sample);
+                for (var chunk : originals.keySet()) for (int x = 0; x < 16; x++) for (int z = 0; z < 16; z++) {
+                    var pos = new BlockPos(chunk.getPos().getMinBlockX() + x, 300, chunk.getPos().getMinBlockZ() + z);
+                    var next = (insert ? Blocks.STONE : Blocks.AIR).defaultBlockState();
+                    var previous = chunk.setBlockState(pos, next, false);
+                    mc.level.setBlocksDirty(pos, previous, next);
+                }
+                invalidation.endless$flushDenseSkyColumns();
+                int point = vertical.getBrightness(LightLayer.SKY, sample);
+                int snapshot = cache.acquire(origin.getX(), origin.getY(), origin.getZ()).getLightArray(LightLayer.SKY).get(15, 15, 15);
+                if (snapshot != point || (insert ? snapshot >= exposed : snapshot != exposed)
+                    || vertical.getBrightness(LightLayer.SKY, sample) != point)
+                    throw new IllegalStateException("Dense roof skylight/cache mismatch: " + exposed + " -> " + snapshot + "/" + point);
+                metrics.put(insert ? "denseRoofInsertedSky" : "denseRoofRemovedSky", snapshot);
+            }
+            metrics.put("denseRoofExposedSky", exposed);
+        } finally {
+            for (var entry : originals.entrySet()) {
+                System.arraycopy(entry.getValue(), 0, entry.getKey().getSections(), 0, entry.getValue().length);
+                for (var height : heights.get(entry.getKey()).entrySet()) entry.getKey().setHeightmap(height.getKey(), height.getValue());
+                invalidation.endless$queueDenseSkyColumns(entry.getKey().getPos().x, entry.getKey().getPos().z);
+            }
+            invalidation.endless$flushDenseSkyColumns();
         }
     }
 

@@ -19,6 +19,28 @@ public abstract class SodiumWorldRendererMixin implements EmbeddiumSnapshotInval
     @Override public void endless$invalidateSkyColumns(int x, int z) {
         if (renderSectionManager != null) ((EmbeddiumSnapshotInvalidation) renderSectionManager).endless$invalidateSkyColumns(x, z);
     }
+    @Override public void endless$queueDenseSkyColumns(int x, int z) {
+        if (renderSectionManager != null) ((EmbeddiumSnapshotInvalidation) renderSectionManager).endless$queueDenseSkyColumns(x, z);
+    }
+    @Override public int endless$flushDenseSkyColumns() {
+        return renderSectionManager == null ? 0 : ((EmbeddiumSnapshotInvalidation) renderSectionManager).endless$flushDenseSkyColumns();
+    }
+    @Unique private RenderSectionManager endless$lastSkyManager;
+    @Unique private long endless$lastSkyFrame;
+    @Inject(method = "setupTerrain", at = @At(value = "INVOKE", target = "Lme/jellysquid/mods/sodium/client/render/chunk/RenderSectionManager;updateChunks(Z)V"))
+    private void endless$flushSkyFrame(net.minecraft.client.Camera camera,
+        me.jellysquid.mods.sodium.client.render.viewport.Viewport viewport, int frame,
+        boolean spectator, boolean immediately, CallbackInfo ci) {
+        // Embeddium increments its supplied counter per terrain pass, so use
+        // Forge's outer render frame. Retain notifications
+        // arriving after the first pass for the next frame, rather than repeat work.
+        long renderFrame = com.nstut.endless.forge.compat.EmbeddiumFrameClock.frame();
+        if (renderSectionManager != endless$lastSkyManager || renderFrame != endless$lastSkyFrame) {
+            endless$lastSkyManager = renderSectionManager;
+            endless$lastSkyFrame = renderFrame;
+            endless$flushDenseSkyColumns();
+        }
+    }
     @Inject(method = "scheduleRebuildForChunk", at = @At("RETURN"))
     private void endless$denseSkyUpdate(int x, int y, int z, boolean important, CallbackInfo ci) {
         var level = Minecraft.getInstance().level;
@@ -29,9 +51,7 @@ public abstract class SodiumWorldRendererMixin implements EmbeddiumSnapshotInval
         Minecraft mc = Minecraft.getInstance();
         Runnable invalidate = () -> {
             if (mc.level != level) return;
-            EndlessVerticalEngine.world(level).invalidateSkyLight();
-            // The manager schedules directly, so this does not recurse through us.
-            endless$invalidateSkyColumns(x, z);
+            endless$queueDenseSkyColumns(x, z);
         };
         // Embeddium accepts off-thread dirty notifications; its snapshot cache
         // and our window/ready set must still be changed on the render thread.

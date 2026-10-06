@@ -23,6 +23,8 @@ class RenderSmokeTest(unittest.TestCase):
         self.record['nativeRegressionMeasurements'] = {name + suffix: 10
             for name in ('completeMeshing', 'chunkLifecycle', 'denseRoof', 'skyPageBurst')
             for suffix in ('Ms', 'RenderThreadBytes')}
+        self.record['nativeRegressionMeasurements'].update(denseBurstFrames=120, denseBurstEdits=7680,
+            denseBurstNotifications=130560, denseBurstRefreshedColumns=1080)
         (self.root / self.record['file']).write_bytes(b'fixture')
 
     def write(self, records=None):
@@ -72,6 +74,37 @@ class RenderSmokeTest(unittest.TestCase):
         self.record['managerLifecycle'] = 'old manager/cache replaced; workers stopped; GPU resources released'
         self.write()
         self.assertEqual(1, len(smoke.validate(self.root, self.request, False)))
+
+    def test_dense_roof_requires_light_decrease_and_exact_recovery(self):
+        self.record['fixtureY'] = -80
+        values = self.record['nativeRegressionMeasurements']
+        for inserted, removed in ((15, 15), (0, 14), (-1, 15)):
+            values.update(denseRoofExposedSky=15, denseRoofInsertedSky=inserted, denseRoofRemovedSky=removed)
+            self.write()
+            with self.assertRaisesRegex(RuntimeError, 'lighting values'):
+                smoke.validate(self.root, self.request, False)
+        values.update(denseRoofInsertedSky=0, denseRoofRemovedSky=15)
+        self.write()
+        self.assertEqual(1, len(smoke.validate(self.root, self.request, False)))
+
+    def test_sustained_dense_edits_require_real_frame_measurements(self):
+        self.record['file'] = 'fixture-512.png'
+        self.record['fixtureY'] = 512
+        self.request = {'shots': [{'name': 'fixture-512'}]}
+        (self.root / self.record['file']).write_bytes(b'fixture')
+        self.write()
+        with self.assertRaisesRegex(RuntimeError, 'Sustained dense-edit'):
+            smoke.validate(self.root, self.request, False)
+        self.record['denseEditWorkload'] = dict(frames=120, edits=7680, dirtyNotifications=130680,
+            frameTimeP95Ms=20, renderThreadAllocatedBytes=2048)
+        self.write()
+        self.assertEqual(1, len(smoke.validate(self.root, self.request, False)))
+
+    def test_dense_burst_rejects_repeated_column_work(self):
+        self.record['nativeRegressionMeasurements']['denseBurstRefreshedColumns'] = 1081
+        self.write()
+        with self.assertRaisesRegex(RuntimeError, 'batching receipt'):
+            smoke.validate(self.root, self.request, False)
 
     def test_fresh_mode_refuses_existing_world(self):
         instance = self.root / 'instance'

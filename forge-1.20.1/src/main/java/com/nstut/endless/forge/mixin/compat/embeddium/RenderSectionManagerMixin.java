@@ -32,23 +32,43 @@ public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInva
     @Shadow public abstract void onSectionAdded(int x, int y, int z);
     @Shadow public abstract void onSectionRemoved(int x, int y, int z);
     @Shadow public abstract void scheduleRebuild(int x, int y, int z, boolean important);
+    @Shadow private RenderSection getRenderSection(int x, int y, int z) { throw new AssertionError(); }
     @Shadow private void resetRenderLists() { throw new AssertionError(); }
     @Shadow private boolean needsUpdate;
     @Shadow private Vec3 cameraPosition;
     @Unique private final VerticalRenderWindow endless$window = new VerticalRenderWindow();
     @Unique private final LongSet endless$readyChunks = new LongOpenHashSet();
 
+    @Unique private final com.nstut.endless.vertical.SkyColumnBatch endless$denseSky = new com.nstut.endless.vertical.SkyColumnBatch();
+    @Override public void endless$queueDenseSkyColumns(int x, int z) {
+        if (!EndlessLogicalHeights.isActive() || !world.dimensionType().hasSkyLight()) return;
+        // Clear on the first notification and again at the render boundary,
+        // covering point queries cached between successive edits in a batch.
+        if (endless$denseSky.add(x, z)) com.nstut.endless.vertical.EndlessVerticalEngine.world(world).invalidateSkyLight();
+    }
+    @Override public int endless$flushDenseSkyColumns() {
+        if (!endless$denseSky.isEmpty()) com.nstut.endless.vertical.EndlessVerticalEngine.world(world).invalidateSkyLight();
+        return endless$denseSky.drain((x, z) -> endless$refreshSkyColumn(x, z, true));
+    }
     @Override public void endless$invalidateSkyColumns(int chunkX, int chunkZ) {
         if (!EndlessLogicalHeights.isActive() || !world.dimensionType().hasSkyLight()) return;
-        // The five-ray solver reads at most fifteen horizontal blocks away.
-        // WorldSlice clones a one-section halo outside the node window too.
-        // Clear those snapshots even for columns without a render node.
-        for (int x = chunkX - 1; x <= chunkX + 1; x++) for (int z = chunkZ - 1; z <= chunkZ + 1; z++) {
-            for (int y = endless$window.minSection() - 1; y <= endless$window.maxSection(); y++) {
-                sectionCache.invalidate(x, y, z);
-                if (endless$window.contains(y) && endless$readyChunks.contains(ChunkPos.asLong(x, z))) {
-                    scheduleRebuild(x, y, z, false);
+        for (int x = chunkX - 1; x <= chunkX + 1; x++) for (int z = chunkZ - 1; z <= chunkZ + 1; z++)
+            endless$refreshSkyColumn(x, z, false);
+    }
+    @Unique private void endless$refreshSkyColumn(int x, int z, boolean dense) {
+        // Include WorldSlice's vertical snapshot halo, even without a render node.
+        for (int y = endless$window.minSection() - 1; y <= endless$window.maxSection(); y++) {
+            sectionCache.invalidate(x, y, z);
+            if (endless$window.contains(y) && endless$readyChunks.contains(ChunkPos.asLong(x, z))) {
+                if (dense) {
+                    var node = getRenderSection(x, y, z);
+                    var section = EmbeddiumSections.get(world, world.getChunk(x, z), y);
+                    // Empty geometry has no light-dependent vertices. Preserve
+                    // pending native edits and old geometry awaiting removal.
+                    if (node == null || (node.getFlags() == 0 && node.getPendingUpdate() == null
+                        && (section == null || section.hasOnlyAir()))) continue;
                 }
+                scheduleRebuild(x, y, z, false);
             }
         }
     }
@@ -83,7 +103,9 @@ public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInva
 
     @Inject(method = "updateChunks", at = @At("HEAD"))
     private void endless$followMainCamera(boolean immediately, CallbackInfo ci) {
-        if (EndlessLogicalHeights.isActive()) endless$updateWindow();
+        if (EndlessLogicalHeights.isActive()) {
+            endless$updateWindow();
+        }
     }
 
     @Unique

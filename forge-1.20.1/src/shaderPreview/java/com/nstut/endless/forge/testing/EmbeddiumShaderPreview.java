@@ -38,7 +38,9 @@ public final class EmbeddiumShaderPreview {
     private static final List<Map<String, Object>> records = new ArrayList<>();
     private static CompletableFuture<Void> future;
     private static boolean requested, prepared, done;
-    private static int index, frames;
+    private static int index, frames, denseWorkFrames;
+    private static long denseWorkLastFrame, denseWorkAllocated, denseWorkBytes;
+    private static final List<Double> denseWorkTimes = new ArrayList<>();
     private static long cameraAt;
     private static Object priorManager, priorCache;
     private static List<RenderSection> priorNodes = List.of();
@@ -186,6 +188,7 @@ public final class EmbeddiumShaderPreview {
                 MC.player.getAbilities().flying = true;
                 if (shot.has("reload") && shot.get("reload").getAsBoolean()) MC.levelRenderer.allChanged();
                 cameraAt = System.nanoTime(); frames = 0;
+                denseWorkFrames = 0; denseWorkLastFrame = 0; denseWorkTimes.clear();
                 lastFrame = 0; frameTimes.clear(); allocatedAt = allocatedBytes();
                 System.out.println("ENDLESS_EMBEDDIUM_PREVIEW_CAMERA " + shot.get("name").getAsString() + " eye=" + eye);
             }
@@ -247,6 +250,18 @@ public final class EmbeddiumShaderPreview {
             BlockPos target = BlockPos.containing(vector(shot.getAsJsonArray("target")));
             boolean embeddium = ModList.get().isLoaded("embeddium");
             if (embeddium != request.get("expectEmbeddium").getAsBoolean()) throw new IllegalStateException("Wrong renderer backend");
+            if (embeddium && shot.get("name").getAsString().equals("fixture-512") && denseWorkFrames < 120) {
+                if (denseWorkFrames == 0) denseWorkAllocated = allocatedBytes();
+                if (denseWorkLastFrame != 0) denseWorkTimes.add((now - denseWorkLastFrame) / 1_000_000.0);
+                denseWorkLastFrame = now;
+                denseEditFrame();
+                denseWorkFrames++;
+                if (denseWorkFrames == 120) {
+                    long bytes = allocatedBytes();
+                    denseWorkBytes = bytes < 0 || denseWorkAllocated < 0 ? -1 : bytes - denseWorkAllocated;
+                }
+                return; // Let actual terrain preparation/workers run between batches.
+            }
             if (!sectionReady(target)) return;
             if (embeddium) {
                 verifyWindow();
@@ -278,6 +293,13 @@ public final class EmbeddiumShaderPreview {
                 record.put("compatibilityRegressions", "native initial/dynamic sort, crack aliases/removal, complete mesh output, unload/cancel/late upload"
                     + (MC.level.dimensionType().hasSkyLight() ? ", dense roof edits" : ", no-skylight dimension skip")
                     + (MC.level.dimensionType().hasSkyLight() && shot.get("fixtureY").getAsInt() >= 320 ? ", distant sky page/removal and snapshot halo" : ""));
+            }
+            if (shot.get("name").getAsString().equals("fixture-512")) {
+                var times = denseWorkTimes.stream().sorted().toList();
+                record.put("denseEditWorkload", Map.of("frames", denseWorkFrames, "edits", denseWorkFrames * 64,
+                    "dirtyNotifications", denseWorkFrames * (64 * 17 + 1),
+                    "frameTimeMedianMs", percentile(times, .5), "frameTimeP95Ms", percentile(times, .95),
+                    "renderThreadAllocatedBytes", denseWorkBytes));
             }
             record.put("captureMethod", "Screenshot.takeScreenshot(mainRenderTarget), RenderTick END, hidden GLFW window");
             record.put("capturedAtUtc", java.time.Instant.now().toString());
@@ -335,6 +357,24 @@ public final class EmbeddiumShaderPreview {
             return allocations;
         }
         return null;
+    }
+
+    private static void denseEditFrame() {
+        BlockPos pos = new BlockPos(66, 300, 66);
+        var chunk = MC.level.getChunk(pos);
+        var original = chunk.getBlockState(pos);
+        try {
+            for (int edit = 0; edit < 64; edit++) {
+                var next = (edit % 2 == 0 ? Blocks.STONE : Blocks.DIRT).defaultBlockState();
+                var previous = chunk.setBlockState(pos, next, false);
+                MC.level.setBlocksDirty(pos, previous, next);
+                for (int repeat = 0; repeat < 16; repeat++)
+                    SodiumWorldRenderer.instance().scheduleRebuildForChunk(4, 18, 4, false);
+            }
+        } finally {
+            var previous = chunk.setBlockState(pos, original, false);
+            MC.level.setBlocksDirty(pos, previous, original);
+        }
     }
 
     static long allocatedBytes() {

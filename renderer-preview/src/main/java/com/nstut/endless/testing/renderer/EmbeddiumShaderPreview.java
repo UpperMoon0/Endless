@@ -27,6 +27,7 @@ public final class EmbeddiumShaderPreview {
     private static JsonArray shots;
     private static final List<Map<String, Object>> records = new ArrayList<>();
     private static CompletableFuture<Void> future;
+    private static boolean pageReady;
     private static boolean requested, prepared, done;
     private static int index, frames, denseWorkFrames;
     private static long denseWorkLastFrame, denseWorkAllocated, denseWorkBytes;
@@ -108,6 +109,9 @@ public final class EmbeddiumShaderPreview {
                         level.setBlockAndUpdate(new BlockPos(66, y + 1, 67), Blocks.CHEST.defaultBlockState());
                         level.setBlockAndUpdate(new BlockPos(65, y + 1, 66), Blocks.STONE_SLAB.defaultBlockState());
                         level.setBlockAndUpdate(new BlockPos(66, y + 2, 66), Blocks.DIAMOND_BLOCK.defaultBlockState());
+                        if (!level.getBlockState(new BlockPos(66, y + 1, 66)).is(Blocks.GLOWSTONE)
+                            || level.isOutsideBuildHeight(y) || !level.isInsideBuildHeight(new BlockPos(66, y, 66)))
+                            throw new IllegalStateException("Server rejected logical-height fixture at " + y);
                         var vertical = EndlessVerticalEngine.world(level);
                         BlockPos emitter = new BlockPos(66, y + 1, 66);
                         BlockPos[] samples = {emitter, emitter.east(), emitter.north(), emitter.south(), emitter.west(), emitter.offset(4, 0, 0)};
@@ -221,6 +225,18 @@ public final class EmbeddiumShaderPreview {
         if (!ARMED || done
             || cameraAt == 0 || MC.level == null || MC.getOverlay() != null || MC.screen != null) return;
         long now = System.nanoTime();
+        JsonObject currentShot = shots.get(index).getAsJsonObject();
+        if (currentShot.has("fixtureY")) {
+            int y = currentShot.get("fixtureY").getAsInt();
+            boolean edited = currentShot.has("edit") && currentShot.get("edit").getAsBoolean();
+            if (!MC.level.getBlockState(new BlockPos(66, y + 1, 66)).is(edited ? Blocks.REDSTONE_TORCH : Blocks.GLOWSTONE)
+                || !MC.level.getBlockState(new BlockPos(66, y + 2, 66)).is(edited ? Blocks.EMERALD_BLOCK : Blocks.DIAMOND_BLOCK)) return;
+            if (!pageReady) {
+                pageReady = true;
+                cameraAt = now; frames = 0; lastFrame = 0; frameTimes.clear(); allocatedAt = allocatedBytes();
+                return;
+            }
+        }
         if (lastFrame != 0) frameTimes.add((now - lastFrame) / 1_000_000.0);
         lastFrame = now;
         if (++frames < integer("warmupFrames", 180) || now - cameraAt < integer("warmupSeconds", 10) * 1_000_000_000L || future != null && !future.isDone()) return;
@@ -348,7 +364,7 @@ public final class EmbeddiumShaderPreview {
             records.add(record);
             Files.writeString(out.resolve("capture-manifest.json"), JSON.toJson(records));
             System.out.println("ENDLESS_EMBEDDIUM_PREVIEW_CAPTURE " + record);
-            index++; cameraAt = 0;
+            index++; cameraAt = 0; pageReady = false;
         } catch (Throwable error) { fail(error); }
     }
 

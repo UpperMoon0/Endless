@@ -23,6 +23,12 @@ final class RendererRegression {
             metrics.put("nativeSortPrecision","initial, dynamic and complete index buffers with failing legacy negative control");
         }
         var mc=Minecraft.getInstance(); var manager=manager(); var origin=SectionPos.of(4,y>>4,4);
+        if (mc.level.isOutsideBuildHeight(y) || !mc.level.isInsideBuildHeight(new BlockPos(66,y,66))
+            || !mc.level.isOutsideBuildHeight(com.nstut.endless.heights.EndlessHeights.getMinBuildHeight()-1)
+            || !mc.level.isOutsideBuildHeight(com.nstut.endless.heights.EndlessHeights.getMaxBuildHeight())
+            || mc.level.getSectionsCount() != com.nstut.endless.heights.EndlessHeights.getHeight()/16)
+            throw new IllegalStateException("Real-world logical bounds or bounded dense geometry regressed");
+        metrics.put("logicalBoundsWithDenseCore", true);
         var cache=new Cache(field(manager,"sectionCache"));
         var node=section(manager,4,y>>4,4);
         verifyQueuedHeight(mc, manager, node, origin);

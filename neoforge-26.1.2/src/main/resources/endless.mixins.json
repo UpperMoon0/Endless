@@ -23,6 +23,7 @@
     "LevelHeightAccessorMixin",
     "LevelReaderMixin",
     "LevelMixin",
+    "LevelBuildBoundsMixin",
     "ChunkAccessMixin",
     "ChunkSkyLightSourcesMixin",
     "ChunkHolderMixin",

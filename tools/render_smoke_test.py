@@ -99,6 +99,8 @@ def validate(output: Path, request: dict, oculus: bool, target: str = "forge-1.2
                 raise RuntimeError('Native transparent sort regression receipt missing')
             if target == 'neoforge-26.1.2' and measurements.get('queuedMeshHeight') != record['fixtureY'] // 16:
                 raise RuntimeError('Native mesh queue height receipt missing')
+            if target == 'neoforge-26.1.2' and not measurements.get('logicalBoundsWithDenseCore'):
+                raise RuntimeError('Logical world bounds/dense core receipt missing')
             names = ['completeMeshing', 'chunkLifecycle'] if target == 'forge-1.20.1' else []
             if sky and target == 'forge-1.20.1':
                 names += ['denseRoof']

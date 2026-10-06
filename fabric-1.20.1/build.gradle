@@ -137,6 +137,13 @@ if (project.hasProperty("shaderPreview")) {
     sourceSets.main.java.srcDir "src/shaderPreview/java"
     loom.runs { shaderPreviewClient { client(); runDir("run/shader-preview/.minecraft"); vmArg "-Xmx3G"; property "endless.shaderPreview", "true"; programArgs "--width", "640", "--height", "360" } }
     def previewBackend = project.findProperty("previewRenderer") ?: "embeddium"
+    if (previewBackend == "sodium") configurations.configureEach {
+        // Loom's Linux snapshot override is rejected by Sodium 0.5's native
+        // driver gate. Test the exact LWJGL shipped by Minecraft 1.20.1.
+        resolutionStrategy.eachDependency { dependency ->
+            if (dependency.requested.group == "org.lwjgl") dependency.useVersion("3.3.1")
+        }
+    }
     def previewPin = previewBackend == "embeddium" ? 'kJkE9dfS' : (project.findProperty("previewSodiumPin") ?: "OihdIimA")
     if (previewPin == null) throw new GradleException("No Embeddium release for fabric-1.20.1")
     dependencies {

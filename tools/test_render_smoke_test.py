@@ -111,7 +111,14 @@ class RenderSmokeTest(unittest.TestCase):
         self.record['compatibilityRegressions'] = self.record['compatibilityRegressions'].replace(
             'unload/cancel/late upload', 'chunk unload/reload')
         self.record['nativeRegressionMeasurements'].update(completeMeshBytes=1024, queuedMeshHeight=62500,
-            activeMeshCancellationPolls=2, lateUploadFiltered=True)
+            activeMeshCancellationPolls=2, lateUploadFiltered=True, logicalBoundsWithDenseCore=True)
+
+    def test_modern_logical_bounds_cannot_widen_dense_geometry(self):
+        self.modern_receipt()
+        self.record['nativeRegressionMeasurements']['logicalBoundsWithDenseCore'] = False
+        self.write()
+        with self.assertRaisesRegex(RuntimeError, 'Logical world bounds'):
+            smoke.validate(self.root, self.request, False, 'neoforge-26.1.2', 'sodium')
 
     def test_modern_lifecycle_requires_active_cancel_and_late_filter(self):
         self.modern_receipt()

@@ -1,0 +1,8 @@
+Embeddium / Oculus compatibility (Forge 1.20.1):
+- Supply sparse terrain, block entities and light snapshots with bounded camera-following section registration.
+- Preserve fractional camera movement for initial transparent mesh sorting and later re-sorts at extreme heights.
+- Use exact destruction-position keys for block-entity mining overlays.
+- Refresh visible skylight when distant sparse roof pages arrive or are removed.
+- Add native rendering regressions and a packaged client-mixin/runtime-selector gate.
+- Refresh sparse Embeddium skylight after dense-core block/light updates, and invalidate the snapshot halo above and below the render window.
+- Batch overlapping dense skylight refreshes once per render frame, including shared Oculus passes; add repeated-edit and cached skylight value regressions.

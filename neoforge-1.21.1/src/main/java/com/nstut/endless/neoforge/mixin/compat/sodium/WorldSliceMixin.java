@@ -1,6 +1,6 @@
 package com.nstut.endless.neoforge.mixin.compat.sodium;
 
-import com.nstut.endless.neoforge.compat.EmbeddiumSections;
+import com.nstut.endless.compat.EmbeddiumSections;
 import net.caffeinemc.mods.sodium.client.world.cloned.ClonedChunkSectionCache;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.Level;

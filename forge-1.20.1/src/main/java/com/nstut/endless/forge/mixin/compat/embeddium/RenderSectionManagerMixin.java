@@ -1,6 +1,6 @@
 package com.nstut.endless.forge.mixin.compat.embeddium;
 
-import com.nstut.endless.forge.compat.EmbeddiumSections;
+import com.nstut.endless.compat.EmbeddiumSections;
 import com.nstut.endless.forge.compat.EmbeddiumWindowBounds;
 import com.nstut.endless.forge.compat.EmbeddiumSortCamera;
 import com.nstut.endless.forge.compat.EmbeddiumSnapshotInvalidation;

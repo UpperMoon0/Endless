@@ -1,4 +1,4 @@
-package com.nstut.endless.fabric.compat;
+package com.nstut.endless.compat;
 
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import com.nstut.endless.vertical.EndlessVerticalEngine;

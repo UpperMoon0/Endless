@@ -56,7 +56,7 @@ jobs:
           version=$(sed -n 's/^mod_version=//p' gradle.properties)
           python3 tools/check_create_mixin_refmap.py "forge-1.20.1/build/libs/endless-forge-1.20.1-${version}.jar"
           python3 tools/check_embeddium_mixin_refmap.py "forge-1.20.1/build/libs/endless-forge-1.20.1-${version}.jar"
-          python3 tools/check_renderer_packaging.py "fabric-1.20.1/build/libs/endless-fabric-1.20.1-${version}.jar"
+          python3 tools/check_renderer_packaging.py "forge-1.20.1/build/libs/endless-forge-1.20.1-${version}.jar" "fabric-1.20.1/build/libs/endless-fabric-1.20.1-${version}.jar"
 
   build-1211:
     name: Build Minecraft 1.21.1

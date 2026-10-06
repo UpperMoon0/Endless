@@ -257,7 +257,7 @@ final class EmbeddiumCompatibilityRegression {
         for (int y = window.minSection(); y < window.maxSection(); y++) {
             var node = (RenderSection) lookup.invoke(manager, origin.getX(), y, origin.getZ());
             var level = Minecraft.getInstance().level;
-            var section = com.nstut.endless.forge.compat.EmbeddiumSections.get(level, level.getChunk(origin.getX(), origin.getZ()), y);
+            var section = com.nstut.endless.compat.EmbeddiumSections.get(level, level.getChunk(origin.getX(), origin.getZ()), y);
             if (node == null || node.getFlags() != 0 || node.getPendingUpdate() != null || section != null && !section.hasOnlyAir()) continue;
             var before = cache.acquire(origin.getX(), y, origin.getZ());
             var invalidation = (com.nstut.endless.forge.compat.EmbeddiumSnapshotInvalidation) manager;

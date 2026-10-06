@@ -73,6 +73,15 @@ public final class NativeRenderer {
         }
         throw new IllegalStateException("Missing native field " + target.getClass() + "." + name);
     }
+    public static Object sectionPolicyField(Object manager, String name) {
+        Object state;
+        try { state = field(manager, "endless$sections"); }
+        catch (IllegalStateException absent) {
+            if (!absent.getMessage().startsWith("Missing native field")) throw absent;
+            return field(manager, "endless$" + name);
+        }
+        return field(state, name);
+    }
     public static Object call(Object target, String name, Object... args) {
         Class<?> type = target instanceof Class<?> c ? c : target.getClass();
         for (Class<?> c = type; c != null; c = c.getSuperclass()) for (var m : c.getDeclaredMethods()) {
@@ -110,8 +119,8 @@ public final class NativeRenderer {
         catch (IllegalStateException absent) {
             Object storage = field(manager, "renderSections");
             var list=new ArrayList<Object>();
-            var window=(com.nstut.endless.vertical.VerticalRenderWindow)field(manager,"endless$window");
-            var chunks=(it.unimi.dsi.fastutil.longs.LongSet)field(manager,"endless$readyChunks");
+            var window=(com.nstut.endless.vertical.VerticalRenderWindow)sectionPolicyField(manager,"window");
+            var chunks=(it.unimi.dsi.fastutil.longs.LongSet)sectionPolicyField(manager,"readyChunks");
             for(long key:chunks) for(int y=window.minSection();y<window.maxSection();y++) {
                 Object node=call(storage,"getCurrent",net.minecraft.core.SectionPos.asLong((int)key,y,(int)(key>>>32)));
                 if(node!=null)list.add(node);

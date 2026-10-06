@@ -1,6 +1,6 @@
 package com.nstut.endless.fabric.mixin.compat.embeddium;
 
-import com.nstut.endless.fabric.compat.EmbeddiumSections;
+import com.nstut.endless.compat.EmbeddiumSections;
 import me.jellysquid.mods.sodium.client.world.cloned.ClonedChunkSection;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.Level;

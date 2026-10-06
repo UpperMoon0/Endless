@@ -1,7 +1,7 @@
 package com.nstut.endless.forge.testing;
 
 import com.google.gson.*;
-import com.nstut.endless.forge.compat.EmbeddiumSections;
+import com.nstut.endless.compat.EmbeddiumSections;
 import com.nstut.endless.vertical.EndlessVerticalEngine;
 import me.jellysquid.mods.sodium.client.render.SodiumWorldRenderer;
 import me.jellysquid.mods.sodium.client.render.chunk.RenderSection;

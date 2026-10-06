@@ -184,7 +184,7 @@ final class RendererRegression {
         var cache = new NativeRenderer.Cache(field(manager, "sectionCache"));
         var before = cache.acquire(origin.getX(), origin.getY(), origin.getZ());
         int oldSky = before.getLightArray(LightLayer.SKY).get(2, 15, 2);
-        var window = (VerticalRenderWindow) field(manager, "endless$window");
+        var window = (VerticalRenderWindow) NativeRenderer.sectionPolicyField(manager, "window");
         var haloPositions = List.of(SectionPos.of(origin.getX(), window.minSection() - 1, origin.getZ()),
             SectionPos.of(origin.getX(), window.maxSection(), origin.getZ()));
         var haloBefore = haloPositions.stream().map(pos -> cache.acquire(pos.getX(), pos.getY(), pos.getZ())).toList();

@@ -1,6 +1,6 @@
 package com.nstut.endless.fabric.mixin.compat.embeddium;
 
-import com.nstut.endless.fabric.compat.EmbeddiumSections;
+import com.nstut.endless.compat.EmbeddiumSections;
 import com.nstut.endless.fabric.compat.EmbeddiumWindowBounds;
 import com.nstut.endless.fabric.compat.EmbeddiumSortCamera;
 import com.nstut.endless.fabric.compat.EmbeddiumSnapshotInvalidation;

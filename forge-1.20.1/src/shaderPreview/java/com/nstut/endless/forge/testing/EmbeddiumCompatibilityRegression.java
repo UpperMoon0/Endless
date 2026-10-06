@@ -214,6 +214,12 @@ final class EmbeddiumCompatibilityRegression {
         if (count != 32 || sections.get(SectionPos.asLong(origin.getX(), origin.getY(), origin.getZ())) == render) {
             throw new IllegalStateException("Chunk reload failed to create a fresh bounded column");
         }
+        var replacement = sections.get(SectionPos.asLong(origin.getX(), origin.getY(), origin.getZ()));
+        if (replacement.isBuilt()) throw new IllegalStateException("Initial-build regression requires a new unbuilt native node");
+        manager.scheduleRebuild(origin.getX(), origin.getY(), origin.getZ(), false);
+        var pending = (com.nstut.endless.vertical.InitialBuildUpdates) field(manager, "endless$initialUpdates");
+        if (!pending.contains(origin.getX(), origin.getY(), origin.getZ()))
+            throw new IllegalStateException("Native initial-build edit was dropped");
     }
 
     private static void verifyDenseSkyUpdate(Minecraft mc, SectionPos origin) throws Exception {

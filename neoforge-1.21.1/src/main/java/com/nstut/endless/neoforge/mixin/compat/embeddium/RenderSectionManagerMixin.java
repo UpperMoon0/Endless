@@ -10,6 +10,7 @@ import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import com.nstut.endless.vertical.VerticalRenderWindow;
+import com.nstut.endless.vertical.InitialBuildUpdates;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import org.embeddedt.embeddium.impl.render.chunk.occlusion.OcclusionCuller;
@@ -25,7 +26,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Pseudo
 @Mixin(targets = "org.embeddedt.embeddium.impl.render.chunk.RenderSectionManager", remap = false)
-public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInvalidation {
+public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInvalidation, InitialBuildUpdates.Target {
     @Shadow @Final private ClientLevel world;
     @Shadow @Final private ClonedChunkSectionCache sectionCache;
     @Shadow @Final private OcclusionCuller occlusionCuller;
@@ -37,6 +38,24 @@ public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInva
     @Shadow private boolean needsUpdate;
     @Shadow private Vec3 cameraPosition;
     @Unique private final VerticalRenderWindow endless$window = new VerticalRenderWindow();
+    @Unique private final InitialBuildUpdates endless$initialUpdates = new InitialBuildUpdates(this);
+    @Override public boolean endless$isCurrentInitialSection(int x, int y, int z) {
+        return endless$window.contains(y) && endless$readyChunks.contains(ChunkPos.asLong(x, z));
+    }
+    @Override public boolean endless$rebuildInitialSection(int x, int y, int z) {
+        var node = getRenderSection(x, y, z);
+        if (node == null || node.isDisposed()) return true;
+        if (!node.isBuilt()) return false;
+        scheduleRebuild(x, y, z, false);
+        return true;
+    }
+    @Inject(method = "scheduleRebuild", at = @At("RETURN"))
+    private void endless$retainInitialBuildEdits(int x, int y, int z, boolean important, CallbackInfo ci) {
+        if (!EndlessLogicalHeights.isActive()) return;
+        var node = getRenderSection(x, y, z);
+        if (node != null && !node.isBuilt() && !node.isDisposed()) endless$initialUpdates.add(x, y, z);
+    }
+
     @Unique private final LongSet endless$readyChunks = new LongOpenHashSet();
 
     @Unique private final com.nstut.endless.vertical.SkyColumnBatch endless$denseSky = new com.nstut.endless.vertical.SkyColumnBatch();
@@ -95,6 +114,7 @@ public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInva
         if (!EndlessLogicalHeights.isActive()) return;
         ci.cancel();
         if (!endless$readyChunks.remove(ChunkPos.asLong(x, z))) return;
+        endless$initialUpdates.discardColumn(x, z);
         for (int y = endless$window.minSection(); y < endless$window.maxSection(); y++) {
             onSectionRemoved(x, y, z);
             sectionCache.invalidate(x, y, z);
@@ -115,7 +135,10 @@ public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInva
         // Oculus invokes the manager again for shadows. Always follow the main
         // camera, never a shadow frustum, so both passes share one stable grid.
         int camera = Math.floorDiv(Minecraft.getInstance().gameRenderer.getMainCamera().getBlockPosition().getY(), 16);
-        if (!endless$window.update(camera, EndlessLogicalHeights.minSection(), EndlessLogicalHeights.maxSectionExclusive())) return;
+        if (!endless$window.update(camera, EndlessLogicalHeights.minSection(), EndlessLogicalHeights.maxSectionExclusive())) {
+            endless$initialUpdates.retry();
+            return;
+        }
         ((EmbeddiumWindowBounds) occlusionCuller).endless$setWindowBounds(endless$window.minSection(), endless$window.maxSection());
         for (long key : endless$readyChunks) {
             int x = ChunkPos.getX(key), z = ChunkPos.getZ(key);
@@ -136,6 +159,7 @@ public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInva
         }
         resetRenderLists();
         needsUpdate = true;
+        endless$initialUpdates.retry();
     }
 
     @Redirect(method = "onSectionAdded", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/chunk/ChunkAccess;getSections()[Lnet/minecraft/world/level/chunk/LevelChunkSection;", remap = true))

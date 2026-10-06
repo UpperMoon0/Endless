@@ -106,6 +106,54 @@ class RenderSmokeTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'batching receipt'):
             smoke.validate(self.root, self.request, False)
 
+    def modern_receipt(self):
+        self.record['sodium'] = True
+        self.record['compatibilityRegressions'] = self.record['compatibilityRegressions'].replace(
+            'unload/cancel/late upload', 'chunk unload/reload')
+        self.record['nativeRegressionMeasurements'].update(completeMeshBytes=1024, queuedMeshHeight=62500,
+            activeMeshCancellationPolls=2, lateUploadFiltered=True)
+
+    def test_modern_lifecycle_requires_active_cancel_and_late_filter(self):
+        self.modern_receipt()
+        self.record['nativeRegressionMeasurements']['lateUploadFiltered'] = False
+        self.write()
+        with self.assertRaisesRegex(RuntimeError, 'cancellation/late upload'):
+            smoke.validate(self.root, self.request, False, 'fabric-1.21.1', 'sodium')
+
+    def test_modern_renderer_requires_complete_native_mesh(self):
+        self.modern_receipt()
+        self.record['nativeRegressionMeasurements']['completeMeshBytes'] = 0
+        self.write()
+        with self.assertRaisesRegex(RuntimeError, 'Complete native mesh'):
+            smoke.validate(self.root, self.request, False, 'fabric-1.21.1', 'sodium')
+
+    def test_modern_queue_rejects_absolute_height_alias(self):
+        self.modern_receipt()
+        self.record['nativeRegressionMeasurements']['queuedMeshHeight'] = 36
+        self.write()
+        with self.assertRaisesRegex(RuntimeError, 'queue height'):
+            smoke.validate(self.root, self.request, False, 'neoforge-26.1.2', 'sodium')
+        self.record['nativeRegressionMeasurements']['queuedMeshHeight'] = 62500
+        self.write()
+        self.assertEqual(1, len(smoke.validate(self.root, self.request, False, 'neoforge-26.1.2', 'sodium')))
+
+    def test_embeddium_port_requires_native_sort_precision(self):
+        self.modern_receipt()
+        self.write()
+        with self.assertRaisesRegex(RuntimeError, 'sort regression'):
+            smoke.validate(self.root, self.request, False, 'neoforge-1.21.1')
+
+    def test_active_shader_receipt_requires_expected_pipeline(self):
+        self.modern_receipt()
+        self.request['expectShaders'] = True
+        self.record.update(shadersActive=True, shaderPack='ComplementaryReimagined_r5.9.3.zip', markerPixels=0)
+        self.write()
+        self.assertEqual(1, len(smoke.validate(self.root, self.request, False, 'fabric-1.21.1', 'sodium')))
+        self.record['shaderPack'] = ''
+        self.write()
+        with self.assertRaisesRegex(RuntimeError, 'Complementary'):
+            smoke.validate(self.root, self.request, False, 'fabric-1.21.1', 'sodium')
+
     def test_fresh_mode_refuses_existing_world(self):
         instance = self.root / 'instance'
         save = instance / '.minecraft/saves/Preserve/level.dat'
@@ -133,6 +181,14 @@ class RenderSmokeTest(unittest.TestCase):
         self.assertEqual(640, request['width'])
         self.assertEqual({'minBuildHeight': -8_000_000, 'maxBuildHeight': 8_000_000},
                          json.loads((instance / '.minecraft/config/endless.json').read_text())['buildHeight'])
+
+    def test_disabled_profile_clears_previous_active_shader_selection(self):
+        instance = self.root / 'instance'
+        config = instance / '.minecraft/config/iris.properties'
+        config.parent.mkdir(parents=True)
+        config.write_text('enableShaders=true\nshaderPack=OldPack.zip\n')
+        smoke.prepare(instance, self.root / 'evidence')
+        self.assertEqual('enableShaders=false\n', config.read_text())
 
 
 if __name__ == '__main__':

@@ -15,7 +15,8 @@
     "BlockEntityRenderDispatcherDebugMixin",
     "accessor.LevelRendererAccessor",
     "accessor.ViewAreaAccessor",
-    "accessor.VisibleSectionsAccessor"
+    "accessor.VisibleSectionsAccessor",
+    "DestructionProgressMixin"
   ],
   "mixins": [
     "FriendlyByteBufMixin",

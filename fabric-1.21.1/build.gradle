@@ -8,6 +8,12 @@ architectury {
 }
 
 loom {
+    // Renderer classes keep their upstream names, but their Minecraft call
+    // sites need a production refmap. Static remapping skips @Mixin(remap=false).
+    mixin {
+        useLegacyMixinAp = true
+        defaultRefmapName = "endless-fabric-1.21.1-refmap.json"
+    }
     runs {
         liveJoinTestClient {
             client()
@@ -91,4 +97,23 @@ shadowJar {
 
 remapJar {
     inputFile.set shadowJar.archiveFile
+}
+
+repositories { maven { url = 'https://api.modrinth.com/maven' } }
+dependencies { modCompileOnly("maven.modrinth:sodium:u1OEbNKx") { transitive = false } }
+
+// Development-only native framebuffer fixture; excluded from ordinary builds.
+if (project.hasProperty("shaderPreview")) {
+    configurations.configureEach { configuration ->
+        if (configuration.name.toLowerCase().contains("runtime")) configuration.exclude group: "net.blay09.mods"
+    }
+    sourceSets.main.java.srcDir rootProject.file("renderer-preview/src/main/java")
+    loom.runs { shaderPreviewClient { client(); runDir("run/shader-preview/.minecraft"); vmArg "-Xmx3G"; property "endless.shaderPreview", "true"; programArgs "--width", "640", "--height", "360" } }
+    def previewBackend = project.findProperty("previewRenderer") ?: "sodium"
+    def previewPin = previewBackend == "embeddium" ? null : (project.findProperty("previewSodiumPin") ?: "u1OEbNKx")
+    if (previewPin == null) throw new GradleException("No Embeddium release for fabric-1.21.1")
+    dependencies {
+        modRuntimeOnly("maven.modrinth:${previewBackend}:${previewPin}") { transitive = false }
+        if (project.hasProperty("previewIris")) modRuntimeOnly("maven.modrinth:iris:zsoi0dso") { transitive = false }
+    }
 }

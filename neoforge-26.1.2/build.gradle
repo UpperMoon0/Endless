@@ -103,3 +103,31 @@ publishing {
         }
     }
 }
+
+repositories { maven { url = 'https://api.modrinth.com/maven' } }
+configurations { sodiumCompileArchive }
+dependencies { sodiumCompileArchive("maven.modrinth:sodium:zg4YQ9EL") { transitive = false } }
+def sodiumApi = tasks.register('prepareSodiumApi', Copy) {
+    from { zipTree(configurations.sodiumCompileArchive.singleFile) }
+    include 'META-INF/jarjar/*-mod.jar'
+    eachFile { path = 'sodium-api.jar' }
+    includeEmptyDirs = false
+    into layout.buildDirectory.dir('renderer-api')
+}
+dependencies { compileOnly files(layout.buildDirectory.file("renderer-api/sodium-api.jar")).builtBy(sodiumApi) }
+
+// Development-only native framebuffer fixture; excluded from ordinary builds.
+if (project.hasProperty("shaderPreview")) {
+    configurations.configureEach { configuration ->
+        if (configuration.name.toLowerCase().contains("runtime")) configuration.exclude group: "net.blay09.mods"
+    }
+    sourceSets.main.java.srcDir rootProject.file("renderer-preview-26/src/main/java")
+    neoForge.runs { shaderPreviewClient { client(); gameDirectory = project.file("run/shader-preview/.minecraft"); systemProperty "endless.shaderPreview", "true"; jvmArgument "-Xmx3G"; programArguments.addAll "--width", "640", "--height", "360" } }
+    def previewBackend = project.findProperty("previewRenderer") ?: "sodium"
+    def previewPin = previewBackend == "embeddium" ? null : (project.findProperty("previewSodiumPin") ?: "zg4YQ9EL")
+    if (previewPin == null) throw new GradleException("No Embeddium release for neoforge-26.1.2")
+    dependencies {
+        runtimeOnly("maven.modrinth:${previewBackend}:${previewPin}") { transitive = false }
+        if (project.hasProperty("previewIris")) runtimeOnly("maven.modrinth:iris:qE5Y7GrZ") { transitive = false }
+    }
+}

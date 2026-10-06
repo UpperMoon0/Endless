@@ -1,0 +1,22 @@
+{
+  "required": true,
+  "package": "com.nstut.endless.neoforge.mixin.compat.embeddium",
+  "compatibilityLevel": "JAVA_21",
+  "minVersion": "0.8",
+  "plugin": "com.nstut.endless.neoforge.compat.EmbeddiumMixinPlugin",
+  "client": [
+    "ClonedChunkSectionCacheMixin",
+    "WorldSliceMixin",
+    "ClonedChunkSectionMixin",
+    "RenderSectionManagerMixin",
+    "OcclusionCullerMixin",
+    "ChunkBuilderMeshingTaskMixin",
+    "ChunkBuilderSortTaskMixin",
+    "SodiumWorldRendererMixin",
+    "VerticalClientUpdatesMixin",
+    "MinecraftFrameMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

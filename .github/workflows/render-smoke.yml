@@ -10,13 +10,26 @@ concurrency:
 
 jobs:
   framebuffer:
-    name: Framebuffer (${{ matrix.backend }})
+    name: Framebuffer (${{ matrix.target }}, ${{ matrix.backend }})
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        backend: [embeddium, oculus]
+        include:
+          - {target: forge-1.20.1, backend: embeddium, renderer: embeddium}
+          - {target: forge-1.20.1, backend: oculus, renderer: embeddium}
+          - {target: fabric-1.20.1, backend: embeddium, renderer: embeddium}
+          - {target: fabric-1.20.1, backend: sodium, renderer: sodium}
+          - {target: fabric-1.20.1, backend: iris, renderer: sodium}
+          - {target: fabric-1.21.1, backend: sodium, renderer: sodium}
+          - {target: fabric-1.21.1, backend: sodium-0.8, renderer: sodium, pin: SMxNOGZ6}
+          - {target: fabric-1.21.1, backend: iris, renderer: sodium}
+          - {target: neoforge-1.21.1, backend: embeddium, renderer: embeddium}
+          - {target: neoforge-1.21.1, backend: sodium, renderer: sodium}
+          - {target: neoforge-1.21.1, backend: sodium-0.8, renderer: sodium, pin: uMOpc5uV}
+          - {target: neoforge-26.1.2, backend: sodium, renderer: sodium}
+          - {target: neoforge-26.1.2, backend: iris, renderer: sodium}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,7 +43,7 @@ jobs:
           python-version: '3.12'
       - uses: gradle/actions/setup-gradle@v4
         with:
-          cache-read-only: ${{ matrix.backend == 'oculus' }}
+          cache-read-only: ${{ !(matrix.target == 'forge-1.20.1' && matrix.backend == 'embeddium') }}
           gradle-home-cache-excludes: |
             caches/fabric-loom
       - name: Prepare display and dependencies
@@ -44,10 +57,15 @@ jobs:
       - name: Capture generated fixture world
         env:
           BACKEND: ${{ matrix.backend }}
+          TARGET: ${{ matrix.target }}
+          RENDERER: ${{ matrix.renderer }}
+          SODIUM_PIN: ${{ matrix.pin }}
         run: |
           args=()
           if [[ "$BACKEND" == oculus ]]; then args+=(--oculus); fi
-          python3 tools/render_smoke_test.py "${args[@]}"
+          if [[ "$BACKEND" == iris ]]; then args+=(--iris); fi
+          if [[ -n "$SODIUM_PIN" ]]; then args+=(--sodium-pin "$SODIUM_PIN"); fi
+          python3 tools/render_smoke_test.py --target "$TARGET" --renderer "$RENDERER" "${args[@]}"
       - name: Require exact-head rendering receipt
         env:
           EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -65,9 +83,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: renderer-smoke-${{ matrix.backend }}
+          name: renderer-smoke-${{ matrix.target }}-${{ matrix.backend }}
           path: |
             build/render-smoke/**
-            forge-1.20.1/run/shader-preview/.minecraft/logs/**
-            forge-1.20.1/run/shader-preview/.minecraft/crash-reports/**
+            ${{ matrix.target }}/run/shader-preview/.minecraft/logs/**
+            ${{ matrix.target }}/run/shader-preview/.minecraft/crash-reports/**
           if-no-files-found: error

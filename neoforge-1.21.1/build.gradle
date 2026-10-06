@@ -147,3 +147,27 @@ neoForge {
         testedMod = mods.endless
     }
 }
+
+repositories { maven { url = 'https://api.modrinth.com/maven' } }
+dependencies {
+    compileOnly("maven.modrinth:embeddium:J7b96IEd") { transitive = false }
+}
+
+dependencies { compileOnly("maven.modrinth:sodium:Pb3OXVqC") { transitive = false } }
+
+// Development-only native framebuffer fixture; excluded from ordinary builds.
+if (project.hasProperty("shaderPreview")) {
+    configurations.configureEach { configuration ->
+        if (configuration.name.toLowerCase().contains("runtime")) configuration.exclude group: "net.blay09.mods"
+    }
+    sourceSets.main.java.srcDir rootProject.file("renderer-preview/src/main/java")
+    sourceSets.main.java.srcDir "src/shaderPreview/java"
+    neoForge.runs { shaderPreviewClient { client(); gameDirectory = project.file("run/shader-preview/.minecraft"); systemProperty "endless.shaderPreview", "true"; jvmArgument "-Xmx3G"; programArguments.addAll "--width", "640", "--height", "360" } }
+    def previewBackend = project.findProperty("previewRenderer") ?: "embeddium"
+    def previewPin = previewBackend == "embeddium" ? 'J7b96IEd' : (project.findProperty("previewSodiumPin") ?: "Pb3OXVqC")
+    if (previewPin == null) throw new GradleException("No Embeddium release for neoforge-1.21.1")
+    dependencies {
+        runtimeOnly("maven.modrinth:${previewBackend}:${previewPin}") { transitive = false }
+        if (project.hasProperty("previewIris")) runtimeOnly("maven.modrinth:iris:t3ruzodq") { transitive = false }
+    }
+}

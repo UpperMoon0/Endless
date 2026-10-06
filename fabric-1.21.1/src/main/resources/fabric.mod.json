@@ -4,15 +4,24 @@
   "version": "${version}",
   "name": "Endless",
   "description": "Sparse practical infinite build height with persistent high-Y world state.",
-  "authors": ["NsTut"],
+  "authors": [
+    "NsTut"
+  ],
   "license": "MIT",
   "icon": "assets/endless/icon.png",
   "environment": "*",
   "entrypoints": {
-    "main": ["com.nstut.endless.fabric.EndlessFabric"],
-    "client": ["com.nstut.endless.fabric.EndlessFabricClient"]
+    "main": [
+      "com.nstut.endless.fabric.EndlessFabric"
+    ],
+    "client": [
+      "com.nstut.endless.fabric.EndlessFabricClient"
+    ]
   },
-  "mixins": ["endless.mixins.json"],
+  "mixins": [
+    "endless.mixins.json",
+    "endless-sodium.mixins.json"
+  ],
   "depends": {
     "fabricloader": ">=0.17.2",
     "fabric-api": "*",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a fresh-world native Embeddium framebuffer smoke test under Loom/Xvfb."""
+"""Run a fresh-world native optional-renderer framebuffer test under Loom/Xvfb."""
 from __future__ import annotations
 
 import argparse
@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -17,7 +18,7 @@ SHOTS = ('fixture--80', 'fixture-512', 'fixture-1000000', 'fixture-nether', 'fix
          'fixture-reload', '12-fixture-edit')
 
 
-def prepare(instance: Path, output: Path) -> dict:
+def prepare(instance: Path, output: Path, shots=SHOTS, shader_pack: Path | None = None) -> dict:
     """Use only generated scenes in a uniquely named world; never delete saves."""
     game = instance / '.minecraft'
     (game / 'config').mkdir(parents=True, exist_ok=True)
@@ -28,7 +29,7 @@ def prepare(instance: Path, output: Path) -> dict:
         sys.executable, str(ROOT / 'tools/capture_shader_preview.py'),
         '--instance', str(instance), '--output', str(output), '--fixture-only',
         '--create-world', '--world', 'Endless Render Smoke ' + uuid.uuid4().hex,
-        '--shots', ','.join(SHOTS),
+        '--shots', ','.join(shots),
     ], check=True, cwd=ROOT)
     path = game / 'endless-preview-request.json'
     request = json.loads(path.read_text())
@@ -36,11 +37,23 @@ def prepare(instance: Path, output: Path) -> dict:
     # Native readiness, snapshot, sort, lifecycle and lighting assertions remain.
     request.update(width=640, height=360, renderDistance=4,
                    warmupFrames=30, warmupSeconds=3)
+    if shader_pack is not None:
+        shader_pack = shader_pack.resolve(strict=True)
+        packs = game / 'shaderpacks'
+        packs.mkdir(exist_ok=True)
+        shutil.copy2(shader_pack, packs / shader_pack.name)
+        (game / 'config/iris.properties').write_text(
+            'enableShaders=true\nshaderPack=' + shader_pack.name + '\n', encoding='utf-8')
+        request['expectShaders'] = True
+    else:
+        # Each run owns this isolated profile. A preceding active-pack run must
+        # not silently leave shaders enabled in the next disabled test.
+        (game / 'config/iris.properties').write_text('enableShaders=false\n', encoding='utf-8')
     path.write_text(json.dumps(request, indent=2), encoding='utf-8')
     return request
 
 
-def validate(output: Path, request: dict, oculus: bool) -> list[dict]:
+def validate(output: Path, request: dict, oculus: bool, target: str = "forge-1.20.1", renderer: str = "embeddium") -> list[dict]:
     records = json.loads((output / 'capture-manifest.json').read_text())
     expected = {shot['name'] + '.png' for shot in request['shots']}
     if (output / 'failure.txt').exists():
@@ -48,9 +61,12 @@ def validate(output: Path, request: dict, oculus: bool) -> list[dict]:
     if len(records) != len(expected) or {r['file'] for r in records} != expected:
         raise RuntimeError('Missing or duplicate native framebuffer captures')
     for record in records:
-        if not record['embeddium'] or record['oculus'] != oculus or record['shadersActive']:
+        active = bool(request.get('expectShaders', False))
+        if not record[renderer] or record['oculus'] != oculus or record['shadersActive'] != active:
             raise RuntimeError('Unexpected renderer/Oculus/shader state')
-        if (record['width'], record['height']) != (640, 360) or record['sampledColors'] < 16 or record.get('markerPixels', 0) < 1:
+        if active and 'Complementary' not in record.get('shaderPack', ''):
+            raise RuntimeError('Expected active Complementary pipeline')
+        if (record['width'], record['height']) != (640, 360) or record['sampledColors'] < 16 or (not active and record.get('markerPixels', 0) < 1):
             raise RuntimeError('Wrong framebuffer dimensions or blank frame')
         if record['frameTimeP95Ms'] <= 0 or record['renderThreadAllocatedBytes'] < -1:
             raise RuntimeError('Missing frame-time/allocation measurements')
@@ -68,15 +84,23 @@ def validate(output: Path, request: dict, oculus: bool) -> list[dict]:
         if record['file'] != '12-fixture-edit.png':
             checks = record.get('compatibilityRegressions', '')
             sky = record['dimension'] == 'minecraft:overworld'
-            required = ['complete mesh output', 'unload/cancel/late upload',
+            required = ['complete mesh output', 'unload/cancel/late upload' if target == 'forge-1.20.1' else 'chunk unload/reload',
                         'dense roof edits' if sky else 'no-skylight dimension skip']
             if sky and record['fixtureY'] >= 320:
                 required += ['distant sky page/removal', 'snapshot halo']
             if any(check not in checks for check in required):
                 raise RuntimeError('Native regression receipt missing')
             measurements = record.get('nativeRegressionMeasurements', {})
-            names = ['completeMeshing', 'chunkLifecycle']
-            if sky:
+            if target != 'forge-1.20.1' and measurements.get('completeMeshBytes', 0) <= 0:
+                raise RuntimeError('Complete native mesh measurements missing')
+            if target != 'forge-1.20.1' and (measurements.get('activeMeshCancellationPolls', 0) < 2 or not measurements.get('lateUploadFiltered')):
+                raise RuntimeError('Active mesh cancellation/late upload measurements missing')
+            if target != 'forge-1.20.1' and renderer == 'embeddium' and not measurements.get('nativeSortPrecision'):
+                raise RuntimeError('Native transparent sort regression receipt missing')
+            if target == 'neoforge-26.1.2' and measurements.get('queuedMeshHeight') != record['fixtureY'] // 16:
+                raise RuntimeError('Native mesh queue height receipt missing')
+            names = ['completeMeshing', 'chunkLifecycle'] if target == 'forge-1.20.1' else []
+            if sky and target == 'forge-1.20.1':
                 names += ['denseRoof']
                 if record['fixtureY'] >= 320:
                     names += ['skyPageBurst']
@@ -99,22 +123,41 @@ def validate(output: Path, request: dict, oculus: bool) -> list[dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--target', choices=('forge-1.20.1','fabric-1.20.1','fabric-1.21.1','neoforge-1.21.1','neoforge-26.1.2'), default='forge-1.20.1')
+    parser.add_argument('--renderer', choices=('embeddium','sodium'), default='embeddium')
+    parser.add_argument("--shots", default=",".join(SHOTS))
+    parser.add_argument("--iris", action="store_true")
+    parser.add_argument("--sodium-pin")
+    parser.add_argument('--shader-pack', type=Path, help='Enable a local Complementary ZIP with Iris/Oculus')
     parser.add_argument('--oculus', action='store_true', help='Load pinned Oculus with shaders disabled')
     parser.add_argument('--timeout', type=int, default=1200)
     parser.add_argument('--prepare-only', action='store_true')
     args = parser.parse_args()
-    backend = 'oculus' if args.oculus else 'embeddium'
-    output = ROOT / 'build/render-smoke' / (backend + '-' + uuid.uuid4().hex)
+    if args.shader_pack and not (args.iris or args.oculus):
+        parser.error('--shader-pack requires --iris or --oculus')
+    backend = 'oculus' if args.oculus else ('iris' if args.iris else args.renderer)
+    output = ROOT / 'build/render-smoke' / (args.target + '-' + backend + '-' + uuid.uuid4().hex)
     output.mkdir(parents=True)
-    request = prepare(ROOT / 'forge-1.20.1/run/shader-preview', output)
+    request = prepare(ROOT / args.target / 'run/shader-preview', output, args.shots.split(','), args.shader_pack)
     if args.prepare_only:
         print(output)
         return
     command = [str(ROOT / ('gradlew.bat' if os.name == 'nt' else 'gradlew')),
-               ':forge-1.20.1:runShaderPreviewClient', '-PshaderPreview',
-               '--no-daemon', '--stacktrace', '--console=plain']
+               ':' + args.target + ':runShaderPreviewClient', '-PshaderPreview',
+               '--no-daemon', '--stacktrace', '--console=plain', '-Dorg.gradle.jvmargs=-Xmx1536m', '-Dorg.gradle.workers.max=2']
     if args.oculus:
         command.append('-PpreviewOculus')
+    if args.target != 'forge-1.20.1':
+        command.append('-PpreviewRenderer=' + args.renderer)
+    if args.iris:
+        command.append('-PpreviewIris')
+    if args.sodium_pin:
+        command.append('-PpreviewSodiumPin=' + args.sodium_pin)
+        if args.target == 'fabric-1.21.1' and args.sodium_pin == 'SMxNOGZ6':
+            # Loom's supported opt-out only affects dependency build-version
+            # validation. Keep the upstream artifact intact and exercise its
+            # actual static mixins in the native client before accepting it.
+            command.append('-Ploom.ignoreDependencyLoomVersionValidation=true')
     if sys.platform.startswith('linux'):
         command = ['xvfb-run', '-a', '-s', '-screen 0 1280x720x24', *command]
     env = dict(os.environ, LIBGL_ALWAYS_SOFTWARE='1')
@@ -132,7 +175,9 @@ def main() -> None:
                 time.sleep(1)
             if process.returncode:
                 raise RuntimeError(f'Render client/build exited {process.returncode}; inspect {output}/client.log')
-            records = validate(output, request, args.oculus)
+            records = validate(output, request, args.oculus, args.target, args.renderer)
+            if any(bool(r.get('iris')) != args.iris for r in records):
+                raise RuntimeError('Unexpected Iris loader state')
             head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
             dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).strip())
             (output / 'pass.json').write_text(json.dumps({

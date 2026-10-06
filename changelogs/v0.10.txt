@@ -1,0 +1,8 @@
+Endless 0.10
+
+- Expand optional renderer compatibility across all five existing release targets: Forge/Fabric 1.20.1, Fabric/NeoForge 1.21.1, and NeoForge 26.1.2.
+- Add Fabric/NeoForge Embeddium and Sodium adapters, including sparse section snapshots, block entities, block/sky lighting, bounded camera windows, dense update batching, and snapshot halo invalidation.
+- Support the Sodium release required by Iris and the current 1.21.1 Sodium API family.
+- Preserve exact block-entity destruction keys on 26.1.2 and camera-relative deferred mesh-job heights in Sodium 0.9.
+- Add isolated native framebuffer profiles, lighting/edit/rebase/lifecycle regressions, packaged-hook checks, and an expanded CI rendering matrix.
+- Document exact upstream pins and shader availability limitations; no renderer or shader mod is bundled.

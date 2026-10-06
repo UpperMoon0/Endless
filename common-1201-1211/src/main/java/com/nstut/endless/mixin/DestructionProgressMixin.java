@@ -1,6 +1,7 @@
 package com.nstut.endless.mixin;
 
 import com.nstut.endless.compat.create.CreateDestructionPositions;
+import com.nstut.endless.compat.create.DestructionPositionLookup;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
@@ -22,10 +23,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /** Exact vanilla crack keys, including Create's native additional structure positions. */
 @Mixin(LevelRenderer.class)
-public abstract class DestructionProgressMixin {
+public abstract class DestructionProgressMixin implements DestructionPositionLookup {
     @Shadow @Final private Long2ObjectMap<SortedSet<BlockDestructionProgress>> destructionProgress;
     @Shadow @Final private Int2ObjectMap<BlockDestructionProgress> destroyingBlocks;
     @Unique private final CreateDestructionPositions endless$crackPositions = new CreateDestructionPositions();
+
+    @Override public long endless$destructionKey(BlockPos pos) {
+        return EndlessLogicalHeights.isActive() ? endless$crackPositions.lookup(pos) : pos.asLong();
+    }
 
     @Redirect(method = "destroyBlockProgress", at = @At(value = "INVOKE", target = "Lnet/minecraft/core/BlockPos;asLong()J"), require = 1)
     private long endless$exactCrackKey(BlockPos pos) {

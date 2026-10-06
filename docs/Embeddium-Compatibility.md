@@ -1,0 +1,99 @@
+# Embeddium / Oculus adapter
+
+Scope: **Minecraft 1.20.1 Forge, Embeddium 0.3.31, Oculus 1.8.0**. Embeddium is a compile-only dependency, never bundled. A Forge mixin plugin requires the `embeddium` mod ID; shared Sodium class names alone do not enable the adapter. Client-only mixins do not change dedicated-server rendering or other loader/version lines.
+
+## Rendering contract
+
+Endless keeps vanilla's dense section array bounded. Logical `Level.isOutsideBuildHeight` therefore cannot guard another mod's direct dense-array access. The adapter supplies sections to Embeddium's clone cache, world-slice origin check and section-registration emptiness check using a bounds-checked dense lookup or an existing sparse section. Render lookups never create sparse pages.
+
+Each ready horizontal chunk has at most 32 vertical render sections: a **512-block vertical window**, independent of the horizontal render-distance setting. Terrain beyond its upper or lower edge is clipped even if a larger render distance would otherwise include it. After rebasing the window is roughly centered on the camera, except near logical-world boundaries. The eight-section (128-block) hysteresis lets the camera move before rebasing, so the visible distance above and below it changes; newly entering sections can briefly appear late while their meshes build. This is a deliberate rendering limit, not a restriction on stored blocks or travel.
+
+The main camera controls the window with eight-section hysteresis. Rebase removes departed nodes through Embeddium's native cancellation/disposal path, invalidates cached clones, creates entering nodes and clears stale render lists. Native upload filtering rejects disposed sections. Occlusion traversal uses the same bounds. Oculus shadow passes may rebuild visibility, but do not move the vertical window away from the main camera.
+
+Palette and biome containers retain Embeddium's native cloning. Before its native chunk-map snapshot, sparse sections materialize missing block entities through the chunk's normal lazy-creation API and remove entries whose blocks were replaced by an arriving page. Sparse and dense-boundary lighting use independently owned DataLayers. Block light is solved once for the section plus a 14-block halo rather than once per target voxel; non-emissive palettes are skipped. Existing point lighting and batch lighting share the same attenuation and face-occlusion rules. Complete target-cell results may enter the bounded light cache; halo results are not cached as complete answers. Sparse page arrival and ordinary block updates use the existing LevelRenderer dirty path to invalidate Embeddium snapshots and rebuild sections.
+
+Skylight queries each column in a 15-block halo once, shares those heights across the existing five-ray exposure rule, and skips ray reads for sections proven to be below every possible exposure path. This avoids repeating sparse heightmap queries for every voxel and ray step while retaining the point-solver results.
+
+A page arriving outside the render window can still change sky exposure below it. Page application and dense-core block/light dirty notifications invalidate snapshots across the 3-by-3 horizontal column halo and schedule native rebuilds for ready nodes in the current 32-section window, including removal of a distant roof. Snapshot invalidation also covers one section immediately below and above that window, including neighboring columns without ready render nodes. Dense notifications marshal off-thread work onto the render thread. A per-manager queue combines overlapping 3-by-3 halos and refreshes each affected column once per terrain frame, shared with Oculus shadow passes. Cached sparse sky samples clear on the first notification and at the flush, including values queried between edits. Sky-neutral dense changes still conservatively invalidate their columns, but repeated notifications do not multiply the work. Dense flushes skip mesh rebuilds for empty sections without old geometry or a pending native edit; their snapshots and halo still invalidate. Dimensions without skylight skip this extra work.
+
+Both the initial meshing task and subsequent transparency sorting subtract the section origin in double precision before converting to float. Subsequent tasks retain the manager's immutable double camera snapshot; they never read a moving camera on the worker thread. Embeddium's replacement block-entity renderer also uses the same full-position destruction keys as Endless's LevelRenderer, including cleanup and simultaneous vanilla packed-Y aliases.
+
+## Repeatable hidden framebuffer capture
+
+Use an **isolated copy** of a world. The fixture creates small lighting/chest/glass fixtures at Y=-80, 320, 512 and ±1,000,000, changes time/weather in the copy, and teleports its integrated-server player. Do not point it at a world you want preserved unchanged.
+
+1. Build `./gradlew :forge-1.20.1:build -PshaderPreview` with JDK 21 for Gradle.
+2. Install the `*-shader-preview.jar` in a Forge 1.20.1 test instance with Architectury, Embeddium and the copied world's registry mods. Keep a single Endless jar installed. Install Oculus and Complementary for the shader run.
+3. For existing-world/tower shots, copy the world under `.minecraft/saves/Endless Shader Preview`; the fixed tower coordinates refer to the previous local YouTube-world audit and are not generated by this fixture. For a reproducible run with no tower or external world, use the fresh-world command below. Configure the isolated instance's `config/endless.json` with `{"buildHeight":{"minBuildHeight":-8000000,"maxBuildHeight":8000000}}`.
+4. Run `python tools/capture_shader_preview.py --instance PATH --output OUTPUT`. Add `--shaders` only when Oculus is configured with Complementary enabled. `--shots NAME,NAME` selects a focused rerun. `--vanilla` verifies a baseline with Embeddium and Oculus removed. Optional `--launcher PATH_TO_PRISM` launches the instance and waits for a validated manifest.
+5. Launch that instance normally. The request file opts the development fixture in. It loads the copy, hides its GLFW window, disables focus pausing, waits for camera settlement and built target sections, and calls `Screenshot.takeScreenshot(mainRenderTarget)` at RenderTick END. It neither sends F2 nor activates a desktop window.
+6. Inspect `capture-manifest.json`, `progress.json`, PNGs and `failure.txt`. Require all requested images and no failure. Review pixels too: a built section alone does not prove that its geometry appeared in the final frame.
+
+A complete fixture-only setup needs Forge 1.20.1, Architectury 9.2.14, Embeddium 0.3.31, and the preview jar; Create and a pre-existing world are unnecessary. After configuring the logical range, run:
+
+```sh
+python tools/capture_shader_preview.py --instance PATH_TO_PRISM_INSTANCE --output OUTPUT --world "Endless Generated Fixtures" --create-world --fixture-only
+```
+
+`PATH_TO_PRISM_INSTANCE` is the directory containing `.minecraft`, not `.minecraft` itself. Launch that instance normally. The fixture creates a deterministic-seed vanilla-registry world and all scenes it visits. `--create-world` refuses an existing save folder; choose a new name for another fresh run, or omit it to revisit the generated world. The fixture-only sequence includes all five heights, Nether travel and return, a repeated rebase, renderer reload and an edit/removal shot. Add Oculus/Complementary and `--shaders` for the active shader run. Add `--shots fixture-320,fixture-1000000,fixture-reload,12-fixture-edit` for a shorter run. The full default sequence still targets the audit tower and requires that tower world.
+
+The manifest records actual camera, dimensions, shader enablement/pack and capture method. The fixture checks the 32-section limit, disposed-node removal, sparse palettes, chest snapshots and light values. Its server preparation compares the batch solve to the existing per-point solver before render snapshots populate the client cache. The edit shot replaces glowstone with a lower-emission redstone torch, changes the marker, and removes the chest to check updated palette/light data and stale block-entity removal. The tower return and reload shots cover repeated rebasing and a renderer reload.
+
+Each unedited Embeddium fixture additionally checks native transparent index order on both sides of a fractional camera boundary at Y=0, ±1,000,000 and the ±8,000,000 envelope. The re-sort task comes from the transformed native manager; initial sorting also executes complete native meshing tasks for the stained-glass scene and compares their entire translucent index buffers against the double-relative reference sorter. At million-height fixtures the old absolute-float algorithm must fail this complete-output comparison as well. The original absolute-float algorithm is a failing negative control. Crack checks call Embeddium's transformed block-entity lookup with two simultaneous positions separated by 4,096 Y, then check removal. Positive-height fixtures apply and remove a 48-by-48 roof page group 1,024 blocks above the fixture through the normal client-page update path, requiring fresh cached sky snapshots and restored light. These client-only roof snapshots are restored before capture. Successful manifests record these checks under `compatibilityRegressions`.
+
+`python tools/check_embeddium_mixin_refmap.py PATH_TO_NORMAL_FORGE_JAR` checks all nine optional client hooks, their Minecraft runtime selectors, and exclusion of renderer/preview classes from ordinary jars. The Minecraft 1.20.1 build job runs this packaging gate; the separate `Renderer smoke` workflow runs fresh-world framebuffer checks on Linux/Xvfb with Mesa software rendering, in Embeddium-only and Oculus-loaded/shaders-disabled configurations. It requires a nonblank native frame and visible cyan/green fixture-marker pixels with shaders disabled, then uploads frames, logs, timing/allocation measurements and an exact-head receipt. Active Complementary pipeline validation remains a local GPU test.
+
+Ordinary builds omit this fixture and its requests. Captures and world copies are not release assets. The integration does not claim compatibility with Rubidium, arbitrary Sodium forks, dynamic-light mods, every shader pack, or other Minecraft/loader versions.
+
+## Local validation, 2026-10-05
+
+Forge 47.4.16 client, Embeddium 0.3.31, Oculus 1.8.0 and Complementary Reimagined r5.9.3, using a copied YouTube world with Create 6.0.8 and Architectury 9.2.14:
+
+| Run | Result |
+| --- | --- |
+| Embeddium, Oculus absent | 12 captures, 1920x1080 |
+| Embeddium + Oculus, Complementary active | 12 captures, 1920x1080; actual active pipeline verified |
+| Embeddium + Oculus, shaders disabled | Million-height fixture and edit/removal: 2 captures |
+| Vanilla renderer, Embeddium/Oculus absent | Upper tower and renderer reload: 2 captures |
+| Normal Forge and Fabric 1.20.1 builds | Passed |
+| Common and common-1.20.1 unit tests | 101 passed, one existing skipped test; three new window regressions |
+| Normal Forge jar inspection | No preview fixture or bundled renderer; Create runtime refmap check passed |
+
+The full runs include tower base/boundary/upper/crown, Y=-80/320/512 and ±1,000,000 fixtures, return travel, renderer reload, and palette/light edits. The focused shaders-disabled run additionally verifies chest removal from both cloned data and the client chunk map. Reviewed final-frame pixels include upper tower, crown and the positive million-height fixture. These are local integration results; CI and release/publication are separate. Dedicated-server behavior and moving Create contraptions were not exercised by this capture fixture.
+
+## Follow-up compatibility audit, 2026-10-06
+
+The follow-up found and fixed three remaining adapter mismatches: absolute-float transparency sorting, truncated block-entity destruction lookups, and cached visible skylight after distant page updates. The audit checked upstream source and the pinned 0.3.31 artifact; native task creation and transformed hooks were exercised in the release-loader client.
+
+| Run | Result |
+| --- | --- |
+| Embeddium, Oculus absent | All 12 captures passed; new native sorting, crack and distant-sky-page checks passed |
+| Embeddium + Oculus, Complementary active | All 12 captures passed; new native regressions passed with the active pipeline |
+| Embeddium + Oculus, shaders disabled | Million-height fixture and edit/removal: 2 captures passed; new native regressions passed |
+| Vanilla renderer, Embeddium/Oculus absent | Upper tower and renderer reload: 2 captures passed |
+| Normal Forge/Fabric 1.20.1 builds; shared 1.21.1 compile | Passed |
+| Common/common-1.20.1 unit tests | 101 passed, one existing skip |
+| Python harness and metadata checks | 49 tests passed; five-target metadata passed |
+| Packaged Forge Create/Embeddium selectors | Passed; normal jar excludes preview and renderer classes |
+
+Positive million-height frames with and without Complementary, and the upper tower without shaders, were visually reviewed. Native transparency checks cover Y=0, ±1,000,000 and the ±8,000,000 envelope; the captured terrain fixtures remain at the five stated heights. The old absolute-float sorter fails the native index-order negative control. Distant-sky checks require both roof arrival and removal to replace the cached visible light data, while the section-count assertions retain the 32-section bound. This does not expand the supported renderer/version scope or certify moving contraptions, arbitrary renderer addons or shader packs.
+
+The lighting follow-up also covers dense roof insertion/removal through vanilla client dirty notifications, asserting both snapshot eviction and a pending native mesh rebuild. Distant sparse roofs additionally exercise both vertical snapshot-halo edges. These tests leave the render node window bounded to 32 sections per ready column.
+
+Lighting follow-up validation: two focused native captures without Oculus passed. Three final captures with Oculus 1.8.0 and active Complementary Reimagined r5.9.3 passed at Y=-80, 320 and 1,000,000, including dense roof insertion/removal, pending sparse rebuilds and both snapshot-halo edges after sparse roof arrival/removal. Final normal Forge/Fabric packages and packaged hooks passed; 101 Java tests passed with one existing skip, 49 harness tests passed, and five-target metadata passed. The prior Fabric same-JVM-rejoin CI failure occurred in downloadAssets before client startup.
+
+## Native lifecycle and measurements
+
+The native regression removes a ready chunk column after a complete meshing task enters its section loop. It requires cancellation, disposal/removal of every old node, rejection of a late completed output by native upload filtering, and a fresh bounded column on reload. The Nether/Overworld trip and renderer-reload shots separately require replacement of the render manager and clone cache and shutdown of old workers and release of old GPU region resources. Whole-manager destruction does not mark each detached node disposed; individual chunk removal does. These checks exercise the adapter's native chunk notifications and real integrated-server dimension packets; the chunk-removal test does not evict the underlying vanilla client chunk cache.
+
+Each capture records median/p95 intervals between render callbacks during camera travel and settlement, plus render-thread allocation bytes (or -1 if the JVM does not expose that counter). These include warmup and are observations, not a paired benchmark or a steady-state performance guarantee. Allocations exclude worker threads and GPU memory. Software-rendered CI timings should not be compared directly with local GPU timings. Native page-update regression cost is reported separately from frame intervals; neither metric establishes a performance improvement over an unmodified renderer.
+
+To reproduce the CI smoke setup locally with JDK 21 and Linux Xvfb/Mesa installed, run `python tools/render_smoke_test.py`; add `--oculus` for the loaded/disabled configuration. The runner writes an isolated, uniquely named generated world under `forge-1.20.1/run/shader-preview/.minecraft` and uploads evidence from `build/render-smoke` in CI. It uses 640x360 frames, a four-chunk horizontal distance (enough to keep the Nether fixture in front of vanilla fog) and 30-frame/three-second settlement gates, while keeping native section-readiness and lighting/meshing/lifecycle assertions. Normal and release jars exclude every preview helper.
+
+Coverage follow-up, 2026-10-06: four fixture-only baseline captures passed in a generated world (boundary, million height, reload and edit). Five final captures with active Oculus/Complementary passed (million height, Nether, Overworld return, renderer reload and edit), including complete-mesh precision negative controls and native chunk cancellation/late-upload filtering. These focused runs used 640x360 frames. All 57 Python harness tests and the normal Forge/Fabric builds passed; packaged Create/Embeddium selectors and five-target metadata passed. Performance counters include cold dimension/pipeline setup and cannot establish steady-state frame rate.
+
+The final CI runner also passed locally with pinned Oculus loaded and shaders disabled: all eight generated-world frames passed native marker-pixel, lighting, mesh-output, lifecycle and measurement checks. This local run used a development working tree; GitHub receipts additionally require the exact checked-out head and a clean source tree. CI results remain separate from local execution.
+
+The dense-edit regression runs 120 render-boundary batches with 7,680 real stone/dirt substitutions and 130,560 dirty notifications, requiring nine refreshed columns per batch and zero work on an idle flush. This is a CPU workload probe, not a measurement of sustained gameplay frame times. A controlled client-only empty dense core also tests a complete 3-by-3 roof at Y=300 above a sparse Y=-65 sample: snapshot and pre-warmed point-query skylight must decrease on insertion and return exactly on removal. All original dense sections and heightmaps are restored.
+
+The fixture-512 capture additionally spreads 7,680 dense substitutions and 130,680 notifications (including restoration) across 120 actual render frames. Its `denseEditWorkload` receipt records median/p95 frame intervals and render-thread allocation bytes while native terrain preparation and workers run between batches. The original block is restored every frame. This is a sustained workload observation without a paired baseline or timing pass threshold.

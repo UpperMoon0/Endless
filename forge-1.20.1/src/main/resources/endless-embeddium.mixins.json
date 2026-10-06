@@ -1,0 +1,19 @@
+{
+  "required": true,
+  "package": "com.nstut.endless.forge.mixin.compat.embeddium",
+  "compatibilityLevel": "JAVA_17",
+  "minVersion": "0.8",
+  "plugin": "com.nstut.endless.forge.compat.EmbeddiumMixinPlugin",
+  "client": [
+    "ClonedChunkSectionCacheMixin",
+    "WorldSliceMixin",
+    "ClonedChunkSectionMixin",
+    "RenderSectionManagerMixin",
+    "OcclusionCullerMixin",
+    "ChunkBuilderMeshingTaskMixin",
+    "ChunkBuilderSortTaskMixin",
+    "SodiumWorldRendererMixin",
+    "VerticalClientUpdatesMixin"
+  ],
+  "injectors": { "defaultRequire": 1 }
+}

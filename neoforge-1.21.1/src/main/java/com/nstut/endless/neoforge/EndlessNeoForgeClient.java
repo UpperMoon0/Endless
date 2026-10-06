@@ -12,10 +12,19 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.RenderFrameEvent;
+import com.nstut.endless.neoforge.compat.EmbeddiumFrameClock;
 
 @EventBusSubscriber(modid = com.nstut.endless.Endless.MOD_ID, value = Dist.CLIENT)
 public final class EndlessNeoForgeClient {
     private EndlessNeoForgeClient() {}
+
+    // Loader frame events also work when a renderer bootstrap loads Minecraft
+    // before an optional Minecraft mixin can be applied.
+    @SubscribeEvent
+    public static void beginRenderFrame(RenderFrameEvent.Pre event) { EmbeddiumFrameClock.beginFrame(); }
+    @SubscribeEvent
+    public static void endRenderFrame(RenderFrameEvent.Post event) { EmbeddiumFrameClock.endFrame(); }
 
     static void applyVerticalPage(VerticalPageSnapshot snapshot) {
         Minecraft client = Minecraft.getInstance();

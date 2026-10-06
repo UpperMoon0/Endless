@@ -4,7 +4,9 @@
   "version": "${version}",
   "name": "Endless",
   "description": "Sparse, practically unbounded vertical building for Minecraft 1.20.1 while preserving a vanilla-compatible dense core.",
-  "authors": ["NsTut"],
+  "authors": [
+    "NsTut"
+  ],
   "contact": {
     "homepage": "https://github.com/UpperMoon0/Endless",
     "issues": "https://github.com/UpperMoon0/Endless/issues"
@@ -13,10 +15,17 @@
   "icon": "assets/endless/icon.png",
   "environment": "*",
   "entrypoints": {
-    "main": ["com.nstut.endless.fabric.EndlessFabric"],
-    "client": ["com.nstut.endless.fabric.EndlessFabricClient"]
+    "main": [
+      "com.nstut.endless.fabric.EndlessFabric"
+    ],
+    "client": [
+      "com.nstut.endless.fabric.EndlessFabricClient"
+    ]
   },
-  "mixins": ["endless.mixins.json"],
+  "mixins": [
+    "endless.mixins.json",
+    "endless-embeddium.mixins.json"
+  ],
   "depends": {
     "fabricloader": ">=0.16.14",
     "minecraft": "=1.20.1",

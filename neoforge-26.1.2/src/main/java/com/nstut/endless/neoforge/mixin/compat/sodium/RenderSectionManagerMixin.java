@@ -1,0 +1,176 @@
+package com.nstut.endless.neoforge.mixin.compat.sodium;
+
+import com.nstut.endless.neoforge.compat.EmbeddiumSections;
+import com.nstut.endless.neoforge.compat.EmbeddiumSnapshotInvalidation;
+import net.caffeinemc.mods.sodium.client.render.chunk.RenderSection;
+import net.minecraft.world.phys.Vec3;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import com.nstut.endless.heights.EndlessLogicalHeights;
+import com.nstut.endless.vertical.VerticalRenderWindow;
+import com.nstut.endless.vertical.InitialBuildUpdates;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.fastutil.longs.LongSet;
+import net.caffeinemc.mods.sodium.client.render.chunk.occlusion.OcclusionCuller;
+import net.caffeinemc.mods.sodium.client.world.cloned.ClonedChunkSectionCache;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.chunk.ChunkAccess;
+import net.minecraft.world.level.chunk.LevelChunkSection;
+import org.spongepowered.asm.mixin.*;
+import org.spongepowered.asm.mixin.injection.*;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Pseudo
+@Mixin(targets = "net.caffeinemc.mods.sodium.client.render.chunk.RenderSectionManager", remap = false)
+public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInvalidation, InitialBuildUpdates.Target {
+    @Shadow @Final private ClientLevel level;
+    @Shadow @Final private ClonedChunkSectionCache sectionCache;
+    @Shadow @Final private OcclusionCuller occlusionCuller;
+    @Shadow public abstract void onSectionAdded(int x, int y, int z);
+    @Shadow public abstract void onSectionRemoved(int x, int y, int z);
+    @Shadow public abstract void scheduleRebuild(int x, int y, int z, boolean important);
+    @Shadow private RenderSection getRenderSection(int x, int y, int z) { throw new AssertionError(); }
+    @Shadow private void invalidateRenderLists() { throw new AssertionError(); }
+    @Shadow private boolean needsGraphUpdate;
+    @Unique private final VerticalRenderWindow endless$window = new VerticalRenderWindow();
+    @Unique private final InitialBuildUpdates endless$initialUpdates = new InitialBuildUpdates(this);
+    @Override public boolean endless$isCurrentInitialSection(int x, int y, int z) {
+        return endless$window.contains(y) && endless$readyChunks.contains(ChunkPos.pack(x, z));
+    }
+    @Override public boolean endless$rebuildInitialSection(int x, int y, int z) {
+        var node = getRenderSection(x, y, z);
+        if (node == null || node.isDisposed()) return true;
+        if (!node.isBuilt()) return false;
+        scheduleRebuild(x, y, z, false);
+        return true;
+    }
+    @Inject(method = "scheduleRebuild", at = @At("RETURN"))
+    private void endless$retainInitialBuildEdits(int x, int y, int z, boolean important, CallbackInfo ci) {
+        if (!EndlessLogicalHeights.isActive()) return;
+        var node = getRenderSection(x, y, z);
+        if (node != null && !node.isBuilt() && !node.isDisposed()) endless$initialUpdates.add(x, y, z);
+    }
+
+    @Unique private final LongSet endless$readyChunks = new LongOpenHashSet();
+
+    @Unique private final com.nstut.endless.vertical.SkyColumnBatch endless$denseSky = new com.nstut.endless.vertical.SkyColumnBatch();
+    @Override public void endless$queueDenseSkyColumns(int x, int z) {
+        if (!EndlessLogicalHeights.isActive() || !level.dimensionType().hasSkyLight()) return;
+        // Clear on the first notification and again at the render boundary,
+        // covering point queries cached between successive edits in a batch.
+        if (endless$denseSky.add(x, z)) com.nstut.endless.vertical.EndlessVerticalEngine.world(level).invalidateSkyLight();
+    }
+    @Override public int endless$flushDenseSkyColumns() {
+        if (!endless$denseSky.isEmpty()) com.nstut.endless.vertical.EndlessVerticalEngine.world(level).invalidateSkyLight();
+        return endless$denseSky.drain((x, z) -> endless$refreshSkyColumn(x, z, true));
+    }
+    @Override public void endless$invalidateSkyColumns(int chunkX, int chunkZ) {
+        if (!EndlessLogicalHeights.isActive() || !level.dimensionType().hasSkyLight()) return;
+        for (int x = chunkX - 1; x <= chunkX + 1; x++) for (int z = chunkZ - 1; z <= chunkZ + 1; z++)
+            endless$refreshSkyColumn(x, z, false);
+    }
+    @Unique private void endless$refreshSkyColumn(int x, int z, boolean dense) {
+        // Include WorldSlice's vertical snapshot halo, even without a render node.
+        for (int y = endless$window.minSection() - 1; y <= endless$window.maxSection(); y++) {
+            sectionCache.invalidate(net.minecraft.core.SectionPos.asLong(x, y, z));
+            if (endless$window.contains(y) && endless$readyChunks.contains(ChunkPos.pack(x, z))) {
+                if (dense) {
+                    var node = getRenderSection(x, y, z);
+                    var section = EmbeddiumSections.get(level, level.getChunk(x, z), y);
+                    // Empty geometry has no light-dependent vertices. Preserve
+                    // pending native edits and old geometry awaiting removal.
+                    if (node == null || (node.isInvisible() && node.getPendingUpdate() == 0
+                        && (section == null || section.hasOnlyAir()))) continue;
+                }
+                scheduleRebuild(x, y, z, false);
+            }
+        }
+    }
+
+    @Inject(method = "onChunkAdded", at = @At("HEAD"), cancellable = true)
+    private void endless$addChunk(int x, int z, CallbackInfo ci) {
+        if (!EndlessLogicalHeights.isActive()) return;
+        ci.cancel();
+        endless$updateWindow();
+        if (!endless$readyChunks.add(ChunkPos.pack(x, z))) return;
+        for (int y = endless$window.minSection(); y < endless$window.maxSection(); y++) {
+            sectionCache.invalidate(net.minecraft.core.SectionPos.asLong(x, y, z));
+            onSectionAdded(x, y, z);
+        }
+    }
+
+    @Inject(method = "onChunkRemoved", at = @At("HEAD"), cancellable = true)
+    private void endless$removeChunk(int x, int z, CallbackInfo ci) {
+        if (!EndlessLogicalHeights.isActive()) return;
+        ci.cancel();
+        if (!endless$readyChunks.remove(ChunkPos.pack(x, z))) return;
+        endless$initialUpdates.discardColumn(x, z);
+        for (int y = endless$window.minSection(); y < endless$window.maxSection(); y++) {
+            onSectionRemoved(x, y, z);
+            sectionCache.invalidate(net.minecraft.core.SectionPos.asLong(x, y, z));
+        }
+    }
+
+    @Inject(method = "prepareRenderTrees", at = @At("HEAD"))
+    private void endless$followMainCamera(CallbackInfo ci) {
+        if (EndlessLogicalHeights.isActive()) {
+            endless$updateWindow();
+        }
+    }
+
+    @Redirect(method = "prepareRenderTrees", at = @At(value = "INVOKE", target = "Lnet/caffeinemc/mods/sodium/client/render/chunk/async/CullTask;cancelIfNotStarted()Z"))
+    private boolean endless$retryCancelledCull(net.caffeinemc.mods.sodium.client.render.chunk.async.CullTask task) {
+        boolean cancelled = task.cancelIfNotStarted();
+        // The native submission clears the dirty flag. A task cancelled before
+        // starting still owes us its graph, including after a stationary reload.
+        if (cancelled && EndlessLogicalHeights.isActive()) needsGraphUpdate = true;
+        return cancelled;
+    }
+
+    @Unique
+    private void endless$updateWindow() {
+        int previousMin = endless$window.minSection();
+        int previousMax = endless$window.maxSection();
+        // Iris invokes the manager again for shadows. Always follow the main
+        // camera, never a shadow frustum, so both passes share one stable grid.
+        int camera = Math.floorDiv(Minecraft.getInstance().gameRenderer.getMainCamera().blockPosition().getY(), 16);
+        if (!endless$window.update(camera, EndlessLogicalHeights.minSection(), EndlessLogicalHeights.maxSectionExclusive())) {
+            endless$initialUpdates.retry();
+            return;
+        }
+        for (long key : endless$readyChunks) {
+            int x = ChunkPos.getX(key), z = ChunkPos.getZ(key);
+            for (int y = previousMin; y < previousMax; y++) {
+                if (!endless$window.contains(y)) {
+                    // Native removal cancels jobs, disposes the section and
+                    // disconnects graph edges; native upload rejects disposed results.
+                    onSectionRemoved(x, y, z);
+                    sectionCache.invalidate(net.minecraft.core.SectionPos.asLong(x, y, z));
+                }
+            }
+            for (int y = endless$window.minSection(); y < endless$window.maxSection(); y++) {
+                if (y < previousMin || y >= previousMax) {
+                    sectionCache.invalidate(net.minecraft.core.SectionPos.asLong(x, y, z));
+                    onSectionAdded(x, y, z);
+                }
+            }
+        }
+        invalidateRenderLists();
+        needsGraphUpdate = true;
+        endless$initialUpdates.retry();
+    }
+
+    @Redirect(method = "onSectionAdded", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/chunk/ChunkAccess;getSections()[Lnet/minecraft/world/level/chunk/LevelChunkSection;", remap = true))
+    private LevelChunkSection[] endless$section(ChunkAccess chunk, int x, int y, int z) {
+        return new LevelChunkSection[] { EmbeddiumSections.get(level, chunk, y) };
+    }
+
+    @Redirect(method = "onSectionAdded", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/multiplayer/ClientLevel;getSectionIndexFromSectionY(I)I", remap = true))
+    private int endless$sectionIndex(ClientLevel level, int y) { return 0; }
+    @Redirect(method = "onSectionAdded", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/chunk/LevelChunkSection;hasOnlyAir()Z", remap = true))
+    private boolean endless$emptySparseSection(LevelChunkSection section) {
+        return section == null || section.hasOnlyAir();
+    }
+
+}

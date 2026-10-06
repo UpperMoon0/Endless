@@ -1,0 +1,22 @@
+{
+  "required": true,
+  "package": "com.nstut.endless.fabric.mixin.compat.sodium",
+  "compatibilityLevel": "JAVA_21",
+  "minVersion": "0.8",
+  "plugin": "com.nstut.endless.fabric.compat.SodiumMixinPlugin",
+  "client": [
+    "ClonedChunkSectionCacheMixin",
+    "ClonedChunkSectionMixin",
+    "MinecraftFrameMixin",
+    "OcclusionCullerMixin",
+    "RenderSectionManagerMixin",
+    "SodiumWorldRendererMixin",
+    "VerticalClientUpdatesMixin",
+    "WorldSliceMixin",
+    "RenderSectionManagerModernMixin",
+    "RenderSectionPendingMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

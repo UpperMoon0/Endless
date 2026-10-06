@@ -1,0 +1,23 @@
+{
+  "required": true,
+  "package": "com.nstut.endless.fabric.mixin.compat.embeddium",
+  "compatibilityLevel": "JAVA_17",
+  "minVersion": "0.8",
+  "plugin": "com.nstut.endless.fabric.compat.EmbeddiumMixinPlugin",
+  "client": [
+    "ClonedChunkSectionCacheMixin",
+    "WorldSliceMixin",
+    "ClonedChunkSectionMixin",
+    "RenderSectionManagerMixin",
+    "OcclusionCullerMixin",
+    "ChunkBuilderMeshingTaskMixin",
+    "ChunkBuilderSortTaskMixin",
+    "SodiumWorldRendererMixin",
+    "VerticalClientUpdatesMixin",
+    "MinecraftFrameMixin",
+    "RenderSortCameraMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -1,6 +1,22 @@
-# Embeddium / Oculus adapter
+# Optional renderer compatibility
 
-Scope: **Minecraft 1.20.1 Forge, Embeddium 0.3.31, Oculus 1.8.0**. Embeddium is a compile-only dependency, never bundled. A Forge mixin plugin requires the `embeddium` mod ID; shared Sodium class names alone do not enable the adapter. Client-only mixins do not change dedicated-server rendering or other loader/version lines.
+Endless 0.9.1 extends the client adapter across every existing Endless release target. Renderer mods remain optional, compile-only dependencies and are never bundled. Availability was checked against the upstream release artifacts on 2026-10-06; a Minecraft version supported by a renderer does not by itself mean Endless ships that Minecraft version.
+
+| Endless target | Renderer profile | Shader profile |
+| --- | --- | --- |
+| Forge 1.20.1 | Embeddium 0.3.31 | Oculus 1.8.0 |
+| Fabric 1.20.1 | Embeddium 0.3.25 or Sodium 0.5.13 | Iris 1.7.6 with Sodium |
+| Fabric 1.21.1 | Sodium 0.6.13 or 0.8.13 | Iris 1.8.8 with Sodium 0.6.13 |
+| NeoForge 1.21.1 | Embeddium 1.0.15 or Sodium 0.6.13 / 0.8.13 | Iris 1.8.12 with Sodium 0.6.13 |
+| NeoForge 26.1.2 | Sodium 0.9.2 | Iris 1.11.4 |
+
+Embeddium and Oculus also have historical releases for Minecraft versions outside this repository's five targets. Of the versions Endless currently builds, Oculus is available only for Forge 1.20.1. Fabric 1.21.1 and NeoForge 26.1.2 use upstream Sodium/Iris instead. See upstream [Embeddium](https://modrinth.com/mod/embeddium/versions), [Oculus](https://modrinth.com/mod/oculus/versions), [Sodium](https://modrinth.com/mod/sodium/versions) and [Iris](https://modrinth.com/mod/iris/versions) release lists.
+
+Choose one renderer. Iris profiles use their declared Sodium dependency; Iris is not paired with Embeddium. NeoForge Iris declares Minecraft `[1.21,1.21.1)`, but NeoForge's own `VersionSupportMatrix` explicitly accepts 1.21 constraints on 1.21.1. The unchanged upstream Iris artifact loads and passes the native regression. The pinned Modrinth 1.8.12 artifact (`t3ruzodq`) reports `1.8.12-snapshot+mc1.21.1-local` internally. Endless does not patch it or suppress loader checks.
+
+The loader plugins select the renderer's actual mod ID and API family. Legacy Fabric Sodium and Embeddium share a namespace; NeoForge Embeddium has its own namespace. Sodium 0.6 and 0.8 use separate pending-job adapters. Sodium 0.9 additionally carries an immutable relative height origin through its native deferred mesh-job queue, preventing its 10-bit height field from aliasing million-height jobs. Cancelled asynchronous culls retain their graph update request. Only client mixins are registered.
+
+NeoForge uses its own render-frame events for batching, including early renderer bootstraps. On 26.1.2 real worlds explicitly implement logical build bounds so an Iris bootstrap cannot leave inherited vanilla height checks active; dense chunk arrays retain their physical bounds.
 
 ## Rendering contract
 
@@ -19,6 +35,38 @@ A page arriving outside the render window can still change sky exposure below it
 Both the initial meshing task and subsequent transparency sorting subtract the section origin in double precision before converting to float. Subsequent tasks retain the manager's immutable double camera snapshot; they never read a moving camera on the worker thread. Embeddium's replacement block-entity renderer also uses the same full-position destruction keys as Endless's LevelRenderer, including cleanup and simultaneous vanilla packed-Y aliases.
 
 ## Repeatable hidden framebuffer capture
+
+The multi-version runner builds the development fixture and generates its own uniquely named world. It requires JDK 21 for Gradle; the 26.1.2 toolchain automatically provisions JDK 25. Linux additionally needs Xvfb/Mesa. Use one renderer profile at a time:
+
+```sh
+python tools/render_smoke_test.py --target forge-1.20.1 --oculus
+python tools/render_smoke_test.py --target fabric-1.20.1 --renderer embeddium
+python tools/render_smoke_test.py --target fabric-1.20.1 --renderer sodium --iris
+python tools/render_smoke_test.py --target fabric-1.21.1 --renderer sodium --iris
+python tools/render_smoke_test.py --target fabric-1.21.1 --renderer sodium --sodium-pin SMxNOGZ6
+python tools/render_smoke_test.py --target neoforge-1.21.1 --renderer embeddium
+python tools/render_smoke_test.py --target neoforge-1.21.1 --renderer sodium --sodium-pin uMOpc5uV
+python tools/render_smoke_test.py --target neoforge-1.21.1 --renderer sodium --iris
+python tools/render_smoke_test.py --target neoforge-26.1.2 --renderer sodium --iris
+```
+
+Omit `--oculus`/`--iris` to test the renderer alone. Add `--shader-pack PATH_TO_ComplementaryReimagined_r5.9.3.zip` to an Iris/Oculus profile to require the actual active shader pipeline; shader mods otherwise run with shaders disabled. `--shots fixture-1000000,fixture-reload,12-fixture-edit` focuses a run. Evidence lands in `build/render-smoke/<target>-<backend>-<uuid>`, including frames, native assertions, frame intervals, allocation counters and the checked-out revision. The native fixture excludes unrelated development-only Balm/Waystones runtime dependencies; this matrix does not certify their combined behavior.
+
+Sodium 0.8.13 Fabric was built with Loom 1.16.1. This development runner uses Loom's explicit `loom.ignoreDependencyLoomVersionValidation` opt-out for that exact pin, preserving the upstream artifact and its static mixins. Acceptance still requires real client startup, complete meshing and all framebuffer regressions. Production loaders do not use this Gradle check. Normal builds compile against the Iris-compatible 0.6 API and select the 0.8 adapter by the installed mod version.
+
+The NeoForge 1.21.1 Sodium 0.8 preview places the unchanged upstream bootstrap jar in the isolated profile's `mods` folder. FML 4's development Maven locator otherwise selects the outer library for its nested mod identity and silently drops the actual renderer. Other profiles remove only that harness-owned jar before launch. Production installation uses the ordinary `mods` folder as usual.
+
+Fabric preview launches explicitly add Iris's unchanged bundled JCPP, GLSL transformer and ANTLR libraries to the development classpath, because Loom strips nested libraries from remapped mods. Iris and Oculus use their respective `iris.properties` and `oculus.properties`; the runner selects the pack or clears the preceding selection in the correct file. Active captures require an actual `IrisRenderingPipeline`, rejecting a fallback to vanilla rendering. Disabled captures require a colored fixture marker; cyan permits equal green/blue channels after Nether fog, while retaining a 30-percent contrast over red.
+
+## Multi-version validation, 2026-10-06
+
+Five fresh generated-world suites passed with Complementary Reimagined r5.9.3 active: eight captures each on Forge 1.20.1/Oculus, Fabric 1.20.1/Iris, Fabric 1.21.1/Iris, NeoForge 1.21.1/Iris and NeoForge 26.1.2/Iris, for 40 active-shader captures. The suite includes negative and million heights, a 120-frame dense-edit workload, Nether/Overworld transitions, rebasing, renderer reload and sparse palette/light/block-entity edits. Positive million-height frames were visually inspected. NeoForge 1.21.1 Sodium 0.8 also passed all eight baseline captures using the normal upstream bootstrap installation.
+
+These are local development results. CI separately runs 14 pinned renderer/shader-loader profiles with shaders disabled, requiring clean exact-head receipts for eight captures each. Normal packages additionally check client-only optional registration, registered Fabric production refmaps and exclusion of renderer, shader and preview classes. Follow the current [pull request checks](https://github.com/UpperMoon0/Endless/pull/22/checks) for exact-head CI status. The optional Sulfur Caves uniform emitted warnings in Complementary on 26.1.2; its Iris pipeline stayed active and the fixture suite passed. These fixtures do not certify arbitrary shader packs or renderer addons.
+
+## Forge packaged preview
+
+The steps below describe the separate Forge packaged-preview workflow and earlier tower audits.
 
 Use an **isolated copy** of a world. The fixture creates small lighting/chest/glass fixtures at Y=-80, 320, 512 and ±1,000,000, changes time/weather in the copy, and teleports its integrated-server player. Do not point it at a world you want preserved unchanged.
 
@@ -39,9 +87,9 @@ python tools/capture_shader_preview.py --instance PATH_TO_PRISM_INSTANCE --outpu
 
 The manifest records actual camera, dimensions, shader enablement/pack and capture method. The fixture checks the 32-section limit, disposed-node removal, sparse palettes, chest snapshots and light values. Its server preparation compares the batch solve to the existing per-point solver before render snapshots populate the client cache. The edit shot replaces glowstone with a lower-emission redstone torch, changes the marker, and removes the chest to check updated palette/light data and stale block-entity removal. The tower return and reload shots cover repeated rebasing and a renderer reload.
 
-Each unedited Embeddium fixture additionally checks native transparent index order on both sides of a fractional camera boundary at Y=0, ±1,000,000 and the ±8,000,000 envelope. The re-sort task comes from the transformed native manager; initial sorting also executes complete native meshing tasks for the stained-glass scene and compares their entire translucent index buffers against the double-relative reference sorter. At million-height fixtures the old absolute-float algorithm must fail this complete-output comparison as well. The original absolute-float algorithm is a failing negative control. Crack checks call Embeddium's transformed block-entity lookup with two simultaneous positions separated by 4,096 Y, then check removal. Positive-height fixtures apply and remove a 48-by-48 roof page group 1,024 blocks above the fixture through the normal client-page update path, requiring fresh cached sky snapshots and restored light. These client-only roof snapshots are restored before capture. Successful manifests record these checks under `compatibilityRegressions`.
+Each unedited Embeddium fixture additionally checks native transparent index order on both sides of a fractional camera boundary at Y=0, ±1,000,000 and the ±8,000,000 envelope. The re-sort task comes from the transformed native manager; initial sorting also executes complete native meshing tasks for the stained-glass scene and compares their entire translucent index buffers against the double-relative reference sorter. At million-height fixtures the old absolute-float algorithm must fail this complete-output comparison as well. The original absolute-float algorithm is a failing negative control. Crack checks call Embeddium's transformed block-entity lookup with two simultaneous positions separated by 4,096 Y, then check removal. Positive-height fixtures apply and remove a 48-by-48 roof page group 1,024 blocks above the fixture through the normal client-page update path, requiring fresh cached sky snapshots and restored light. Screenshots are taken before these destructive client probes; the probes restore client state before the next shot. Successful manifests record these checks under `compatibilityRegressions`.
 
-`python tools/check_embeddium_mixin_refmap.py PATH_TO_NORMAL_FORGE_JAR` checks all nine optional client hooks, their Minecraft runtime selectors, and exclusion of renderer/preview classes from ordinary jars. The Minecraft 1.20.1 build job runs this packaging gate; the separate `Renderer smoke` workflow runs fresh-world framebuffer checks on Linux/Xvfb with Mesa software rendering, in Embeddium-only and Oculus-loaded/shaders-disabled configurations. It requires a nonblank native frame and visible cyan/green fixture-marker pixels with shaders disabled, then uploads frames, logs, timing/allocation measurements and an exact-head receipt. Active Complementary pipeline validation remains a local GPU test.
+`python tools/check_embeddium_mixin_refmap.py PATH_TO_NORMAL_FORGE_JAR` checks the optional client hooks, their Minecraft runtime selectors, and exclusion of renderer/preview classes from ordinary jars. The Minecraft 1.20.1 build job runs this packaging gate; the separate `Renderer smoke` workflow runs fresh-world framebuffer checks on Linux/Xvfb with Mesa software rendering, in Embeddium-only and Oculus-loaded/shaders-disabled configurations. It requires a nonblank native frame and visible cyan/green fixture-marker pixels with shaders disabled, then uploads frames, logs, timing/allocation measurements and an exact-head receipt. Active Complementary pipeline validation remains a local GPU test.
 
 Ordinary builds omit this fixture and its requests. Captures and world copies are not release assets. The integration does not claim compatibility with Rubidium, arbitrary Sodium forks, dynamic-light mods, every shader pack, or other Minecraft/loader versions.
 
@@ -76,7 +124,7 @@ The follow-up found and fixed three remaining adapter mismatches: absolute-float
 | Python harness and metadata checks | 49 tests passed; five-target metadata passed |
 | Packaged Forge Create/Embeddium selectors | Passed; normal jar excludes preview and renderer classes |
 
-Positive million-height frames with and without Complementary, and the upper tower without shaders, were visually reviewed. Native transparency checks cover Y=0, ±1,000,000 and the ±8,000,000 envelope; the captured terrain fixtures remain at the five stated heights. The old absolute-float sorter fails the native index-order negative control. Distant-sky checks require both roof arrival and removal to replace the cached visible light data, while the section-count assertions retain the 32-section bound. This does not expand the supported renderer/version scope or certify moving contraptions, arbitrary renderer addons or shader packs.
+Positive million-height frames with and without Complementary, and the upper tower without shaders, were visually reviewed. Native transparency checks cover Y=0, ±1,000,000 and the ±8,000,000 envelope; the captured terrain fixtures remain at the five stated heights. The old absolute-float sorter fails the native index-order negative control. Distant-sky checks require both roof arrival and removal to replace the cached visible light data, while the section-count assertions retain the 32-section bound. Those earlier captures cover Forge 1.20.1 and do not certify moving contraptions, arbitrary renderer addons or shader packs.
 
 The lighting follow-up also covers dense roof insertion/removal through vanilla client dirty notifications, asserting both snapshot eviction and a pending native mesh rebuild. Distant sparse roofs additionally exercise both vertical snapshot-halo edges. These tests leave the render node window bounded to 32 sections per ready column.
 

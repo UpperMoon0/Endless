@@ -1,0 +1,22 @@
+{
+  "required": true,
+  "package": "com.nstut.endless.neoforge.mixin.compat.sodium",
+  "compatibilityLevel": "JAVA_25",
+  "minVersion": "0.8",
+  "plugin": "com.nstut.endless.neoforge.compat.SodiumMixinPlugin",
+  "client": [
+    "ClonedChunkSectionCacheMixin",
+    "ClonedChunkSectionMixin",
+    "VanillaDestructionLookupMixin",
+    "OcclusionCullerMixin",
+    "RenderSectionManagerMixin",
+    "TaskCollectingTreeMixin",
+    "DeferredTaskListMixin",
+    "SodiumWorldRendererMixin",
+    "VerticalClientUpdatesMixin",
+    "WorldSliceMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

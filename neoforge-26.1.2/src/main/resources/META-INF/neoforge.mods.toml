@@ -32,3 +32,6 @@ config = "endless.mixins.json"
 
 [[mixins]]
 config = "endless-neoforge.mixins.json"
+
+[[mixins]]
+config = "endless-sodium.mixins.json"

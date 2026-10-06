@@ -15,13 +15,15 @@
     "BlockEntityRenderDispatcherDebugMixin",
     "accessor.LevelRendererAccessor",
     "accessor.ViewAreaAccessor",
-    "accessor.VisibleSectionsAccessor"
+    "accessor.VisibleSectionsAccessor",
+    "DestructionProgressMixin"
   ],
   "mixins": [
     "FriendlyByteBufMixin",
     "LevelHeightAccessorMixin",
     "LevelReaderMixin",
     "LevelMixin",
+    "LevelBuildBoundsMixin",
     "ChunkAccessMixin",
     "ChunkSkyLightSourcesMixin",
     "ChunkHolderMixin",

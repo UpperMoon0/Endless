@@ -1,6 +1,6 @@
 # Optional renderer compatibility
 
-Endless 0.10 extends the client adapter across every existing Endless release target. Renderer mods remain optional, compile-only dependencies and are never bundled. Availability was checked against the upstream release artifacts on 2026-10-06; a Minecraft version supported by a renderer does not by itself mean Endless ships that Minecraft version.
+Endless 0.9.1 extends the client adapter across every existing Endless release target. Renderer mods remain optional, compile-only dependencies and are never bundled. Availability was checked against the upstream release artifacts on 2026-10-06; a Minecraft version supported by a renderer does not by itself mean Endless ships that Minecraft version.
 
 | Endless target | Renderer profile | Shader profile |
 | --- | --- | --- |

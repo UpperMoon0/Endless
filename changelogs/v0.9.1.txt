@@ -1,4 +1,4 @@
-Endless 0.10
+Endless 0.9.1
 
 - Expand optional renderer compatibility across all five existing release targets: Forge/Fabric 1.20.1, Fabric/NeoForge 1.21.1, and NeoForge 26.1.2.
 - Add Fabric/NeoForge Embeddium and Sodium adapters, including sparse section snapshots, block entities, block/sky lighting, bounded camera windows, dense update batching, and snapshot halo invalidation.

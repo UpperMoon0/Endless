@@ -9,8 +9,19 @@ MIXINS = {
     'ClonedChunkSectionCacheMixin', 'WorldSliceMixin', 'ClonedChunkSectionMixin',
     'RenderSectionManagerMixin', 'OcclusionCullerMixin', 'ChunkBuilderMeshingTaskMixin',
     'ChunkBuilderSortTaskMixin', 'SodiumWorldRendererMixin', 'VerticalClientUpdatesMixin',
+    'GlobalBlockEntityLifecycleMixin', 'GlobalRendererReloadMixin',
 }
 EXPECTED = {
+    'GlobalBlockEntityLifecycleMixin': {
+        'setLevel': 'Lnet/minecraft/world/level/block/entity/BlockEntity;m_142339_(Lnet/minecraft/world/level/Level;)V',
+        'clearRemoved': 'Lnet/minecraft/world/level/block/entity/BlockEntity;m_6339_()V',
+        'setRemoved': 'Lnet/minecraft/world/level/block/entity/BlockEntity;m_7651_()V',
+        'setBlockState': 'Lnet/minecraft/world/level/block/entity/BlockEntity;m_155250_(Lnet/minecraft/world/level/block/state/BlockState;)V',
+        'load': 'Lnet/minecraft/world/level/block/entity/BlockEntity;m_142466_(Lnet/minecraft/nbt/CompoundTag;)V',
+    },
+    'GlobalRendererReloadMixin': {
+        'onResourceManagerReload': 'Lnet/minecraft/client/renderer/blockentity/BlockEntityRenderDispatcher;m_6213_(Lnet/minecraft/server/packs/resources/ResourceManager;)V',
+    },
     'SodiumWorldRendererMixin': {
         'Lnet/minecraft/core/BlockPos;asLong()J': 'Lnet/minecraft/core/BlockPos;m_121878_()J',
     },

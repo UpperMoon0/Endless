@@ -36,6 +36,16 @@ Both the initial meshing task and subsequent transparency sorting subtract the s
 
 ## Repeatable hidden framebuffer capture
 
+Forge 1.20.1's recovered global block-entity renderers preserve Embeddium's
+`ENABLE_BLOCKENTITY_CULLING` predicate and custom-outline bookkeeping. A
+render-manager-owned identity index seeds from loaded column maps once on
+arrival and updates from block-entity lifecycle/state/NBT changes and affected
+section rebuilds. Renderer resource reload explicitly reclassifies known entities;
+column unload removes their references. Normal render passes classify only
+pending changes and visit indexed global candidates. They do not walk loaded
+chunk maps or scan the logical height. The native smoke fixture exercises candidate
+registration, removal, re-add, column unload and reload invalidation.
+
 The multi-version runner builds the development fixture and generates its own uniquely named world. It requires JDK 21 for Gradle; the 26.1.2 toolchain automatically provisions JDK 25. Linux additionally needs Xvfb/Mesa. Use one renderer profile at a time:
 
 ```sh

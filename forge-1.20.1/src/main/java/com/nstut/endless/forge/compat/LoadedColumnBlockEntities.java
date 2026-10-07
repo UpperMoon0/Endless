@@ -3,7 +3,9 @@ package com.nstut.endless.forge.compat;
 import java.util.function.Consumer;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
-/** Loaded block entities whose origins have no terrain render section. */
+/** Lifecycle tracking and indexed global-renderer traversal; never scans chunks during drawing. */
 public interface LoadedColumnBlockEntities {
-    void endless$forEachLoadedBlockEntity(Consumer<BlockEntity> consumer);
+    void endless$forEachGlobalBlockEntity(Consumer<BlockEntity> consumer);
+    void endless$trackBlockEntity(BlockEntity entity);
+    void endless$invalidateGlobalRenderers();
 }

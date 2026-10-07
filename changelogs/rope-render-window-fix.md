@@ -21,6 +21,20 @@ This change targets Forge 1.20.1 with Embeddium 0.3.31, including the Oculus
 fallback renderer used for the trailer. It does not change elevator assembly,
 movement, rope length, server data, or support for other loader/version pairs.
 
+Review follow-up: recovered globals now use Embeddium's own culling toggle,
+including its disabled-culling configuration, and request custom outlines before
+drawing. A lifecycle index classifies entities on column arrival, entity changes,
+affected section rebuilds and renderer reload. Column unload drops references;
+steady main/shadow render passes visit only global candidates, not every loaded
+block entity across sparse pages. The index belongs to the render manager and is
+discarded with it on renderer/world replacement.
+
+Regression coverage includes culling disabled/enabled, outline-before-draw and
+native identity deduplication, plus a 20,000 ordinary-entity scaling fixture,
+localized/coalesced updates, replacement, unload/rejoin and renderer reload.
+The native Embeddium smoke fixture also checks transformed block-entity lifecycle
+hooks and candidate removal/re-add at each fixture height.
+
 Build: Java 21 runs Gradle; emitted Minecraft code targets Java 17.
 Validation receipts and before/after native images are in the trailer project's
 evidence/revision13-* files. Common suite: 45 passing tests, including five

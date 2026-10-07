@@ -15,6 +15,24 @@ import org.spongepowered.asm.mixin.injection.*;
 @Mixin(targets = "me.jellysquid.mods.sodium.client.render.SodiumWorldRenderer", remap = false)
 public abstract class SodiumWorldRendererMixin implements EmbeddiumSnapshotInvalidation {
     @Shadow private RenderSectionManager renderSectionManager;
+    @Shadow private me.jellysquid.mods.sodium.client.render.viewport.Viewport currentViewport;
+    @Shadow private static void renderBlockEntity(com.mojang.blaze3d.vertex.PoseStack poses, net.minecraft.client.renderer.RenderBuffers buffers,
+        it.unimi.dsi.fastutil.longs.Long2ObjectMap<java.util.SortedSet<net.minecraft.server.level.BlockDestructionProgress>> destruction,
+        float tick, net.minecraft.client.renderer.MultiBufferSource.BufferSource source, double x, double y, double z,
+        net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher dispatcher, net.minecraft.world.level.block.entity.BlockEntity entity) { throw new AssertionError(); }
+
+    @Inject(method = "renderGlobalBlockEntities", at = @At("RETURN"))
+    private void endless$renderOutsideWindowGlobals(com.mojang.blaze3d.vertex.PoseStack poses, net.minecraft.client.renderer.RenderBuffers buffers,
+        it.unimi.dsi.fastutil.longs.Long2ObjectMap<java.util.SortedSet<net.minecraft.server.level.BlockDestructionProgress>> destruction,
+        float tick, net.minecraft.client.renderer.MultiBufferSource.BufferSource source, double x, double y, double z,
+        net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher dispatcher, CallbackInfo ci) {
+        if (!EndlessLogicalHeights.isActive() || renderSectionManager == null || currentViewport == null) return;
+        ((com.nstut.endless.forge.compat.OutsideWindowBlockEntities) renderSectionManager).endless$forEachOutsideWindowBlockEntity(entity -> {
+            var renderer = dispatcher.getRenderer(entity);
+            if (renderer == null || !renderer.shouldRenderOffScreen(entity) || !currentViewport.isBoxVisible(entity.getRenderBoundingBox())) return;
+            renderBlockEntity(poses, buffers, destruction, tick, source, x, y, z, dispatcher, entity);
+        });
+    }
 
     @Override public void endless$invalidateSkyColumns(int x, int z) {
         if (renderSectionManager != null) ((EmbeddiumSnapshotInvalidation) renderSectionManager).endless$invalidateSkyColumns(x, z);

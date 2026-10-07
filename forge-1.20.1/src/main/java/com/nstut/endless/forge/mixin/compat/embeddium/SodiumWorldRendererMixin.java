@@ -22,12 +22,20 @@ public abstract class SodiumWorldRendererMixin implements EmbeddiumSnapshotInval
         net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher dispatcher, net.minecraft.world.level.block.entity.BlockEntity entity) { throw new AssertionError(); }
 
     @Inject(method = "renderGlobalBlockEntities", at = @At("RETURN"))
-    private void endless$renderOutsideWindowGlobals(com.mojang.blaze3d.vertex.PoseStack poses, net.minecraft.client.renderer.RenderBuffers buffers,
+    private void endless$renderMissingGlobals(com.mojang.blaze3d.vertex.PoseStack poses, net.minecraft.client.renderer.RenderBuffers buffers,
         it.unimi.dsi.fastutil.longs.Long2ObjectMap<java.util.SortedSet<net.minecraft.server.level.BlockDestructionProgress>> destruction,
         float tick, net.minecraft.client.renderer.MultiBufferSource.BufferSource source, double x, double y, double z,
         net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher dispatcher, CallbackInfo ci) {
         if (!EndlessLogicalHeights.isActive() || renderSectionManager == null || currentViewport == null) return;
-        ((com.nstut.endless.forge.compat.OutsideWindowBlockEntities) renderSectionManager).endless$forEachOutsideWindowBlockEntity(entity -> {
+        // Compiled native globals already used the normal path above. Include
+        // uncompiled origins inside the window as well as outside origins.
+        var nativeGlobals = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<net.minecraft.world.level.block.entity.BlockEntity, Boolean>());
+        for (var section : renderSectionManager.getSectionsWithGlobalEntities()) {
+            var entities = section.getGlobalBlockEntities();
+            if (entities != null) java.util.Collections.addAll(nativeGlobals, entities);
+        }
+        ((com.nstut.endless.forge.compat.LoadedColumnBlockEntities) renderSectionManager).endless$forEachLoadedBlockEntity(entity -> {
+            if (nativeGlobals.contains(entity)) return;
             var renderer = dispatcher.getRenderer(entity);
             if (renderer == null || !renderer.shouldRenderOffScreen(entity) || !currentViewport.isBoxVisible(entity.getRenderBoundingBox())) return;
             renderBlockEntity(poses, buffers, destruction, tick, source, x, y, z, dispatcher, entity);

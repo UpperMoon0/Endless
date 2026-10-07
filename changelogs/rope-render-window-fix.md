@@ -12,8 +12,9 @@ the visible geometry. This prevents the belt and magnet disappearing next to
 the cabin while its controller is hundreds of blocks above it.
 
 Retain native off-screen renderers from already-loaded columns when their
-bounding boxes are visible. Origins inside the terrain window remain entirely
-on Embeddium's normal path, preventing duplicate draws. No terrain sections are
+bounding boxes are visible. Include origins inside the window whose render
+sections have not been compiled. Skip block entities already in Embeddium's
+compiled global list by identity, preventing duplicate draws. No terrain sections are
 added, no chunks are loaded, and the logical height is never scanned.
 
 This change targets Forge 1.20.1 with Embeddium 0.3.31, including the Oculus

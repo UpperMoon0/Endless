@@ -26,7 +26,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Pseudo
 @Mixin(targets = "me.jellysquid.mods.sodium.client.render.chunk.RenderSectionManager", remap = false)
-public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInvalidation, InitialBuildUpdates.Target, com.nstut.endless.forge.compat.OutsideWindowBlockEntities {
+public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInvalidation, InitialBuildUpdates.Target, com.nstut.endless.forge.compat.LoadedColumnBlockEntities {
     @Shadow @Final private ClientLevel world;
     @Shadow @Final private ClonedChunkSectionCache sectionCache;
     @Shadow @Final private OcclusionCuller occlusionCuller;
@@ -38,15 +38,15 @@ public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInva
     @Shadow private boolean needsUpdate;
     @Shadow private Vec3 cameraPosition;
     @Unique private final VerticalRenderWindow endless$window = new VerticalRenderWindow();
-    @Override public void endless$forEachOutsideWindowBlockEntity(java.util.function.Consumer<net.minecraft.world.level.block.entity.BlockEntity> consumer) {
+    @Override public void endless$forEachLoadedBlockEntity(java.util.function.Consumer<net.minecraft.world.level.block.entity.BlockEntity> consumer) {
         // Iterate only already-loaded horizontal columns, never the logical height
-        // or terrain outside the bounded window. Native global renderers (such as
-        // Create's long pulley rope) can extend into it from an outside origin.
+        // or allocate terrain outside the bounded window. A native global renderer
+        // may have an outside origin or an inside origin not compiled yet.
         for (long key : endless$readyChunks) {
             var chunk = world.getChunkSource().getChunk(ChunkPos.getX(key), ChunkPos.getZ(key), net.minecraft.world.level.chunk.ChunkStatus.FULL, false);
             if (chunk == null) continue;
             for (var entity : chunk.getBlockEntities().values()) {
-                if (!entity.isRemoved() && !endless$window.contains(Math.floorDiv(entity.getBlockPos().getY(), 16))) consumer.accept(entity);
+                if (!entity.isRemoved()) consumer.accept(entity);
             }
         }
     }

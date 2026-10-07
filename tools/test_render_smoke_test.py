@@ -25,7 +25,7 @@ class RenderSmokeTest(unittest.TestCase):
             for suffix in ('Ms', 'RenderThreadBytes')}
         self.record['nativeRegressionMeasurements'].update(denseBurstFrames=120, denseBurstEdits=7680,
             denseBurstNotifications=130560, denseBurstRefreshedColumns=1080,
-            globalRendererLifecycle=True)
+            globalRendererLifecycle=True, offThreadRebuild=True)
         (self.root / self.record['file']).write_bytes(b'fixture')
 
     def write(self, records=None):
@@ -40,6 +40,12 @@ class RenderSmokeTest(unittest.TestCase):
         self.record['nativeRegressionMeasurements'].pop('globalRendererLifecycle')
         self.write()
         with self.assertRaisesRegex(RuntimeError, 'Global renderer lifecycle regression receipt missing'):
+            smoke.validate(self.root, self.request, False)
+
+    def test_requires_off_thread_rebuild_receipt(self):
+        self.record['nativeRegressionMeasurements'].pop('offThreadRebuild')
+        self.write()
+        with self.assertRaisesRegex(RuntimeError, 'Off-thread rebuild regression receipt missing'):
             smoke.validate(self.root, self.request, False)
 
     def test_requires_edge_and_dense_regressions(self):

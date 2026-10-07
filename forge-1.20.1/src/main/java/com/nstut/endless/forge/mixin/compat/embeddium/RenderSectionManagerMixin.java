@@ -28,6 +28,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(targets = "me.jellysquid.mods.sodium.client.render.chunk.RenderSectionManager", remap = false)
 public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInvalidation, InitialBuildUpdates.Target, com.nstut.endless.forge.compat.LoadedColumnBlockEntities {
     @Shadow @Final private ClientLevel world;
+    @Shadow @Final private Thread renderThread;
     @Shadow @Final private ClonedChunkSectionCache sectionCache;
     @Shadow @Final private OcclusionCuller occlusionCuller;
     @Shadow public abstract void onSectionAdded(int x, int y, int z);
@@ -69,6 +70,9 @@ public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInva
     }
     @Inject(method = "scheduleRebuild", at = @At("RETURN"))
     private void endless$retainInitialBuildEdits(int x, int y, int z, boolean important, CallbackInfo ci) {
+        // Native off-thread calls only enqueue a render-thread scheduleRebuild.
+        // Its second invocation will update both indexes on their owning thread.
+        if (Thread.currentThread() != renderThread) return;
         if (!EndlessLogicalHeights.isActive()) return;
         endless$globals.dirtySection(ChunkPos.asLong(x, z), y);
         var node = getRenderSection(x, y, z);

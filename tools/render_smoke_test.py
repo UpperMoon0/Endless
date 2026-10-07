@@ -107,6 +107,8 @@ def validate(output: Path, request: dict, oculus: bool, target: str = "forge-1.2
             names = ['completeMeshing', 'chunkLifecycle'] if target == 'forge-1.20.1' else []
             if target == 'forge-1.20.1' and not measurements.get('globalRendererLifecycle'):
                 raise RuntimeError('Global renderer lifecycle regression receipt missing')
+            if target == 'forge-1.20.1' and not measurements.get('offThreadRebuild'):
+                raise RuntimeError('Off-thread rebuild regression receipt missing')
             if sky and target == 'forge-1.20.1':
                 names += ['denseRoof']
                 if record['fixtureY'] >= 320:

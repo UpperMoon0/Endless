@@ -1,6 +1,6 @@
-![](https://media.forgecdn.net/attachments/description/null/description_44f011ce-3daa-4641-85fa-ee4abac4d7dc.png)
+![Endless banner with the gold logo and purple infinity symbol over a blurred skyscraper](https://raw.githubusercontent.com/UpperMoon0/Endless/d3e6e0f3d6ee24b2d59e17f6fd361897f61f62b9/assets/banner.png)
 
-![](https://media.forgecdn.net/attachments/description/null/description_7a3dcf6f-3695-46ef-9696-746d08598dc7.png)
+![The Grand Amethyst Spire viewed from its ground-level entrance](https://raw.githubusercontent.com/UpperMoon0/Endless/d3e6e0f3d6ee24b2d59e17f6fd361897f61f62b9/assets/skyscraper-ground-up.jpg)
 
 Endless lets you build higher and dig deeper than ever before. In v0.9, you can configure your world's build range anywhere from Y=-8,000,000 through Y=7,999,999 without turning every chunk into a millions-of-block-tall section array.
 

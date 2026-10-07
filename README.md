@@ -6,7 +6,9 @@ Endless provides sparse, practically unbounded vertical building space for Minec
 
 CurseForge: https://www.curseforge.com/minecraft/mc-mods/nstut-endless
 
-![Endless](assets/icon.png)
+![Endless banner with the gold logo and purple infinity symbol over a blurred skyscraper](assets/banner.png)
+
+![The Grand Amethyst Spire viewed from its ground-level entrance](assets/skyscraper-ground-up.jpg)
 
 ## How Endless works
 

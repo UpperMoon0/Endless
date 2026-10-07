@@ -14,7 +14,7 @@ EMBEDDIUM_HOOKS = BASE_HOOKS | {'ChunkBuilderMeshingTaskMixin', 'ChunkBuilderSor
 SODIUM_1211_HOOKS = BASE_HOOKS | {'RenderSectionManagerModernMixin', 'RenderSectionPendingMixin'}
 REQUIRED_HOOKS = {
     ('fabric', '1.20.1'): {'endless-embeddium.mixins.json': EMBEDDIUM_HOOKS | {'MinecraftFrameMixin', 'RenderSortCameraMixin'}},
-    ('forge', '1.20.1'): {'endless-embeddium.mixins.json': EMBEDDIUM_HOOKS},
+    ('forge', '1.20.1'): {'endless-embeddium.mixins.json': EMBEDDIUM_HOOKS | {'GlobalBlockEntityLifecycleMixin', 'GlobalRendererReloadMixin'}},
     ('fabric', '1.21.1'): {'endless-sodium.mixins.json': SODIUM_1211_HOOKS | {'MinecraftFrameMixin'}},
     ('neoforge', '1.21.1'): {'endless-embeddium.mixins.json': EMBEDDIUM_HOOKS, 'endless-sodium.mixins.json': SODIUM_1211_HOOKS},
     ('neoforge', '26.1.2'): {'endless-sodium.mixins.json': BASE_HOOKS | {'VanillaDestructionLookupMixin', 'TaskCollectingTreeMixin', 'DeferredTaskListMixin'}},

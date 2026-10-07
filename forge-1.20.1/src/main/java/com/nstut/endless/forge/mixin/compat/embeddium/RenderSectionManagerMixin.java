@@ -26,8 +26,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Pseudo
 @Mixin(targets = "me.jellysquid.mods.sodium.client.render.chunk.RenderSectionManager", remap = false)
-public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInvalidation, InitialBuildUpdates.Target {
+public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInvalidation, InitialBuildUpdates.Target, com.nstut.endless.forge.compat.LoadedColumnBlockEntities {
     @Shadow @Final private ClientLevel world;
+    @Shadow @Final private Thread renderThread;
     @Shadow @Final private ClonedChunkSectionCache sectionCache;
     @Shadow @Final private OcclusionCuller occlusionCuller;
     @Shadow public abstract void onSectionAdded(int x, int y, int z);
@@ -38,6 +39,24 @@ public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInva
     @Shadow private boolean needsUpdate;
     @Shadow private Vec3 cameraPosition;
     @Unique private final VerticalRenderWindow endless$window = new VerticalRenderWindow();
+    @Unique private final com.nstut.endless.vertical.GlobalRendererIndex<net.minecraft.world.level.block.entity.BlockEntity> endless$globals = new com.nstut.endless.vertical.GlobalRendererIndex<>();
+    @Override public void endless$trackBlockEntity(net.minecraft.world.level.block.entity.BlockEntity entity) {
+        if (entity.getLevel() != world) return;
+        var pos = entity.getBlockPos();
+        long column = ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4);
+        if (entity.isRemoved()) endless$globals.remove(entity);
+        else if (endless$readyChunks.contains(column)) endless$globals.track(entity, column, pos.getY() >> 4);
+    }
+    @Override public void endless$invalidateGlobalRenderers() { endless$globals.dirtyAll(); }
+    @Override public void endless$forEachGlobalBlockEntity(java.util.function.Consumer<net.minecraft.world.level.block.entity.BlockEntity> consumer) {
+        var dispatcher = Minecraft.getInstance().getBlockEntityRenderDispatcher();
+        endless$globals.refresh(entity -> {
+            if (entity.isRemoved()) return false;
+            var renderer = dispatcher.getRenderer(entity);
+            return renderer != null && renderer.shouldRenderOffScreen(entity);
+        });
+        endless$globals.forEachCandidate(consumer);
+    }
     @Unique private final InitialBuildUpdates endless$initialUpdates = new InitialBuildUpdates(this);
     @Override public boolean endless$isCurrentInitialSection(int x, int y, int z) {
         return endless$window.contains(y) && endless$readyChunks.contains(ChunkPos.asLong(x, z));
@@ -51,7 +70,11 @@ public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInva
     }
     @Inject(method = "scheduleRebuild", at = @At("RETURN"))
     private void endless$retainInitialBuildEdits(int x, int y, int z, boolean important, CallbackInfo ci) {
+        // Native off-thread calls only enqueue a render-thread scheduleRebuild.
+        // Its second invocation will update both indexes on their owning thread.
+        if (Thread.currentThread() != renderThread) return;
         if (!EndlessLogicalHeights.isActive()) return;
+        endless$globals.dirtySection(ChunkPos.asLong(x, z), y);
         var node = getRenderSection(x, y, z);
         if (node != null && !node.isBuilt() && !node.isDisposed()) endless$initialUpdates.add(x, y, z);
     }
@@ -103,6 +126,9 @@ public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInva
         ci.cancel();
         endless$updateWindow();
         if (!endless$readyChunks.add(ChunkPos.asLong(x, z))) return;
+        // Seed once on column arrival (also covers manager recreation/rejoin).
+        var chunk = world.getChunkSource().getChunk(x, z, net.minecraft.world.level.chunk.ChunkStatus.FULL, false);
+        if (chunk != null) for (var entity : chunk.getBlockEntities().values()) endless$trackBlockEntity(entity);
         for (int y = endless$window.minSection(); y < endless$window.maxSection(); y++) {
             sectionCache.invalidate(x, y, z);
             onSectionAdded(x, y, z);
@@ -114,6 +140,7 @@ public abstract class RenderSectionManagerMixin implements EmbeddiumSnapshotInva
         if (!EndlessLogicalHeights.isActive()) return;
         ci.cancel();
         if (!endless$readyChunks.remove(ChunkPos.asLong(x, z))) return;
+        endless$globals.removeColumn(ChunkPos.asLong(x, z));
         endless$initialUpdates.discardColumn(x, z);
         for (int y = endless$window.minSection(); y < endless$window.maxSection(); y++) {
             onSectionRemoved(x, y, z);

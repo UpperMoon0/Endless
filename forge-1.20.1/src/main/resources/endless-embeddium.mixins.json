@@ -5,6 +5,8 @@
   "minVersion": "0.8",
   "plugin": "com.nstut.endless.forge.compat.EmbeddiumMixinPlugin",
   "client": [
+    "GlobalBlockEntityLifecycleMixin",
+    "GlobalRendererReloadMixin",
     "ClonedChunkSectionCacheMixin",
     "WorldSliceMixin",
     "ClonedChunkSectionMixin",

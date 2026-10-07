@@ -118,11 +118,85 @@ final class EmbeddiumCompatibilityRegression {
         if ((long) crack.invoke(null, chest) != Long.MIN_VALUE) throw new IllegalStateException("Removed crack retained");
         measure("completeMeshing", () -> verifyCompleteMesh(mc, manager, context, origin));
         measure("chunkLifecycle", () -> verifyChunkRemoval(mc, manager, context, origin));
+        measure("globalRendererLifecycle", () -> verifyGlobalRendererLifecycle(mc, manager, fixtureY));
+        measure("offThreadRebuild", () -> verifyOffThreadRebuild(mc, manager, fixtureY));
         if (mc.level.dimensionType().hasSkyLight()) {
             measure("denseRoof", () -> verifyDenseSkyUpdate(mc, origin));
             if (fixtureY >= 320) measure("skyPageBurst", () -> verifyDistantSkyPage(mc, origin));
         }
         System.out.println("ENDLESS_EMBEDDIUM_COMPAT_REGRESSION_PASS sorting=" + cases + " initialMesh/crackAliases/removal denseSkyUpdate/snapshotHalo distantSkyPage=" + (fixtureY >= 320) + " y=" + fixtureY);
+    }
+
+    private static void verifyGlobalRendererLifecycle(Minecraft mc, RenderSectionManager manager, int y) {
+        var indexed = (com.nstut.endless.forge.compat.LoadedColumnBlockEntities) manager;
+        // Beacon is a native shouldRenderOffScreen renderer. Exercise the actual
+        // transformed BE lifecycle methods, including origins at sparse heights.
+        var beacon = new net.minecraft.world.level.block.entity.BeaconBlockEntity(
+            new BlockPos(64, y, 64), Blocks.BEACON.defaultBlockState());
+        try {
+            beacon.setLevel(mc.level);
+            beacon.clearRemoved();
+            assertIndexed(indexed, beacon, true);
+            beacon.setRemoved();
+            assertIndexed(indexed, beacon, false);
+            beacon.clearRemoved();
+            assertIndexed(indexed, beacon, true);
+            // Column unload must clear known entities and candidates. Re-add
+            // seeds the actual map; this test-only BE was never installed there.
+            manager.onChunkRemoved(4, 4);
+            assertIndexed(indexed, beacon, false);
+            manager.onChunkAdded(4, 4);
+            beacon.clearRemoved();
+            assertIndexed(indexed, beacon, true);
+            indexed.endless$invalidateGlobalRenderers();
+            assertIndexed(indexed, beacon, true);
+            metrics.put("globalRendererLifecycle", true);
+        } finally { beacon.setRemoved(); }
+    }
+
+    private static void assertIndexed(com.nstut.endless.forge.compat.LoadedColumnBlockEntities index,
+        net.minecraft.world.level.block.entity.BlockEntity entity, boolean expected) {
+        var matches = new int[1];
+        index.endless$forEachGlobalBlockEntity(candidate -> { if (candidate == entity) matches[0]++; });
+        if (matches[0] != (expected ? 1 : 0))
+            throw new IllegalStateException("Global renderer lifecycle mismatch: expected " + expected + ", count " + matches[0]);
+    }
+
+    private static void verifyOffThreadRebuild(Minecraft mc, RenderSectionManager manager, int y) throws Exception {
+        var indexed = (com.nstut.endless.forge.compat.LoadedColumnBlockEntities) manager;
+        var beacon = new net.minecraft.world.level.block.entity.BeaconBlockEntity(
+            new BlockPos(64, y, 64), Blocks.BEACON.defaultBlockState());
+        var globals = field(manager, "endless$globals");
+        var dirty = (java.util.Set<?>) field(globals, "dirty");
+        var initial = (InitialBuildUpdates) field(manager, "endless$initialUpdates");
+        try {
+            manager.runAsyncTasks();
+            // Fresh unbuilt nodes expose the second, initial-build state mutation.
+            manager.onChunkRemoved(4, 4);
+            manager.onChunkAdded(4, 4);
+            beacon.setLevel(mc.level);
+            beacon.clearRemoved();
+            assertIndexed(indexed, beacon, true);
+            if (initial.contains(4, y >> 4, 4)) throw new IllegalStateException("Initial rebuild probe was already pending");
+            var failure = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+            Thread worker = new Thread(() -> {
+                try { manager.scheduleRebuild(4, y >> 4, 4, false); }
+                catch (Throwable error) { failure.set(error); }
+            }, "endless-rebuild-regression");
+            worker.setDaemon(true);
+            worker.start();
+            worker.join(5000);
+            if (worker.isAlive()) throw new IllegalStateException("Off-thread rebuild failed to return");
+            if (failure.get() != null) throw new IllegalStateException("Off-thread rebuild failed", failure.get());
+            if (dirty.contains(beacon) || initial.contains(4, y >> 4, 4))
+                throw new IllegalStateException("Off-thread rebuild mutated render-thread indexes before native dispatch");
+            manager.runAsyncTasks();
+            if (!dirty.contains(beacon) || !initial.contains(4, y >> 4, 4))
+                throw new IllegalStateException("Queued render-thread rebuild lost global/initial-build invalidation");
+            assertIndexed(indexed, beacon, true);
+            if (dirty.contains(beacon)) throw new IllegalStateException("Global renderer refresh did not consume queued invalidation");
+            metrics.put("offThreadRebuild", true);
+        } finally { beacon.setRemoved(); }
     }
 
     private static void verifyCompleteMesh(Minecraft mc, RenderSectionManager manager, ChunkRenderContext context, SectionPos origin) throws Exception {

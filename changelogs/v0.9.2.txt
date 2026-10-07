@@ -1,0 +1,9 @@
+Endless 0.9.2
+
+- Fix Forge 1.20.1 / Embeddium Create 6.0.8 elevators whose belt, rope, or magnet could disappear when the pulley origin left Endless's bounded vertical render window.
+- Preserve the renderer's existing distance cutoff while measuring Create elevator visibility from the rope render bounds instead of only the pulley block origin.
+- Recover loaded off-screen/global block-entity renderers with a lifecycle-owned identity index, preserving Embeddium's culling toggle, custom-outline bookkeeping, and native identity deduplication without scanning every loaded block entity each render pass.
+- Keep global-renderer classification synchronized across block-entity lifecycle changes, section rebuilds, renderer reloads, column unload/rejoin, and off-thread rebuild dispatch.
+- Add focused unit and native framebuffer regressions for distance bounds, culling/outline parity, identity replacement, reload/unload lifecycle, stable-pass scaling, and render-thread ownership.
+- Refresh the README and CurseForge showcase artwork with the new Endless banner and Grand Amethyst Spire ground-up image.
+- Keep this fix scoped to Forge 1.20.1 / Embeddium 0.3.31 (including the Oculus fallback); elevator mechanics, server data, and other loader/version behavior are unchanged by this rendering patch.

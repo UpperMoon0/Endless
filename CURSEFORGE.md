@@ -1,15 +1,15 @@
-![](https://media.forgecdn.net/attachments/description/null/description_44f011ce-3daa-4641-85fa-ee4abac4d7dc.png)
+![Endless banner with the gold logo and purple infinity symbol over a blurred skyscraper](https://raw.githubusercontent.com/UpperMoon0/Endless/d3e6e0f3d6ee24b2d59e17f6fd361897f61f62b9/assets/banner.png)
 
-![](https://media.forgecdn.net/attachments/description/null/description_7a3dcf6f-3695-46ef-9696-746d08598dc7.png)
+![The Grand Amethyst Spire viewed from its ground-level entrance](https://raw.githubusercontent.com/UpperMoon0/Endless/d3e6e0f3d6ee24b2d59e17f6fd361897f61f62b9/assets/skyscraper-ground-up.jpg)
 
-Endless lets you build higher and dig deeper than ever before. In v0.9, you can configure your world's build range anywhere from Y=-8,000,000 through Y=7,999,999 without turning every chunk into a millions-of-block-tall section array.
+Endless 0.9.2 lets you build higher and dig deeper than ever before. You can configure your world's build range anywhere from Y=-8,000,000 through Y=7,999,999 without turning every chunk into a millions-of-block-tall section array.
 
 ## Features
 
 * **Practical Infinite Build Height** — Choose any section-aligned build range inside Y=-8,000,000 to Y=7,999,999.
 * **Sparse Vertical Storage** — Fresh worlds keep Minecraft's normal `[-64,320)` dense chunk core. Extended construction is stored in 512-block vertical pages that are allocated only where data exists.
 * **All Dimensions Supported** — Works in the Overworld, Nether, End, and other normal dimensions.
-* **Compatible with Existing Worlds** — v0.9 preserves the fail-closed migration safeguards from v0.4 so old extended sections are not silently discarded. Back up important worlds before upgrading.
+* **Compatible with Existing Worlds** — Endless 0.9.2 validates existing dense-world layouts before load and fails closed when migration safety cannot be proven, preventing silent loss of extended sections. Back up important worlds before upgrading.
 * **Multi-version loaders** - Minecraft 1.20.1 is supported on Fabric/Forge, Minecraft 1.21.1 on Fabric/NeoForge, and Minecraft 26.1.2 on NeoForge.
 * **Persistent High-Y Blocks** — Sparse pages use dedicated compressed storage outside vanilla Anvil section serialization, so blocks far above or below vanilla limits survive save and reload.
 * **Blocks, Fluids and Block Entities** — Normal block access, fluids, block entities, scheduled ticks and block updates work throughout the configured range.
@@ -17,7 +17,7 @@ Endless lets you build higher and dig deeper than ever before. In v0.9, you can 
 * **Server-Authoritative Multiplayer** — Servers synchronize the configured logical range and dense layout before sparse world data is used. Extended worlds require matching Endless versions on the client and server.
 * **Waystones Compatibility** - Development/runtime compatibility coverage is included where matching Waystones artifacts are available; the 1.20.1 sparse placement path is explicitly exercised by the live matrix.
 * **Create Compatibility** - Targeted development-runtime gates cover Create 6.0.8 on Forge 1.20.1 and Create 6.0.11 on NeoForge 1.21.1: sparse schematic rails, saved kinetic identities, and connected legacy-network migration with stress/capacity checks. This is not blanket support for every Create/Flywheel behavior.
-* **Embeddium and Oculus (new in 0.9)** — Optional client support for Forge 1.20.1 with Embeddium 0.3.31 and Oculus 1.8.0, including sparse terrain, lighting, block entities, transparent sorting and mining overlays.
+* **Embeddium and Oculus** — Optional client support for Forge 1.20.1 with Embeddium 0.3.31 and Oculus 1.8.0, including sparse terrain, lighting, block entities, transparent sorting, mining overlays, and the Create 6.0.8 elevator-pulley rendering fix.
 * **Camera-Following Rendering** — The client renders a 512-block vertical window around the camera instead of allocating render chunks for the entire logical build range.
 * **Void Damage at the Boundary** — The below-world kill plane follows your configured minimum and triggers 64 blocks below it.
 
@@ -41,7 +41,7 @@ After launching the game once with Endless installed, a config file is created a
 
 ### Example: Full Height
 
-To unlock the complete v0.9 representation envelope:
+To use the complete 0.9.2 representation envelope:
 
 ```json
 {
@@ -67,15 +67,15 @@ For a large but easier-to-navigate range:
 }
 ```
 
-Because v0.9 uses sparse storage, simply widening the configured range no longer allocates a dense section array for every possible Y-level. Memory and storage grow primarily with the extended pages that actually contain data.
+Because Endless 0.9.2 uses sparse storage, widening the configured range does not allocate a dense section array for every possible Y-level. Memory and storage grow primarily with the extended pages that actually contain data.
 
 ## Existing Worlds
 
-Fresh v0.9 worlds always keep a vanilla-sized `[-64,320)` dense core internally, even when the configured logical range is millions of blocks tall.
+Fresh 0.9.2 worlds keep a vanilla-sized `[-64,320)` dense core internally, even when the configured logical range is millions of blocks tall.
 
-Worlds upgraded from older Endless versions may retain a wider historical dense core, up to the legacy-safe `[-2032,2032)` envelope, when required to preserve old Anvil data. That internal compatibility range does not widen your configured build limit.
+Existing worlds may retain a wider persisted dense core, up to `[-2032,2032)`, when required to preserve existing Anvil sections. That internal compatibility range does not widen your configured build limit.
 
-Played pre-v0.4 worlds are inspected before chunks load. If Endless cannot prove that an old layout can be migrated safely, startup fails closed instead of allowing Minecraft to silently discard sections. Back up important worlds before upgrading.
+Existing dense-layout worlds are inspected before chunks load. If Endless 0.9.2 cannot prove that a layout can be migrated safely, startup fails closed instead of allowing Minecraft to silently discard sections. Back up important worlds before upgrading.
 
 The per-dimension `data/endless_create_kinetic_ids.dat` file belongs in world backups. An unreadable or invalid existing allocator is refused rather than reset. Restore matching allocator/world data from a verified backup; deleting the allocator to bypass an error can reuse existing network identities.
 
@@ -83,10 +83,10 @@ The per-dimension `data/endless_create_kinetic_ids.dat` file belongs in world ba
 
 * **World generation** — Natural terrain still uses the generator's normal vertical range. Endless adds buildable space; it does not generate terrain millions of blocks high or deep by default.
 * **Rendering distance vertically** — The client keeps a 512-block vertical render window around the camera. Far-away sparse pages remain saved and active server-side but are rendered when the camera approaches them.
-* **Optional renderer scope (0.9.1)** — Forge 1.20.1 supports Embeddium/Oculus; Fabric 1.20.1 supports Embeddium or Sodium/Iris; Fabric 1.21.1 supports Sodium/Iris; NeoForge 1.21.1 supports Embeddium or Sodium/Iris; NeoForge 26.1.2 supports Sodium/Iris. Iris requires the prescribed Sodium version. Renderer and shader mods are optional and never bundled. Exact release pins and reproducible profiles are in the [compatibility guide](https://github.com/UpperMoon0/Endless/blob/master/docs/Embeddium-Compatibility.md). Normal and shadow passes share a 512-block vertical window; terrain beyond its edges is clipped even with a larger horizontal render distance. Targeted Complementary tests do not certify arbitrary renderer addons, shader packs, Rubidium, or moving Create contraptions.
-* **Representation envelope** — v0.9 is practically unbounded, not mathematically infinite. The supported logical range is `[-8000000, 8000000)`.
+* **Optional renderer scope (0.9.2)** — Forge 1.20.1 supports Embeddium/Oculus; Fabric 1.20.1 supports Embeddium or Sodium/Iris; Fabric 1.21.1 supports Sodium/Iris; NeoForge 1.21.1 supports Embeddium or Sodium/Iris; NeoForge 26.1.2 supports Sodium/Iris. Iris requires the prescribed Sodium version. Renderer and shader mods are optional and never bundled. Exact release pins and reproducible profiles are in the [compatibility guide](https://github.com/UpperMoon0/Endless/blob/master/docs/Embeddium-Compatibility.md). Normal and shadow passes share a 512-block vertical window; terrain beyond its edges is clipped even with a larger horizontal render distance. On Forge 1.20.1, a targeted Create 6.0.8 fix keeps elevator belts and magnets renderable when the pulley origin leaves that window. Targeted Complementary tests do not certify arbitrary renderer addons, shader packs, Rubidium, or other moving Create contraptions.
+* **Representation envelope** — Endless 0.9.2 is practically unbounded, not mathematically infinite. The supported logical range is `[-8000000, 8000000)`.
 * **Mod compatibility** — Mods using normal `Level`, `LevelChunk`, `BlockPos`, block entity, tick, POI, heightmap and brightness APIs can work through Endless' routing. Mods that directly pack high-Y positions with `BlockPos.asLong()`, assume `chunk.getSections()` contains every possible Y, or inspect vanilla light storage internals may retain vanilla limits in their own code.
-* **Create contraption data** — Since Endless 0.8, the mod preserves full local XYZ coordinates in both disk and spawn NBT, including the default-cap mounted Y=+2048 regression. Legacy entries remain readable, but previously truncated data cannot be recovered. Forge/NeoForge Create servers and clients must use matching Endless versions.
+* **Create contraption data** — Endless 0.9.2 preserves full local XYZ coordinates in both disk and spawn NBT, including mounted contraptions reaching local Y=+2048. Legacy entries remain readable, but previously truncated data cannot be recovered. Forge/NeoForge Create servers and clients must use matching Endless versions.
 * **Create verification scope** — Final ejector-preview pixels, all display/redstone copying and relocation workflows, other contraption assembly origins and enlarged/imported cases, packaged production launches, and complete Flywheel lighting/culling behavior are not certified by the targeted development tests.
 * **Multiplayer clients** — Sparse worlds require matching Endless versions on the client and server; vanilla clients cannot join an extended-range Endless server.
 

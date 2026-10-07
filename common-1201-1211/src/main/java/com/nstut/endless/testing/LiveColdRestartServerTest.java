@@ -205,6 +205,13 @@ public final class LiveColdRestartServerTest {
     }
     private static void prepare(ServerLevel level) {
         require(level.setBlock(glowPos(), Blocks.GLOWSTONE.defaultBlockState(), 3), "cold-restart glowstone write failed");
+        // Vanilla tickChunk freezes exposed water at the motion-blocking surface.
+        // Sparse altitude makes this source cold even in otherwise warm biomes.
+        // Enclose it so weather/flow cannot change the persistence oracle while
+        // the real client joins, saves, disconnects and restarts the server.
+        for (var direction : net.minecraft.core.Direction.values())
+            require(level.setBlock(waterPos().relative(direction), Blocks.STONE.defaultBlockState(), 3),
+                "cold-restart water enclosure write failed");
         require(level.setBlock(waterPos(), Blocks.WATER.defaultBlockState(), 3), "cold-restart water write failed");
         require(level.setBlock(chestPos(), Blocks.CHEST.defaultBlockState(), 3), "cold-restart chest write failed");
         require(level.setBlock(powerPos(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3), "cold-restart redstone source write failed");
@@ -217,7 +224,11 @@ public final class LiveColdRestartServerTest {
 
     private static void verify(ServerLevel level) {
         require(level.getBlockState(glowPos()).is(Blocks.GLOWSTONE), "cold-restart sparse block missing");
-        require(level.getFluidState(waterPos()).isSource(), "cold-restart sparse fluid missing");
+        for (var direction : net.minecraft.core.Direction.values())
+            require(level.getBlockState(waterPos().relative(direction)).is(Blocks.STONE),
+                "cold-restart water enclosure missing direction=" + direction);
+        require(level.getFluidState(waterPos()).isSource(),
+            "cold-restart sparse fluid missing state=" + level.getBlockState(waterPos()));
         require(level.getBlockState(chestPos()).is(Blocks.CHEST) && level.getBlockEntity(chestPos()) != null,
             "cold-restart sparse block entity missing");
         require(level.getBlockState(powerPos()).is(Blocks.REDSTONE_BLOCK), "cold-restart redstone source missing");

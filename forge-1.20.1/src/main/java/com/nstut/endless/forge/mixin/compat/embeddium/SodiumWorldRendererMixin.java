@@ -13,8 +13,59 @@ import org.spongepowered.asm.mixin.injection.*;
 
 @Pseudo
 @Mixin(targets = "me.jellysquid.mods.sodium.client.render.SodiumWorldRenderer", remap = false)
-public abstract class SodiumWorldRendererMixin implements EmbeddiumSnapshotInvalidation {
+public abstract class SodiumWorldRendererMixin implements EmbeddiumSnapshotInvalidation, com.nstut.endless.forge.compat.LoadedColumnBlockEntities {
+    @Shadow @Final private static boolean ENABLE_BLOCKENTITY_CULLING;
+    @Shadow private boolean blockEntityRequestedOutline;
     @Shadow private RenderSectionManager renderSectionManager;
+    @Shadow private me.jellysquid.mods.sodium.client.render.viewport.Viewport currentViewport;
+    @Shadow private static void renderBlockEntity(com.mojang.blaze3d.vertex.PoseStack poses, net.minecraft.client.renderer.RenderBuffers buffers,
+        it.unimi.dsi.fastutil.longs.Long2ObjectMap<java.util.SortedSet<net.minecraft.server.level.BlockDestructionProgress>> destruction,
+        float tick, net.minecraft.client.renderer.MultiBufferSource.BufferSource source, double x, double y, double z,
+        net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher dispatcher, net.minecraft.world.level.block.entity.BlockEntity entity) { throw new AssertionError(); }
+
+    @Inject(method = "renderGlobalBlockEntities", at = @At("RETURN"))
+    private void endless$renderMissingGlobals(com.mojang.blaze3d.vertex.PoseStack poses, net.minecraft.client.renderer.RenderBuffers buffers,
+        it.unimi.dsi.fastutil.longs.Long2ObjectMap<java.util.SortedSet<net.minecraft.server.level.BlockDestructionProgress>> destruction,
+        float tick, net.minecraft.client.renderer.MultiBufferSource.BufferSource source, double x, double y, double z,
+        net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher dispatcher, CallbackInfo ci) {
+        if (!EndlessLogicalHeights.isActive() || renderSectionManager == null || currentViewport == null) return;
+        // Compiled native globals already used the normal path above. Include
+        // uncompiled origins inside the window as well as outside origins.
+        var nativeGlobals = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<net.minecraft.world.level.block.entity.BlockEntity, Boolean>());
+        for (var section : renderSectionManager.getSectionsWithGlobalEntities()) {
+            var entities = section.getGlobalBlockEntities();
+            if (entities != null) java.util.Collections.addAll(nativeGlobals, entities);
+        }
+        endless$forEachGlobalBlockEntity(new com.nstut.endless.vertical.RecoveredGlobalRenderer<>(ENABLE_BLOCKENTITY_CULLING, nativeGlobals,
+            new com.nstut.endless.vertical.RecoveredGlobalRenderer.Target<net.minecraft.world.level.block.entity.BlockEntity>() {
+                @Override public boolean eligible(net.minecraft.world.level.block.entity.BlockEntity entity) {
+                    if (entity.isRemoved()) return false;
+                    var renderer = dispatcher.getRenderer(entity);
+                    return renderer != null && renderer.shouldRenderOffScreen(entity);
+                }
+                @Override public boolean visible(net.minecraft.world.level.block.entity.BlockEntity entity) {
+                    return currentViewport.isBoxVisible(entity.getRenderBoundingBox());
+                }
+                @Override public boolean outlined(net.minecraft.world.level.block.entity.BlockEntity entity) {
+                    return entity.hasCustomOutlineRendering(Minecraft.getInstance().player);
+                }
+                @Override public void requestOutline() { blockEntityRequestedOutline = true; }
+                @Override public void draw(net.minecraft.world.level.block.entity.BlockEntity entity) {
+                    renderBlockEntity(poses, buffers, destruction, tick, source, x, y, z, dispatcher, entity);
+                }
+            }));
+    }
+
+    @Override public void endless$trackBlockEntity(net.minecraft.world.level.block.entity.BlockEntity entity) {
+        if (EndlessLogicalHeights.isActive() && entity.getLevel() == Minecraft.getInstance().level && renderSectionManager != null)
+            ((com.nstut.endless.forge.compat.LoadedColumnBlockEntities) renderSectionManager).endless$trackBlockEntity(entity);
+    }
+    @Override public void endless$invalidateGlobalRenderers() {
+        if (renderSectionManager != null) ((com.nstut.endless.forge.compat.LoadedColumnBlockEntities) renderSectionManager).endless$invalidateGlobalRenderers();
+    }
+    @Override public void endless$forEachGlobalBlockEntity(java.util.function.Consumer<net.minecraft.world.level.block.entity.BlockEntity> consumer) {
+        if (renderSectionManager != null) ((com.nstut.endless.forge.compat.LoadedColumnBlockEntities) renderSectionManager).endless$forEachGlobalBlockEntity(consumer);
+    }
 
     @Override public void endless$invalidateSkyColumns(int x, int z) {
         if (renderSectionManager != null) ((EmbeddiumSnapshotInvalidation) renderSectionManager).endless$invalidateSkyColumns(x, z);

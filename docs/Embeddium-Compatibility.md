@@ -1,6 +1,6 @@
 # Optional renderer compatibility
 
-Endless 0.9.1 extends the client adapter across every existing Endless release target. Renderer mods remain optional, compile-only dependencies and are never bundled. Availability was checked against the upstream release artifacts on 2026-10-06; a Minecraft version supported by a renderer does not by itself mean Endless ships that Minecraft version.
+Endless 0.9.2 extends the client adapter across every existing Endless release target. Renderer mods remain optional, compile-only dependencies and are never bundled. Availability was checked against the upstream release artifacts on 2026-10-06; a Minecraft version supported by a renderer does not by itself mean Endless ships that Minecraft version.
 
 | Endless target | Renderer profile | Shader profile |
 | --- | --- | --- |
@@ -34,7 +34,19 @@ A page arriving outside the render window can still change sky exposure below it
 
 Both the initial meshing task and subsequent transparency sorting subtract the section origin in double precision before converting to float. Subsequent tasks retain the manager's immutable double camera snapshot; they never read a moving camera on the worker thread. Embeddium's replacement block-entity renderer also uses the same full-position destruction keys as Endless's LevelRenderer, including cleanup and simultaneous vanilla packed-Y aliases.
 
+Forge 1.20.1 also has a targeted Create 6.0.8 elevator-pulley correction. When the pulley origin leaves Endless's bounded terrain window, its off-screen/global renderer remains indexed from the loaded column and the dispatcher measures the normal render-distance cutoff from the elevator rope bounds instead of only the pulley block origin. Recovered globals retain Embeddium's culling-disable behavior, custom-outline bookkeeping and identity deduplication. Rebuild notifications that originate off the render thread are not allowed to mutate the renderer index until Embeddium dispatches the queued rebuild on its owning render thread.
+
 ## Repeatable hidden framebuffer capture
+
+Forge 1.20.1's recovered global block-entity renderers preserve Embeddium's
+`ENABLE_BLOCKENTITY_CULLING` predicate and custom-outline bookkeeping. A
+render-manager-owned identity index seeds from loaded column maps once on
+arrival and updates from block-entity lifecycle/state/NBT changes and affected
+section rebuilds. Renderer resource reload explicitly reclassifies known entities;
+column unload removes their references. Normal render passes classify only
+pending changes and visit indexed global candidates. They do not walk loaded
+chunk maps or scan the logical height. The native smoke fixture exercises candidate
+registration, removal, re-add, column unload and reload invalidation.
 
 The multi-version runner builds the development fixture and generates its own uniquely named world. It requires JDK 21 for Gradle; the 26.1.2 toolchain automatically provisions JDK 25. Linux additionally needs Xvfb/Mesa. Use one renderer profile at a time:
 
@@ -62,7 +74,7 @@ Fabric preview launches explicitly add Iris's unchanged bundled JCPP, GLSL trans
 
 Five fresh generated-world suites passed with Complementary Reimagined r5.9.3 active: eight captures each on Forge 1.20.1/Oculus, Fabric 1.20.1/Iris, Fabric 1.21.1/Iris, NeoForge 1.21.1/Iris and NeoForge 26.1.2/Iris, for 40 active-shader captures. The suite includes negative and million heights, a 120-frame dense-edit workload, Nether/Overworld transitions, rebasing, renderer reload and sparse palette/light/block-entity edits. Positive million-height frames were visually inspected. NeoForge 1.21.1 Sodium 0.8 also passed all eight baseline captures using the normal upstream bootstrap installation.
 
-These are local development results. CI separately runs 14 pinned renderer/shader-loader profiles with shaders disabled, requiring clean exact-head receipts for eight captures each. Normal packages additionally check client-only optional registration, registered Fabric production refmaps and exclusion of renderer, shader and preview classes. Follow the current [pull request checks](https://github.com/UpperMoon0/Endless/pull/22/checks) for exact-head CI status. The optional Sulfur Caves uniform emitted warnings in Complementary on 26.1.2; its Iris pipeline stayed active and the fixture suite passed. These fixtures do not certify arbitrary shader packs or renderer addons.
+These are local development results. CI separately runs 14 pinned renderer/shader-loader profiles with shaders disabled, requiring clean exact-head receipts for eight captures each. Normal packages additionally check client-only optional registration, registered Fabric production refmaps and exclusion of renderer, shader and preview classes. Use [GitHub Actions](https://github.com/UpperMoon0/Endless/actions) for exact-head CI status. The optional Sulfur Caves uniform emitted warnings in Complementary on 26.1.2; its Iris pipeline stayed active and the fixture suite passed. These fixtures do not certify arbitrary shader packs or renderer addons.
 
 ## Forge packaged preview
 

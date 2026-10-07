@@ -27,7 +27,7 @@ drawing. A lifecycle index classifies entities on column arrival, entity changes
 affected section rebuilds and renderer reload. Column unload drops references;
 steady main/shadow render passes visit only global candidates, not every loaded
 block entity across sparse pages. The index belongs to the render manager and is
-discarded with it on renderer/world replacement.
+discarded with it on renderer/world replacement. Off-thread Embeddium rebuild notifications wait for native render-thread dispatch before mutating either renderer-owned index.
 
 Regression coverage includes culling disabled/enabled, outline-before-draw and
 native identity deduplication, plus a 20,000 ordinary-entity scaling fixture,
@@ -37,7 +37,7 @@ hooks and candidate removal/re-add at each fixture height.
 
 Build: Java 21 runs Gradle; emitted Minecraft code targets Java 17.
 Validation receipts and before/after native images are in the trailer project's
-evidence/revision13-* files. Common suite: 45 passing tests, including five
+evidence/revision13-* files. Common suite: 54 passing tests, including five
 distance regression tests. The final clean client artifact also passed a native
 passenger ride from walking Y=304 across Y=320 to Y=336 and Y=512. Native
 framebuffer views confirm the belt and magnet meet the cabin roof at the lower

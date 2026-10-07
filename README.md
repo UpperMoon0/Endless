@@ -1,6 +1,6 @@
 # Endless
 
-Endless provides sparse, practically unbounded vertical building space for Minecraft 1.20.1 (Fabric/Forge), 1.21.1 (Fabric/NeoForge), and 26.1.2 (NeoForge) without allocating a dense chunk column for the entire height.
+Endless 0.9.2 provides sparse, practically unbounded vertical building space for Minecraft 1.20.1 (Fabric/Forge), 1.21.1 (Fabric/NeoForge), and 26.1.2 (NeoForge) without allocating a dense chunk column for the entire height.
 
 **Supported configuration envelope:** Y=-8,000,000 through Y=7,999,999.
 
@@ -16,7 +16,7 @@ Vanilla Minecraft cannot safely make its normal `LevelChunkSection[]` millions o
 
 - `config/endless.json` defines the **logical build range** used by placement, commands, teleport validity, AI limits, rendering queries, and sparse routing. Any section-aligned subrange of `[-8000000, 8000000)` is supported.
 - A fresh world keeps the **dense core** at vanilla `[-64, 320)`. Widening the logical config does not widen `LevelChunkSection[]`.
-- Existing/migrated worlds may retain a wider historical dense core (up to the legacy-safe `[-2032, 2032)` envelope) solely so old Anvil sections are never discarded. That internal range does **not** widen the configured build limit.
+- Existing worlds may retain a wider persisted dense core (up to `[-2032, 2032)`) when required to preserve Anvil sections. That internal range does **not** widen the configured build limit.
 - Coordinates outside the dense core but inside the configured logical range are stored in **512-block sparse pages**. Empty height costs no section-array memory.
 - Sparse pages use dedicated compressed NBT storage under each dimension instead of vanilla `ChunkSerializer`, so high section Y is never narrowed to a signed byte.
 - High-Y `BlockPos` network fields use an Endless protocol extension. Positions that fit vanilla's packed envelope retain the normal vanilla wire encoding.
@@ -42,7 +42,7 @@ The ±8,000,000 representation envelope is deliberate. It stays inside Minecraft
 - **Waystones Compatibility** — Waystones 1.20.1 placement uses the configured logical ceiling and high-Y Waystone block entities/positions travel through the extended storage/network path.
 - **Create Compatibility** — Targeted compatibility and development-runtime regression gates for schematic rails and sparse kinetic networks on Forge 1.20.1 / Create 6.0.8 and NeoForge 1.21.1 / Create 6.0.11; this is not a blanket certification of Create or Flywheel.
 - **Camera-Following Rendering** — A 512-block vertical render window follows the player instead of allocating GPU render chunks for millions of blocks.
-- **Fail-Closed Legacy Migration** — The v0.4 migration gate is preserved for old dense-world data.
+- **Fail-Closed Existing-World Migration** — Existing dense-world layouts are validated before load; ambiguous or unsafe layouts stop startup instead of risking silent section loss.
 
 ## Configuration
 
@@ -63,15 +63,15 @@ The ±8,000,000 representation envelope is deliberate. It stays inside Minecraft
 - Valid million-scale values are preserved across launch; they are not clamped back to the old ±2032 dense envelope.
 - Restart after changing the file. The server's configured logical range is authoritative for multiplayer clients.
 
-Changing a logical range can narrow or widen where players, commands, and compatible mods may operate. It does not delete sparse page files outside the newly narrowed range. Existing historical dense sections are also retained internally for Anvil safety, but are inaccessible whenever they lie outside the current configured logical range.
+Changing a logical range can narrow or widen where players, commands, and compatible mods may operate. It does not delete sparse page files outside the newly narrowed range. Existing persisted dense sections are also retained internally for Anvil safety, but are inaccessible whenever they lie outside the current configured logical range.
 
 ### Existing worlds
 
-Fresh worlds keep a vanilla `[-64,320)` dense core. A world upgraded from an older Endless version may have a wider persisted dense core because old releases stored extended sections directly in vanilla Anvil chunks. That persisted dense layout never shrinks automatically.
+Fresh 0.9.2 worlds keep a vanilla `[-64,320)` dense core. Existing worlds may have a wider persisted dense core when they already contain extended Anvil sections. That persisted dense layout never shrinks automatically.
 
-Endless retains v0.4's fail-closed migration rules. Played pre-v0.4 worlds are inspected before any chunk loads. Ambiguous historical section layouts, meaningful data in unsafe guard sections, conflicting heightmap packing, or untrusted migration inputs stop startup instead of allowing vanilla to silently discard sections.
+Endless 0.9.2 uses fail-closed migration for existing dense-world data. Before chunks load, ambiguous section layouts, meaningful data in unsafe guard sections, conflicting heightmap packing, or untrusted migration inputs stop startup instead of allowing vanilla to silently discard sections.
 
-Back up important worlds before upgrading. Sparse pages do not reinterpret legacy Anvil data; they are a storage layer outside the persisted dense core.
+Back up important worlds before upgrading to 0.9.2. Sparse pages do not reinterpret existing Anvil data; they are a storage layer outside the persisted dense core.
 
 ## Compatibility notes
 
@@ -83,7 +83,7 @@ Waystones 1.20.1 is explicitly covered: its placement code normally treats `Leve
 
 Create compatibility targets Forge 1.20.1 (Create 6.0.8) and NeoForge 1.21.1 (Create 6.0.11). The development-runtime gates exercise schematic rail placement, distinct sparse generator identities, fresh-JVM persistence against an independent checkpoint, and legacy-NBT reconstruction of two connected generators with a real stress consumer in root-first, follower-first, and late-follower load orders. Migration preserves Create's unloaded stress/capacity/member accounting. Interrupted saves reuse the allocator-owned root network already restored by a follower. Legacy followers whose full Source chain is unavailable receive separate persistent provisional identities and save `EndlessLegacyNetworkId` until they can rejoin their exact root; provisional identities do not propagate to neighbours. Generator and provisional allocations remain distinct even at the same full position. The runtime gate covers two aliased unresolved branches in both admission orders, pending-NBT reconstruction, and later root reconciliation. Sparse block-entity packets retain the native client callback, refreshing Create's cached Flywheel rotation. Both Create client gates check 600 shaft visuals across the dense boundary and at positive/negative million-scale Y through start, reversal, stop, and restart.
 
-Each dimension's `data/endless_create_kinetic_ids.dat` is part of the world backup. Existing unreadable or invalid allocator data stops allocation instead of silently starting a new namespace. Namespace version 3 uses packed X=30,000,000, outside vanilla's legal horizontal bounds at every Y. Unsafe unversioned and version-2 allocator files from earlier v0.7 drafts are refused unchanged (version 2 did not reliably distinguish provisional followers from generator ownership) and require the matching draft build or explicit offline migration. Restore the matching allocator and world state from a verified backup; do not delete or replace that file to suppress an error. A genuinely absent allocator is initialized for a new namespace, so deleting an established allocator is not a supported recovery procedure.
+Each dimension's `data/endless_create_kinetic_ids.dat` is part of the world backup. Existing unreadable or invalid allocator data stops allocation instead of silently starting a new namespace. Namespace version 3 uses packed X=30,000,000, outside vanilla's legal horizontal bounds at every Y. Unsafe unversioned and version-2 allocator files are refused unchanged because those formats do not reliably distinguish provisional followers from generator ownership; they require an explicit offline migration or the build that created them. Restore the matching allocator and world state from a verified backup; do not delete or replace that file to suppress an error. A genuinely absent allocator is initialized for a new namespace, so deleting an established allocator is not a supported recovery procedure.
 
 Display-link/redstone-link full-position persistence, arm interaction initialization, ejector selection, pulley limits, and elevator contact discovery use exact coordinates or the logical build envelope. The live gates exercise real APIs across the dense floor/ceiling, positive/negative sparse pages, packed-Y boundaries, and million-scale positions. Bearing, piston, and pulley fixtures reconstruct the moving entity, reattach it to its native controller, resume motion, and disassemble that restored entity, including mounted chest contents and drill actors. Separate phase-A world-saved machines must survive the fresh phase-B JVM. Elevator discovery searches occupied pages, including persisted pages, rather than scanning millions of empty cells. Train node packets preserve full doubled Y and pixel offsets, assembly-error NBT retains exact highlight positions, and chorus-potato destinations use logical bounds. Mining cracks use exact renderer-local coordinates, including Create's extra structure positions and their removal lifecycle.
 
@@ -97,7 +97,7 @@ Initial and subsequent transparent mesh sorting preserve fractional camera movem
 
 ### Create contraption coordinates (#14)
 
-Since Endless 0.8, the mod extends Create's paletted block entries with versioned full XYZ local coordinates for both disk and entity-spawn NBT. Native block states, block-entity data, and update tags remain attached to their original entries. Existing entries without the extension keep Create's legacy interpretation; malformed extended coordinates are refused. Previously truncated data cannot be reconstructed automatically.
+Endless 0.9.2 stores versioned full XYZ local coordinates in Create's paletted block entries for both disk and entity-spawn NBT. Native block states, block-entity data, and update tags remain attached to their original entries. Existing entries without the extension keep Create's legacy interpretation; malformed extended coordinates are refused. Previously truncated data cannot be reconstructed automatically.
 
 The default-cap regression builds real mounted contraptions with 2,047 and 2,048 payload blocks and checks every position/state after both disk and spawn serialization. The latter includes the anchor and local Y=+2048, which previously became -2048. Forge 1.20.1 and NeoForge 1.21.1 require matching clients with the current handshake (Forge protocol 6 / NeoForge protocol 7) because older clients cannot read the exact spawn keys and extended train nodes. These targeted tests do not certify every Create/Flywheel behavior, arbitrary addon, imported legacy contraption, passenger/collision workflow, or complete lighting/culling lifecycle.
 

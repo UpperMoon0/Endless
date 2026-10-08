@@ -368,6 +368,11 @@ public final class LiveHighYServerTest {
         require(level.getBrightness(LightLayer.BLOCK, inwardLight) > 0,
             edge + " block light did not propagate toward the logical interior");
 
+        NativeSectionLightChecks.run(level,new BlockPos((glowstone.getX()&~15)+15,
+            upper?glowstone.getY()-48:glowstone.getY()+48,glowstone.getZ()+96),false);
+        if(!upper && com.nstut.endless.heights.EndlessLogicalHeights.contains(-65))
+            NativeSectionLightChecks.run(level,new BlockPos(glowstone.getX()+96,-63,glowstone.getZ()+96),true);
+
         // Removing power schedules the vanilla lamp's four-tick turn-off.
         require(level.removeBlock(power, false), edge + " redstone source removal failed");
     }

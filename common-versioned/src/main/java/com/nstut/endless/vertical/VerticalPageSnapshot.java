@@ -38,6 +38,13 @@ public record VerticalPageSnapshot(
         return new VerticalPageSnapshot(pos.chunkX(), pos.pageY(), pos.chunkZ(), revision, sections);
     }
 
+    /** Size without cloning payload arrays; used only for bounded immutable caching. */
+    public int payloadBytes() {
+        int bytes=0;
+        for(SectionData section:sections) bytes+=section.payload.length;
+        return bytes;
+    }
+
     public VerticalPagePos pos() {
         return new VerticalPagePos(chunkX, pageY, chunkZ);
     }

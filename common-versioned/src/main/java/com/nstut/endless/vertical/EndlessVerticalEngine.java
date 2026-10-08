@@ -22,6 +22,12 @@ public final class EndlessVerticalEngine {
             && EndlessLogicalHeights.isSparseBuildHeight(y);
     }
 
+    public static void flushBudgeted(int pagesPerWorld) {
+        ArrayList<MinecraftVerticalWorld> worlds;
+        synchronized(EndlessVerticalEngine.class) {worlds=new ArrayList<>(WORLDS.values());}
+        for(var world:worlds) world.flushDirtyBudgeted(pagesPerWorld);
+    }
+
     public static void flushAll() {
         ArrayList<MinecraftVerticalWorld> worlds;
         synchronized (EndlessVerticalEngine.class) {

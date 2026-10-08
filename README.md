@@ -24,6 +24,8 @@ Vanilla Minecraft cannot safely make its normal `LevelChunkSection[]` millions o
 - The client receives only sparse pages near its current vertical window. The render grid follows the camera and stays 32 sections / 512 blocks tall.
 - Sparse heightmaps, high-Y block/fluid access, block entities, POIs, scheduled ticks, neighbor updates, and page-aware lighting are integrated with the normal Level APIs.
 - Horizontal chunk unload evicts its sparse pages after flushing dirty data, so visited height does not accumulate forever in memory.
+- Block light is cached by full-coordinate section (512 layers per world); solves use copied palettes outside the sparse storage monitor. Immutable encoded snapshots reuse a 16 MiB / 256-page cache. Initial page delivery is queued fairly (64 pages per tick total, eight per player), and periodic saves process four dirty pages per world every ten ticks. Explicit saves, unload and shutdown still flush pending writes.
+- Terrain mods can install privately generated sparse block/biome pages through `MinecraftVerticalWorld.installGeneratedPage`. The API refuses existing or saved pages; callers transfer ownership and must register block entities and scheduled ticks through their native lifecycle.
 
 The ±8,000,000 representation envelope is deliberate. It stays inside Minecraft 1.20.1's signed 20-bit `SectionPos` Y envelope, allowing POI and several section-keyed vanilla systems to remain correct while Endless replaces the much narrower packed `BlockPos` and dense-section assumptions.
 
@@ -104,7 +106,7 @@ The default-cap regression builds real mounted contraptions with 2,047 and 2,048
 
 ## Limitations
 
-- **World generation** remains in the normal generator range. Endless adds buildable sparse space; it does not generate terrain millions of blocks high by default.
+- **World generation** remains in the normal generator range by default. Terrain mods can populate sparse pages through the bulk admission API; Endless does not generate extended terrain automatically. Raising an empty logical limit avoids dense allocation, but generating, lighting, rendering, sending and saving actual populated sections still costs work.
 - **Rendering** covers a 512-block vertical window around the camera. Far-away vertical pages remain saved and active server-side but are not rendered until the camera approaches them.
 - **Representation envelope** is practical rather than mathematical infinity: `[-8,000,000, 8,000,000)`, chosen to preserve vanilla `SectionPos`-keyed systems.
 

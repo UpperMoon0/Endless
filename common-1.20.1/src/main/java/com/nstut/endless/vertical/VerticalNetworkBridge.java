@@ -21,9 +21,11 @@ import java.util.UUID;
 /** Loader-neutral server-side vertical page synchronization. */
 public final class VerticalNetworkBridge {
     private static final int PAGE_RADIUS = 1;
-    private static final int FLUSH_INTERVAL_TICKS = 100;
+    private static final int FLUSH_INTERVAL_TICKS = 10;
 
     private static final Map<UUID, PlayerWindow> PLAYER_WINDOWS = new HashMap<>();
+    private record PendingPage(UUID player,String dimension,VerticalPagePos pos) {}
+    private static final FairWorkQueue<UUID,PendingPage,PendingPage> PENDING_PAGES=new FairWorkQueue<>();
     private static PageSender sender;
     private static int ticks;
     private static boolean denseInvariantChecked;
@@ -40,7 +42,11 @@ public final class VerticalNetworkBridge {
         }
         int centerPageY = VerticalPageLayout.pageYForBlockY(player.getBlockY());
         for (int pageY = centerPageY - PAGE_RADIUS; pageY <= centerPageY + PAGE_RADIUS; pageY++) {
-            sendPage(player, chunk, pageY);
+            var pos=new VerticalPagePos(chunk.getPos().x,pageY,chunk.getPos().z);
+            if(EndlessVerticalEngine.world(player.level()).pageExists(pos)) {
+                var pending=new PendingPage(player.getUUID(),player.level().dimension().location().toString(),pos);
+                PENDING_PAGES.offer(player.getUUID(),pending,pending);
+            }
         }
     }
 
@@ -60,7 +66,7 @@ public final class VerticalNetworkBridge {
 
         if (++ticks >= FLUSH_INTERVAL_TICKS) {
             ticks = 0;
-            EndlessVerticalEngine.flushAll();
+            EndlessVerticalEngine.flushBudgeted(4);
         }
 
         int viewDistance = server.getPlayerList().getViewDistance();
@@ -85,12 +91,24 @@ public final class VerticalNetworkBridge {
                 }
             }
         }
+        PENDING_PAGES.removeOwners(uuid->server.getPlayerList().getPlayer(uuid)==null);
+        PENDING_PAGES.drain(64,8,pending->{
+            var player=server.getPlayerList().getPlayer(pending.player);
+            if(player==null || !player.level().dimension().location().toString().equals(pending.dimension)) return;
+            var pos=pending.pos;var center=player.chunkPosition();
+            if(Math.abs((long)pos.chunkX()-center.x)>viewDistance+1 || Math.abs((long)pos.chunkZ()-center.z)>viewDistance+1
+                || Math.abs((long)pos.pageY()-VerticalPageLayout.pageYForBlockY(player.getBlockY()))>PAGE_RADIUS) return;
+            var chunk=player.serverLevel().getChunkSource().getChunkNow(pos.chunkX(),pos.chunkZ());
+            if(chunk!=null) sendPage(player,chunk,pos.pageY());
+        });
+        // Player edits retain the existing immediate update path.
         SparseChunkUpdateQueue.flush();
     }
 
     public static synchronized void shutdown() {
         EndlessVerticalEngine.closeAll();
         PLAYER_WINDOWS.clear();
+        PENDING_PAGES.clear();
         SparseChunkUpdateQueue.clear();
         // The sender is loader-global process state, not server-instance state.
         // Clearing it here breaks the second integrated-server session in the

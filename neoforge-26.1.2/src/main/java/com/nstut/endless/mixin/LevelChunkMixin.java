@@ -21,6 +21,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(LevelChunk.class)
 public abstract class LevelChunkMixin {
 
+    // ThreadedLevelLightEngine queues checkBlock; invalidate immediately after a dense write.
+    @Inject(method="setBlockState",at=@At("RETURN"))
+    private void endless$invalidateDenseLight(BlockPos pos,BlockState state,int flags,CallbackInfoReturnable<BlockState> cir) {
+        Level level=((LevelChunk)(Object)this).getLevel();
+        if(com.nstut.endless.heights.EndlessLogicalHeights.isActive()
+            && !EndlessVerticalEngine.isExtendedY(level,pos.getY()) && cir.getReturnValue()!=null)
+            EndlessVerticalEngine.world(level).invalidateLighting(pos);
+    }
+
     @Invoker("updateBlockEntityTicker")
     protected abstract void endless$updateBlockEntityTicker(BlockEntity blockEntity);
 

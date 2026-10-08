@@ -4,6 +4,8 @@ import com.nstut.endless.heights.EndlessLogicalHeights;
 import com.nstut.endless.vertical.EndlessLayerLightEventListener;
 import com.nstut.endless.vertical.EndlessVerticalEngine;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelHeightAccessor;
 import net.minecraft.world.level.LightLayer;
@@ -45,4 +47,16 @@ public abstract class LevelLightEngineMixin {
         int block = EndlessVerticalEngine.world(level).getBrightness(LightLayer.BLOCK, pos);
         cir.setReturnValue(Math.max(block, sky));
     }
+    @Inject(method="checkBlock",at=@At("HEAD"))
+    private void endless$invalidateBlockLight(BlockPos pos,CallbackInfo ci) {
+        if(EndlessLogicalHeights.isActive() && levelHeightAccessor instanceof Level level)
+            EndlessVerticalEngine.world(level).invalidateLighting(pos);
+    }
+
+    @Inject(method="updateSectionStatus(Lnet/minecraft/core/SectionPos;Z)V",at=@At("HEAD"))
+    private void endless$invalidateSectionLight(SectionPos pos,boolean empty,CallbackInfo ci) {
+        if(EndlessLogicalHeights.isActive() && levelHeightAccessor instanceof Level level)
+            EndlessVerticalEngine.world(level).invalidateLightingSection(pos);
+    }
+
 }

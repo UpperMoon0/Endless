@@ -1,6 +1,6 @@
 # Endless
 
-Endless 0.9.2 provides sparse, practically unbounded vertical building space for Minecraft 1.20.1 (Fabric/Forge), 1.21.1 (Fabric/NeoForge), and 26.1.2 (NeoForge) without allocating a dense chunk column for the entire height.
+Endless 0.9.3 provides sparse, practically unbounded vertical building space for Minecraft 1.20.1 (Fabric/Forge), 1.21.1 (Fabric/NeoForge), and 26.1.2 (NeoForge) without allocating a dense chunk column for the entire height.
 
 **Supported configuration envelope:** Y=-8,000,000 through Y=7,999,999.
 
@@ -16,6 +16,7 @@ Vanilla Minecraft cannot safely make its normal `LevelChunkSection[]` millions o
 
 - `config/endless.json` defines the **logical build range** used by placement, commands, teleport validity, AI limits, rendering queries, and sparse routing. Any section-aligned subrange of `[-8000000, 8000000)` is supported.
 - A fresh world keeps the **dense core** at vanilla `[-64, 320)`. Widening the logical config does not widen `LevelChunkSection[]`.
+- Void fog fades at the configured logical floor in active sparse worlds, including air and water below Y=-64. Its vanilla colors, status effects and fade remain intact; legacy/inactive worlds keep their native floor. Terrain and biome mods do not need a separate void-fog patch.
 - Existing worlds may retain a wider persisted dense core (up to `[-2032, 2032)`) when required to preserve Anvil sections. That internal range does **not** widen the configured build limit.
 - Coordinates outside the dense core but inside the configured logical range are stored in **512-block sparse pages**. Empty height costs no section-array memory.
 - Sparse pages use dedicated compressed NBT storage under each dimension instead of vanilla `ChunkSerializer`, so high section Y is never narrowed to a signed byte.
@@ -67,11 +68,11 @@ Changing a logical range can narrow or widen where players, commands, and compat
 
 ### Existing worlds
 
-Fresh 0.9.2 worlds keep a vanilla `[-64,320)` dense core. Existing worlds may have a wider persisted dense core when they already contain extended Anvil sections. That persisted dense layout never shrinks automatically.
+Fresh 0.9.3 worlds keep a vanilla `[-64,320)` dense core. Existing worlds may have a wider persisted dense core when they already contain extended Anvil sections. That persisted dense layout never shrinks automatically.
 
-Endless 0.9.2 uses fail-closed migration for existing dense-world data. Before chunks load, ambiguous section layouts, meaningful data in unsafe guard sections, conflicting heightmap packing, or untrusted migration inputs stop startup instead of allowing vanilla to silently discard sections.
+Endless 0.9.3 uses fail-closed migration for existing dense-world data. Before chunks load, ambiguous section layouts, meaningful data in unsafe guard sections, conflicting heightmap packing, or untrusted migration inputs stop startup instead of allowing vanilla to silently discard sections.
 
-Back up important worlds before upgrading to 0.9.2. Sparse pages do not reinterpret existing Anvil data; they are a storage layer outside the persisted dense core.
+Back up important worlds before upgrading to 0.9.3. Sparse pages do not reinterpret existing Anvil data; they are a storage layer outside the persisted dense core.
 
 ## Compatibility notes
 
@@ -89,7 +90,7 @@ Display-link/redstone-link full-position persistence, arm interaction initializa
 
 ### Embeddium, Oculus, Sodium and Iris
 
-Endless 0.9.2 expands the optional renderer adapter across all five release targets. Forge 1.20.1 supports Embeddium/Oculus; Fabric 1.20.1 supports Embeddium or Sodium/Iris; Fabric 1.21.1 supports Sodium/Iris; NeoForge 1.21.1 supports Embeddium or Sodium/Iris; NeoForge 26.1.2 supports Sodium/Iris. The supported release pins and reproducible test profiles are documented in [renderer compatibility](docs/Embeddium-Compatibility.md). Renderers are optional and never bundled. Their snapshots use the dense core or sparse pages, with a bounded terrain grid and matching block/sky light snapshots.
+Endless supports the optional renderer adapter across all five release targets. Forge 1.20.1 supports Embeddium/Oculus; Fabric 1.20.1 supports Embeddium or Sodium/Iris; Fabric 1.21.1 supports Sodium/Iris; NeoForge 1.21.1 supports Embeddium or Sodium/Iris; NeoForge 26.1.2 supports Sodium/Iris. The supported release pins and reproducible test profiles are documented in [renderer compatibility](docs/Embeddium-Compatibility.md). Renderers are optional and never bundled. Their snapshots use the dense core or sparse pages, with a bounded terrain grid and matching block/sky light snapshots.
 
 On Forge 1.20.1 with Embeddium/Oculus, the adapter also recovers Create 6.0.8 elevator-pulley global rendering when the pulley origin leaves the bounded terrain window. Elevator distance culling is measured against the rope render bounds, while recovered global block entities preserve Embeddium's native culling toggle, outline bookkeeping, and identity deduplication without scanning every loaded block entity each frame.
 
@@ -97,7 +98,7 @@ Initial and subsequent transparent mesh sorting preserve fractional camera movem
 
 ### Create contraption coordinates (#14)
 
-Endless 0.9.2 stores versioned full XYZ local coordinates in Create's paletted block entries for both disk and entity-spawn NBT. Native block states, block-entity data, and update tags remain attached to their original entries. Existing entries without the extension keep Create's legacy interpretation; malformed extended coordinates are refused. Previously truncated data cannot be reconstructed automatically.
+Endless 0.9.3 stores versioned full XYZ local coordinates in Create's paletted block entries for both disk and entity-spawn NBT. Native block states, block-entity data, and update tags remain attached to their original entries. Existing entries without the extension keep Create's legacy interpretation; malformed extended coordinates are refused. Previously truncated data cannot be reconstructed automatically.
 
 The default-cap regression builds real mounted contraptions with 2,047 and 2,048 payload blocks and checks every position/state after both disk and spawn serialization. The latter includes the anchor and local Y=+2048, which previously became -2048. Forge 1.20.1 and NeoForge 1.21.1 require matching clients with the current handshake (Forge protocol 6 / NeoForge protocol 7) because older clients cannot read the exact spawn keys and extended train nodes. These targeted tests do not certify every Create/Flywheel behavior, arbitrary addon, imported legacy contraption, passenger/collision workflow, or complete lighting/culling lifecycle.
 

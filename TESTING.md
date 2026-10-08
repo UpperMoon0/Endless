@@ -30,6 +30,19 @@ failures. Documentation-only PRs skip live boots through a narrow allowlist;
 build scripts, workflow edits, harness edits and unknown paths require the full
 matrix. Manual and release runs always require all scenarios.
 
+## Void-fog regressions
+
+`LogicalFogFloorTest` reproduces the dense-floor blackout at Y=-448 and verifies
+the configured logical boundary, its existing 32-block fade, a vanilla-range
+control, inactive legacy worlds with stale extended configuration, and narrowed
+positive-height ranges. It checks both the 1.20/1.21 visibility calculation and
+26.1's inverse darkness calculation. The production hooks are client-only:
+`FogRenderer.setupColor`/`ClientLevel.getMinBuildHeight` on 1.20.1 and 1.21.1,
+and `renderer.fog.FogRenderer.computeFogColor`/`ClientLevel.getMinY` on 26.1.2.
+They do not select by biome or fluid and preserve native effect handling.
+These unit checks validate the floor policy and arithmetic, not framebuffer
+output. Native mixin loading and rendering remain separate live checks.
+
 ## Navigation regressions
 
 One small region tests the lower and upper logical edges, both packed-Y edges,

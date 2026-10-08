@@ -2,5 +2,5 @@ Endless 0.9.3
 
 - Fix vanilla void fog turning extended space below the dense chunk floor black. Active sparse worlds now use their configured logical floor for void darkening.
 - Apply the fix to Minecraft 1.20.1 (Fabric/Forge), 1.21.1 (Fabric/NeoForge), and 26.1.2 (NeoForge), including air and water in every biome.
-- Keep vanilla fog colors, fade distances, fluid-specific behavior and status effects; inactive/legacy worlds keep their native floor.
+- Keep vanilla fog colors, fade distances, fluid-specific behavior and status effects; inactive worlds, including legacy controls, keep their native floor.
 - Add regressions for deep space, the logical lower boundary, vanilla-range and legacy controls, and narrowed configured ranges. Dense storage and terrain generation remain unchanged.

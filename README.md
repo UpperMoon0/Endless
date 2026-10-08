@@ -16,7 +16,7 @@ Vanilla Minecraft cannot safely make its normal `LevelChunkSection[]` millions o
 
 - `config/endless.json` defines the **logical build range** used by placement, commands, teleport validity, AI limits, rendering queries, and sparse routing. Any section-aligned subrange of `[-8000000, 8000000)` is supported.
 - A fresh world keeps the **dense core** at vanilla `[-64, 320)`. Widening the logical config does not widen `LevelChunkSection[]`.
-- Void fog fades at the configured logical floor in active sparse worlds, including air and water below Y=-64. Its vanilla colors, status effects and fade remain intact; legacy/inactive worlds keep their native floor. Terrain and biome mods do not need a separate void-fog patch.
+- Void fog fades at the configured logical floor in active sparse worlds, including air and water below Y=-64. Its vanilla colors, status effects and fade remain intact; inactive worlds keep their native floor. Terrain and biome mods do not need a separate void-fog patch.
 - Existing worlds may retain a wider persisted dense core (up to `[-2032, 2032)`) when required to preserve Anvil sections. That internal range does **not** widen the configured build limit.
 - Coordinates outside the dense core but inside the configured logical range are stored in **512-block sparse pages**. Empty height costs no section-array memory.
 - Sparse pages use dedicated compressed NBT storage under each dimension instead of vanilla `ChunkSerializer`, so high section Y is never narrowed to a signed byte.

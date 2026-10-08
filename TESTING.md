@@ -43,6 +43,15 @@ They do not select by biome or fluid and preserve native effect handling.
 These unit checks validate the floor policy and arithmetic, not framebuffer
 output. Native mixin loading and rendering remain separate live checks.
 
+A local Forge 1.20.1 integration run on 2026-10-09 loaded Tidal Terror's
+independent saved deep province with Endless 0.9.3 and no downstream fog hook.
+It completed five framebuffer captures and five active-water scans, including
+Wastes at Y=-244/-380 and Cathedral seabed Y=-447. The deep framebuffer retained
+colored water instead of the void blackout. This tour uses Creative flight and
+Night Vision; it does not certify unassisted visibility, every terrain mesh,
+generic air rendering, shaders, other versions' pixels or sustained performance.
+
+
 ## Navigation regressions
 
 One small region tests the lower and upper logical edges, both packed-Y edges,

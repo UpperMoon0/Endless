@@ -11,3 +11,4 @@ Performance:
 - Add authoritative bulk generated-page admission without the snapshot encode/decode round trip; existing saved pages are refused.
 - Queue initial page delivery fairly with per-tick/per-player limits, and spread periodic sparse writes across ticks. Explicit saves and shutdown still flush all dirty data.
 - Add concurrency, eviction, fairness and native cross-section/dense-seam lighting regressions.
+- Solve skylight snapshots outside sparse storage locks too: dense halo admission can otherwise deadlock with lighting invalidation. Add native unloaded-halo regression coverage.

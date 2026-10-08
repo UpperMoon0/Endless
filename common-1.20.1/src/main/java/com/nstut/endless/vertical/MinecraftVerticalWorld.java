@@ -168,7 +168,22 @@ public final class MinecraftVerticalWorld {
     }
 
     /** Snapshot skylight with one height query per halo column, not per ray step. */
-    public synchronized DataLayer copyRenderSkyLight(SectionPos section) {
+    public DataLayer copyRenderSkyLight(SectionPos section) {
+        while (true) {
+            long epoch;
+            synchronized (this) { epoch=lightCacheRevision; }
+            DataLayer result=solveSectionSkyLight(section);
+            synchronized (this) {
+                if(epoch!=lightCacheRevision) continue;
+                for(int x=0;x<16;x++) for(int z=0;z<16;z++) for(int y=0;y<16;y++)
+                    skyLight.put(new BlockKey(section.minBlockX()+x,section.minBlockY()+y,section.minBlockZ()+z),result.get(x,y,z));
+                return result;
+            }
+        }
+    }
+
+    // Sky height queries may complete dense chunk admission. Never hold sparse storage while waiting.
+    private DataLayer solveSectionSkyLight(SectionPos section) {
         final int radius = 15;
         final int width = 16 + radius * 2;
         int minX = section.minBlockX() - radius;
@@ -214,7 +229,6 @@ public final class MinecraftVerticalWorld {
                     }
                 }
                 result.set(x, localY, z, value);
-                skyLight.put(new BlockKey(section.minBlockX() + x, worldY, section.minBlockZ() + z), value);
             }
         }
         return result;

@@ -30,6 +30,8 @@ public final class NativeSectionLightChecks {
   require(world.getBrightness(LightLayer.BLOCK,target)==expected,"removing enclosure did not relight");
   level.setBlock(source,Blocks.AIR.defaultBlockState(),3);
   require(world.getBrightness(LightLayer.BLOCK,target)==baseline,"removed emitter remained cached");
+  var sky=world.copyRenderSkyLight(SectionPos.of(target));
+  require(sky.get(target.getX()&15,target.getY()&15,target.getZ()&15)==world.getBrightness(LightLayer.SKY,target),"sky snapshot with unloaded dense halo");
   System.out.println("ENDLESS_SECTION_LIGHT_CACHE_PASS seam="+denseSeam+" source="+source);
  }
 }

@@ -4,6 +4,18 @@
 
 Endless 0.9.3 lets you build higher and dig deeper than ever before. You can configure your world's build range anywhere from Y=-8,000,000 through Y=7,999,999 without turning every chunk into a millions-of-block-tall section array.
 
+## Installation and dependencies
+
+Install the Endless jar for the exact Minecraft version and loader on both the server and every client; use matching Endless versions. Required runtime dependencies are:
+
+- **Fabric 1.20.1:** Fabric Loader 0.16.14+, Fabric API for 1.20.1, Architectury API 9.2.14+ for Fabric, and Java 17+.
+- **Forge 1.20.1:** Forge 47.x, Architectury API 9.2.14+ for Forge, and Java 17+.
+- **Fabric 1.21.1:** Fabric Loader 0.17.2+, Fabric API for 1.21.1, Architectury API 13.0.8+ for Fabric, and Java 21+.
+- **NeoForge 1.21.1:** NeoForge 21.1.x and Java 21+. No separate Fabric API or Architectury dependency is required.
+- **NeoForge 26.1.2:** NeoForge 26.1.2 and Java 25+. No separate Fabric API or Architectury dependency is required.
+
+Waystones, Create and renderer/shader integrations are optional. Install only their documented compatible versions when using those integrations.
+
 ## Features
 
 * **Practical Infinite Build Height** — Choose any section-aligned build range inside Y=-8,000,000 to Y=7,999,999.

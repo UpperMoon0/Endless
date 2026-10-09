@@ -4,6 +4,7 @@
   "compatibilityLevel": "JAVA_21",
   "minVersion": "0.8",
   "client": [
+    "FogRendererMixin",
     "ViewAreaMixin",
     "SectionOcclusionGraphMixin",
     "SectionOcclusionGraphStorageMixin",
@@ -21,6 +22,7 @@
   "mixins": [
     "FriendlyByteBufMixin",
     "LevelHeightAccessorMixin",
+    "NaturalSpawnerMixin",
     "LevelReaderMixin",
     "LevelMixin",
     "LevelBuildBoundsMixin",

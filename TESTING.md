@@ -30,6 +30,44 @@ failures. Documentation-only PRs skip live boots through a narrow allowlist;
 build scripts, workflow edits, harness edits and unknown paths require the full
 matrix. Manual and release runs always require all scenarios.
 
+## Page-discovery saturation regressions
+
+`PageWindowScanTest` runs the production discovery cursor and `FairWorkQueue`
+at the real 256-page backlog, 16-chunk discovery and eight-page/player drain
+limits. Stationary players at view distances 4, 8 and 12 must receive every
+expected page exactly once, without movement or refresh. Additional cases
+enqueue chunk-send notifications after the scan finishes with 254, 255 or 256
+pages already queued; rejected pages and duplicate partial notifications retain
+their cursors. Unloaded-then-loaded chunks, stale notification pruning and the
+chunk-inspection budget are also covered. All three runtime bridges use this
+shared discovery implementation. These are algorithm regressions, separate from
+native multiplayer/teleport and populated-page latency measurements.
+
+The dependency-free `PageWindowScanChecks` test fixture can also be compiled
+alongside `PageWindowScan` and `FairWorkQueue` and run directly with Java.
+
+## Void-fog regressions
+
+`LogicalFogFloorTest` reproduces the dense-floor blackout at Y=-448 and verifies
+the configured logical boundary, its existing 32-block fade, a vanilla-range
+control, inactive legacy worlds with stale extended configuration, and narrowed
+positive-height ranges. It checks both the 1.20/1.21 visibility calculation and
+26.1's inverse darkness calculation. The production hooks are client-only:
+`FogRenderer.setupColor`/`ClientLevel.getMinBuildHeight` on 1.20.1 and 1.21.1,
+and `renderer.fog.FogRenderer.computeFogColor`/`ClientLevel.getMinY` on 26.1.2.
+They do not select by biome or fluid and preserve native effect handling.
+These unit checks validate the floor policy and arithmetic, not framebuffer
+output. Native mixin loading and rendering remain separate live checks.
+
+A local Forge 1.20.1 integration run on 2026-10-09 loaded Tidal Terror's
+independent saved deep province with Endless 0.9.3 and no downstream fog hook.
+It completed five framebuffer captures and five active-water scans, including
+Wastes at Y=-244/-380 and Cathedral seabed Y=-447. The deep framebuffer retained
+colored water instead of the void blackout. This tour uses Creative flight and
+Night Vision; it does not certify unassisted visibility, every terrain mesh,
+generic air rendering, shaders, other versions' pixels or sustained performance.
+
+
 ## Navigation regressions
 
 One small region tests the lower and upper logical edges, both packed-Y edges,

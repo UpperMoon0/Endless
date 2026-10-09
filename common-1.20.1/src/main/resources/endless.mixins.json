@@ -4,6 +4,7 @@
   "compatibilityLevel": "JAVA_17",
   "minVersion": "0.8",
   "client": [
+    "FogRendererMixin",
     "ViewAreaMixin",
     "LevelRendererMixin",
     "ClientHandshakePacketListenerMixin",
@@ -16,8 +17,10 @@
     "SoundManagerMixin"
   ],
   "mixins": [
+    "GeneratedSectionCountsAccessor",
     "FriendlyByteBufMixin",
     "LevelHeightAccessorMixin",
+    "NaturalSpawnerMixin",
     "LevelReaderMixin",
     "LevelMixin",
     "ChunkAccessMixin",

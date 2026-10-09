@@ -1,0 +1,27 @@
+Endless 0.9.3
+
+- Fix vanilla void fog turning extended space below the dense chunk floor black. Active sparse worlds now use their configured logical floor for void darkening.
+- Apply the fix to Minecraft 1.20.1 (Fabric/Forge), 1.21.1 (Fabric/NeoForge), and 26.1.2 (NeoForge), including air and water in every biome.
+- Keep vanilla fog colors, fade distances, fluid-specific behavior and status effects; inactive worlds, including legacy controls, keep their native floor.
+- Add regressions for deep space, the logical lower boundary, vanilla-range and legacy controls, and narrowed configured ranges. Dense storage and terrain generation remain unchanged.
+
+Performance:
+- Reuse bounded section block-light layers instead of repeating a per-block search. Copy palettes under short storage locks, solve outside those locks, and invalidate dense/sparse lighting on writes and section changes.
+- Reuse immutable page snapshots within a 16 MiB / 256-entry budget.
+- Add authoritative bulk generated-page admission without the snapshot encode/decode round trip; existing saved pages are refused.
+- Queue initial page delivery fairly with per-tick/per-player limits, and spread periodic sparse writes across ticks. Explicit saves and shutdown still flush all dirty data.
+- Add concurrency, eviction, fairness and native cross-section/dense-seam lighting regressions.
+- Solve skylight snapshots outside sparse storage locks too: dense halo admission can otherwise deadlock with lighting invalidation. Add native unloaded-halo regression coverage.
+
+Generation and synchronization:
+- Validate natural-spawn positions against the logical lower floor on all five targets without changing native mob caps or allocating dense height. Habitat sampling remains the terrain mod's responsibility.
+- Add independent uniform native section construction for Minecraft 1.20.1/1.21.1, including matching block/fluid counters and mutation isolation. The API is not provided on 26.1.2.
+- Cancel obsolete page windows, discover loaded chunks incrementally without synchronous disk preflight, and retain exact page/notification cursors when the bounded queue is full. Stationary distance-4/8/12 saturation regressions cover eventual delivery.
+- Scope in-flight light invalidation to affected section keys so unrelated edits do not restart a solve.
+- Add soft byte/time targets alongside page counts: 4 MiB / 4 ms for sends and 4 MiB / 2 ms per periodic world flush. One indivisible page can exceed these targets; explicit save/unload/shutdown remains synchronous.
+
+Included since the last published version (0.9.1):
+- Include the unreleased 0.9.2 Forge 1.20.1 / Embeddium Create elevator-rope rendering fix, lifecycle-safe global-renderer tracking, and updated showcase artwork. See changelogs/v0.9.2.txt for its precise scope.
+
+Validation limits:
+- Existing native teleport, populated multiplayer/dirty-page latency and cross-mod performance measurements remain workload-specific follow-up work. Historical combined Tidal Terror client tick-p95 and worst-frame regressions are not erased by improved frame p95 or separate generation measurements. This release makes no blanket engine-wide performance claim.

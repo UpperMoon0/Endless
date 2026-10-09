@@ -1,6 +1,6 @@
 # Endless
 
-Endless 0.9.2 provides sparse, practically unbounded vertical building space for Minecraft 1.20.1 (Fabric/Forge), 1.21.1 (Fabric/NeoForge), and 26.1.2 (NeoForge) without allocating a dense chunk column for the entire height.
+Endless 0.9.3 provides sparse, practically unbounded vertical building space for Minecraft 1.20.1 (Fabric/Forge), 1.21.1 (Fabric/NeoForge), and 26.1.2 (NeoForge) without allocating a dense chunk column for the entire height.
 
 **Supported configuration envelope:** Y=-8,000,000 through Y=7,999,999.
 
@@ -10,12 +10,25 @@ CurseForge: https://www.curseforge.com/minecraft/mc-mods/nstut-endless
 
 ![The Grand Amethyst Spire viewed from its ground-level entrance](assets/skyscraper-ground-up.jpg)
 
+## Installation and dependencies
+
+Install the Endless jar for the exact Minecraft version and loader on both the server and every client; use matching Endless versions. Required runtime dependencies are:
+
+- **Fabric 1.20.1:** Fabric Loader 0.16.14+, Fabric API for 1.20.1, Architectury API 9.2.14+ for Fabric, and Java 17+.
+- **Forge 1.20.1:** Forge 47.x, Architectury API 9.2.14+ for Forge, and Java 17+.
+- **Fabric 1.21.1:** Fabric Loader 0.17.2+, Fabric API for 1.21.1, Architectury API 13.0.8+ for Fabric, and Java 21+.
+- **NeoForge 1.21.1:** NeoForge 21.1.x and Java 21+. No separate Fabric API or Architectury dependency is required.
+- **NeoForge 26.1.2:** NeoForge 26.1.2 and Java 25+. No separate Fabric API or Architectury dependency is required.
+
+Waystones, Create and renderer/shader integrations are optional. Install only their documented compatible versions when using those integrations.
+
 ## How Endless works
 
 Vanilla Minecraft cannot safely make its normal `LevelChunkSection[]` millions of blocks tall. The supported versions also retain narrow packed-position or dense-section assumptions that cannot represent the full Endless envelope directly. Endless therefore separates the user-facing logical build range from the vanilla-compatible dense chunk core and stores extended space in sparse pages.
 
 - `config/endless.json` defines the **logical build range** used by placement, commands, teleport validity, AI limits, rendering queries, and sparse routing. Any section-aligned subrange of `[-8000000, 8000000)` is supported.
 - A fresh world keeps the **dense core** at vanilla `[-64, 320)`. Widening the logical config does not widen `LevelChunkSection[]`.
+- Void fog fades at the configured logical floor in active sparse worlds, including air and water below Y=-64. Its vanilla colors, status effects and fade remain intact; inactive worlds keep their native floor. Terrain and biome mods do not need a separate void-fog patch.
 - Existing worlds may retain a wider persisted dense core (up to `[-2032, 2032)`) when required to preserve Anvil sections. That internal range does **not** widen the configured build limit.
 - Coordinates outside the dense core but inside the configured logical range are stored in **512-block sparse pages**. Empty height costs no section-array memory.
 - Sparse pages use dedicated compressed NBT storage under each dimension instead of vanilla `ChunkSerializer`, so high section Y is never narrowed to a signed byte.
@@ -23,6 +36,8 @@ Vanilla Minecraft cannot safely make its normal `LevelChunkSection[]` millions o
 - The client receives only sparse pages near its current vertical window. The render grid follows the camera and stays 32 sections / 512 blocks tall.
 - Sparse heightmaps, high-Y block/fluid access, block entities, POIs, scheduled ticks, neighbor updates, and page-aware lighting are integrated with the normal Level APIs.
 - Horizontal chunk unload evicts its sparse pages after flushing dirty data, so visited height does not accumulate forever in memory.
+- Block light is cached by full-coordinate section (512 layers per world); solves use copied palettes outside the sparse storage monitor, and unrelated edits do not restart in-flight solves. Immutable encoded snapshots reuse a 16 MiB / 256-page cache. Initial page delivery is queued fairly (64 pages per tick total, eight per player), with soft 4 MiB / 4 ms drain targets. Discovery inspects at most 16 chunks per player per tick, retains rejected pages and late chunk notifications for retry, and cancels obsolete windows. Periodic saves process up to four dirty pages per world every ten ticks with soft 4 MiB / 2 ms targets. Explicit saves, unload and shutdown still flush pending writes.
+- Terrain mods can install privately generated sparse block/biome pages through `MinecraftVerticalWorld.installGeneratedPage`. The API refuses existing or saved pages; callers transfer ownership and must register block entities and scheduled ticks through their native lifecycle.
 
 The ±8,000,000 representation envelope is deliberate. It stays inside Minecraft 1.20.1's signed 20-bit `SectionPos` Y envelope, allowing POI and several section-keyed vanilla systems to remain correct while Endless replaces the much narrower packed `BlockPos` and dense-section assumptions.
 
@@ -67,11 +82,17 @@ Changing a logical range can narrow or widen where players, commands, and compat
 
 ### Existing worlds
 
-Fresh 0.9.2 worlds keep a vanilla `[-64,320)` dense core. Existing worlds may have a wider persisted dense core when they already contain extended Anvil sections. That persisted dense layout never shrinks automatically.
+Fresh 0.9.3 worlds keep a vanilla `[-64,320)` dense core. Existing worlds may have a wider persisted dense core when they already contain extended Anvil sections. That persisted dense layout never shrinks automatically.
 
-Endless 0.9.2 uses fail-closed migration for existing dense-world data. Before chunks load, ambiguous section layouts, meaningful data in unsafe guard sections, conflicting heightmap packing, or untrusted migration inputs stop startup instead of allowing vanilla to silently discard sections.
+Native natural-spawn dispatch validates selected positions against the logical
+lower build limit. World-generation mods can therefore select habitats below
+the dense core without having those attempts rejected at Y -64. The sampling
+policy remains with vanilla or the habitat mod; this does not scan every
+logical height or increase native mob caps.
 
-Back up important worlds before upgrading to 0.9.2. Sparse pages do not reinterpret existing Anvil data; they are a storage layer outside the persisted dense core.
+Endless 0.9.3 uses fail-closed migration for existing dense-world data. Before chunks load, ambiguous section layouts, meaningful data in unsafe guard sections, conflicting heightmap packing, or untrusted migration inputs stop startup instead of allowing vanilla to silently discard sections.
+
+Back up important worlds before upgrading to 0.9.3. Sparse pages do not reinterpret existing Anvil data; they are a storage layer outside the persisted dense core.
 
 ## Compatibility notes
 
@@ -89,7 +110,7 @@ Display-link/redstone-link full-position persistence, arm interaction initializa
 
 ### Embeddium, Oculus, Sodium and Iris
 
-Endless 0.9.2 expands the optional renderer adapter across all five release targets. Forge 1.20.1 supports Embeddium/Oculus; Fabric 1.20.1 supports Embeddium or Sodium/Iris; Fabric 1.21.1 supports Sodium/Iris; NeoForge 1.21.1 supports Embeddium or Sodium/Iris; NeoForge 26.1.2 supports Sodium/Iris. The supported release pins and reproducible test profiles are documented in [renderer compatibility](docs/Embeddium-Compatibility.md). Renderers are optional and never bundled. Their snapshots use the dense core or sparse pages, with a bounded terrain grid and matching block/sky light snapshots.
+Endless supports the optional renderer adapter across all five release targets. Forge 1.20.1 supports Embeddium/Oculus; Fabric 1.20.1 supports Embeddium or Sodium/Iris; Fabric 1.21.1 supports Sodium/Iris; NeoForge 1.21.1 supports Embeddium or Sodium/Iris; NeoForge 26.1.2 supports Sodium/Iris. The supported release pins and reproducible test profiles are documented in [renderer compatibility](docs/Embeddium-Compatibility.md). Renderers are optional and never bundled. Their snapshots use the dense core or sparse pages, with a bounded terrain grid and matching block/sky light snapshots.
 
 On Forge 1.20.1 with Embeddium/Oculus, the adapter also recovers Create 6.0.8 elevator-pulley global rendering when the pulley origin leaves the bounded terrain window. Elevator distance culling is measured against the rope render bounds, while recovered global block entities preserve Embeddium's native culling toggle, outline bookkeeping, and identity deduplication without scanning every loaded block entity each frame.
 
@@ -97,13 +118,14 @@ Initial and subsequent transparent mesh sorting preserve fractional camera movem
 
 ### Create contraption coordinates (#14)
 
-Endless 0.9.2 stores versioned full XYZ local coordinates in Create's paletted block entries for both disk and entity-spawn NBT. Native block states, block-entity data, and update tags remain attached to their original entries. Existing entries without the extension keep Create's legacy interpretation; malformed extended coordinates are refused. Previously truncated data cannot be reconstructed automatically.
+Endless 0.9.3 stores versioned full XYZ local coordinates in Create's paletted block entries for both disk and entity-spawn NBT. Native block states, block-entity data, and update tags remain attached to their original entries. Existing entries without the extension keep Create's legacy interpretation; malformed extended coordinates are refused. Previously truncated data cannot be reconstructed automatically.
 
 The default-cap regression builds real mounted contraptions with 2,047 and 2,048 payload blocks and checks every position/state after both disk and spawn serialization. The latter includes the anchor and local Y=+2048, which previously became -2048. Forge 1.20.1 and NeoForge 1.21.1 require matching clients with the current handshake (Forge protocol 6 / NeoForge protocol 7) because older clients cannot read the exact spawn keys and extended train nodes. These targeted tests do not certify every Create/Flywheel behavior, arbitrary addon, imported legacy contraption, passenger/collision workflow, or complete lighting/culling lifecycle.
 
 ## Limitations
 
-- **World generation** remains in the normal generator range. Endless adds buildable sparse space; it does not generate terrain millions of blocks high by default.
+- **World generation** remains in the normal generator range by default. Terrain mods can populate sparse pages through the bulk admission API; Endless does not generate extended terrain automatically. Raising an empty logical limit avoids dense allocation, but generating, lighting, rendering, sending and saving actual populated sections still costs work.
+- **Performance scope** — Send/save time and byte limits are soft: one indivisible large page can exceed a target, and explicit saves remain synchronous. Populated multiplayer/dirty-page latency tails and rapid vertical/dimension transitions still need workload-specific measurement. The historical combined Tidal Terror client benchmark improved frame p95 but regressed server-tick p95 and the longest frame; the separate world-generation results do not establish an engine-wide speedup.
 - **Rendering** covers a 512-block vertical window around the camera. Far-away vertical pages remain saved and active server-side but are not rendered until the camera approaches them.
 - **Representation envelope** is practical rather than mathematical infinity: `[-8,000,000, 8,000,000)`, chosen to preserve vanilla `SectionPos`-keyed systems.
 
@@ -137,6 +159,16 @@ Use `./gradlew testAllVersions` for shared/version-specific unit tests and the N
 The live-join CI matrix starts real Fabric and Forge dedicated servers and clients. The extended scenario uses a configured `[-1024,1024)` logical range over a vanilla-sized dense core, exercises blocks, fluid, block entities, POIs, lighting, persistence, rendering and player travel at both configured sparse edges, executes real `/setblock` commands at and just outside those limits, and loads canonical Waystones+Balm artifacts to verify high-Y Waystone placement/manager/client state.
 
 The release gate contains **44 required live cells**: 16 Fabric/Forge 1.20.1 core cells, 19 Create cells across Forge 1.20.1 and NeoForge 1.21.1, three port-runtime cells for Fabric 1.21.1 / NeoForge 1.21.1 / NeoForge 26.1.2, and six same-JVM rejoin cells covering all three modern targets. Each modern target tests both a migrated legacy `[-2032,2032)` dense save at Y=1,000,000 and a fresh `[-8,000,000,8,000,000)` world at Y=6,000,000. The reopen oracle validates generic vanilla block entities (chest, ender chest and shulker box) with full XYZ keys and requires them to enter a completed render section after save/close/reopen, without any interaction-triggered refresh. Both modern rejoin scenarios run at render distance 12 and also require visible solid geometry for ordinary blocks in two separate sections, including one without block entities.
+
+## Generated sections
+
+World-generation integrations on Minecraft 1.20.1/1.21.1 can use
+`VerticalSectionFactory.uniform(biomeRegistry, blockState)` to initialize an
+independent native section from a single palette entry. Native block/fluid
+counters are initialized before subsequent decoration. Terrain selection and
+biome filling remain the caller's responsibility; sparse page admission still
+uses the existing worker-preparation and server-installation contract. Sparse storage can reach disk before a native chunk save: integrations must preserve an existing authoritative page when retrying native admission after interruption, rather than unconditionally calling the replacement-refusing API. See
+[uniform generated sections](changelogs/uniform-section-generation.md).
 
 ## License
 

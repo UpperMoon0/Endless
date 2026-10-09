@@ -1,4 +1,4 @@
-# 0.9.3 (unreleased): uniform generated sections
+# 0.9.3: uniform generated sections
 
 Expose `VerticalSectionFactory.uniform` on the shared Minecraft 1.20.1/1.21.1
 engine API. World generators can create worker-local native sections using one

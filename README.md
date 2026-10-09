@@ -24,7 +24,7 @@ Vanilla Minecraft cannot safely make its normal `LevelChunkSection[]` millions o
 - The client receives only sparse pages near its current vertical window. The render grid follows the camera and stays 32 sections / 512 blocks tall.
 - Sparse heightmaps, high-Y block/fluid access, block entities, POIs, scheduled ticks, neighbor updates, and page-aware lighting are integrated with the normal Level APIs.
 - Horizontal chunk unload evicts its sparse pages after flushing dirty data, so visited height does not accumulate forever in memory.
-- Block light is cached by full-coordinate section (512 layers per world); solves use copied palettes outside the sparse storage monitor. Immutable encoded snapshots reuse a 16 MiB / 256-page cache. Initial page delivery is queued fairly (64 pages per tick total, eight per player), and periodic saves process four dirty pages per world every ten ticks. Explicit saves, unload and shutdown still flush pending writes.
+- Block light is cached by full-coordinate section (512 layers per world); solves use copied palettes outside the sparse storage monitor, and unrelated edits do not restart in-flight solves. Immutable encoded snapshots reuse a 16 MiB / 256-page cache. Initial page delivery is queued fairly (64 pages per tick total, eight per player), with soft 4 MiB / 4 ms drain targets. Discovery inspects at most 16 chunks per player per tick, retains rejected pages and late chunk notifications for retry, and cancels obsolete windows. Periodic saves process up to four dirty pages per world every ten ticks with soft 4 MiB / 2 ms targets. Explicit saves, unload and shutdown still flush pending writes.
 - Terrain mods can install privately generated sparse block/biome pages through `MinecraftVerticalWorld.installGeneratedPage`. The API refuses existing or saved pages; callers transfer ownership and must register block entities and scheduled ticks through their native lifecycle.
 
 The ±8,000,000 representation envelope is deliberate. It stays inside Minecraft 1.20.1's signed 20-bit `SectionPos` Y envelope, allowing POI and several section-keyed vanilla systems to remain correct while Endless replaces the much narrower packed `BlockPos` and dense-section assumptions.
@@ -113,6 +113,7 @@ The default-cap regression builds real mounted contraptions with 2,047 and 2,048
 ## Limitations
 
 - **World generation** remains in the normal generator range by default. Terrain mods can populate sparse pages through the bulk admission API; Endless does not generate extended terrain automatically. Raising an empty logical limit avoids dense allocation, but generating, lighting, rendering, sending and saving actual populated sections still costs work.
+- **Performance scope** — Send/save time and byte limits are soft: one indivisible large page can exceed a target, and explicit saves remain synchronous. Populated multiplayer/dirty-page latency tails and rapid vertical/dimension transitions still need workload-specific measurement. The historical combined Tidal Terror client benchmark improved frame p95 but regressed server-tick p95 and the longest frame; the separate world-generation results do not establish an engine-wide speedup.
 - **Rendering** covers a 512-block vertical window around the camera. Far-away vertical pages remain saved and active server-side but are not rendered until the camera approaches them.
 - **Representation envelope** is practical rather than mathematical infinity: `[-8,000,000, 8,000,000)`, chosen to preserve vanilla `SectionPos`-keyed systems.
 
@@ -154,7 +155,7 @@ World-generation integrations on Minecraft 1.20.1/1.21.1 can use
 independent native section from a single palette entry. Native block/fluid
 counters are initialized before subsequent decoration. Terrain selection and
 biome filling remain the caller's responsibility; sparse page admission still
-uses the existing worker-preparation and server-installation contract. See
+uses the existing worker-preparation and server-installation contract. Sparse storage can reach disk before a native chunk save: integrations must preserve an existing authoritative page when retrying native admission after interruption, rather than unconditionally calling the replacement-refusing API. See
 [uniform generated sections](changelogs/uniform-section-generation.md).
 
 ## License

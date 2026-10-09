@@ -21,6 +21,7 @@
     "SoundManagerMixin"
   ],
   "mixins": [
+    "GeneratedSectionCountsAccessor",
     "FriendlyByteBufMixin",
     "LevelHeightAccessorMixin",
     "NaturalSpawnerMixin",

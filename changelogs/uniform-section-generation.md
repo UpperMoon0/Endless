@@ -3,8 +3,9 @@
 Expose `VerticalSectionFactory.uniform` on the shared Minecraft 1.20.1/1.21.1
 engine API. World generators can create worker-local native sections using one
 palette entry instead of 4,096 individual block writes. Every call creates
-independent block/biome storage and uses the native section constructor to
-initialize nonempty, block-ticking and fluid-ticking counts.
+independent block/biome storage. Initialize nonempty, block-ticking and
+fluid-ticking counts exactly as individual native block writes would: native
+palette recalculation alone uses different water counter semantics.
 
 This does not admit a page, change dense arrays or select terrain. Tidal Terror
 owns the decision that a foundation section is uniform and still runs its

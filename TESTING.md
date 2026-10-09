@@ -30,6 +30,22 @@ failures. Documentation-only PRs skip live boots through a narrow allowlist;
 build scripts, workflow edits, harness edits and unknown paths require the full
 matrix. Manual and release runs always require all scenarios.
 
+## Page-discovery saturation regressions
+
+`PageWindowScanTest` runs the production discovery cursor and `FairWorkQueue`
+at the real 256-page backlog, 16-chunk discovery and eight-page/player drain
+limits. Stationary players at view distances 4, 8 and 12 must receive every
+expected page exactly once, without movement or refresh. Additional cases
+enqueue chunk-send notifications after the scan finishes with 254, 255 or 256
+pages already queued; rejected pages and duplicate partial notifications retain
+their cursors. Unloaded-then-loaded chunks, stale notification pruning and the
+chunk-inspection budget are also covered. All three runtime bridges use this
+shared discovery implementation. These are algorithm regressions, separate from
+native multiplayer/teleport and populated-page latency measurements.
+
+The dependency-free `PageWindowScanChecks` test fixture can also be compiled
+alongside `PageWindowScan` and `FairWorkQueue` and run directly with Java.
+
 ## Void-fog regressions
 
 `LogicalFogFloorTest` reproduces the dense-floor blackout at Y=-448 and verifies

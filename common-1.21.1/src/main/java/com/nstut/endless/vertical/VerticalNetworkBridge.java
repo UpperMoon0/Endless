@@ -40,13 +40,23 @@ public final class VerticalNetworkBridge {
         sender = pageSender;
     }
 
-    /** Chunk-load notifications enqueue candidates; disk checks happen only in the bounded drain. */
+    /** Retain chunk notifications until every page can enter the bounded send queue. */
     public static void sendVisiblePagesForChunk(ServerPlayer player, LevelChunk chunk) {
         if (!EndlessLogicalHeights.isActive() || sender == null) return;
-        int centerPageY = VerticalPageLayout.pageYForBlockY(player.getBlockY());
-        String dimension = player.level().dimension().location().toString();
-        for (int pageY = centerPageY - PAGE_RADIUS; pageY <= centerPageY + PAGE_RADIUS; pageY++) {
-            enqueue(player.getUUID(), dimension, new VerticalPagePos(chunk.getPos().x, pageY, chunk.getPos().z));
+        MinecraftServer server = player.level().getServer();
+        if (server == null) return;
+        int viewDistance = server.getPlayerList().getViewDistance();
+        WindowScan window = PLAYER_WINDOWS.get(player.getUUID());
+        if (window == null || !window.matches(player, viewDistance)) {
+            startWindow(player, viewDistance);
+            window = PLAYER_WINDOWS.get(player.getUUID());
+        }
+        ChunkPos center = player.chunkPosition();
+        // Keep deferred notifications bounded by the current tracking window.
+        window.scan.discardNotificationsOutside(center.x, center.z, viewDistance + 1);
+        if (Math.abs((long) chunk.getPos().x - center.x) <= viewDistance + 1
+            && Math.abs((long) chunk.getPos().z - center.z) <= viewDistance + 1) {
+            window.scan.notifyChunk(chunk.getPos().x, chunk.getPos().z);
         }
     }
 
@@ -109,12 +119,12 @@ public final class VerticalNetworkBridge {
         SparseChunkUpdateQueue.flush();
     }
 
-    private static void enqueue(UUID player, String dimension, VerticalPagePos pos) {
+    private static boolean enqueue(UUID player, String dimension, VerticalPagePos pos) {
         int minPage = Math.floorDiv(EndlessHeights.getMinBuildHeight(), 512);
         int maxPage = Math.floorDiv(EndlessHeights.getMaxBuildHeight() - 1, 512);
-        if (pos.pageY() < minPage || pos.pageY() > maxPage) return;
+        if (pos.pageY() < minPage || pos.pageY() > maxPage) return true;
         PendingPage request = new PendingPage(player, dimension, pos);
-        PENDING_PAGES.offerBounded(player, request, request, MAX_PENDING_PAGES_PER_PLAYER);
+        return PENDING_PAGES.offerBounded(player, request, request, MAX_PENDING_PAGES_PER_PLAYER);
     }
 
     private static void startWindow(ServerPlayer player, int viewDistance) {
@@ -123,21 +133,21 @@ public final class VerticalNetworkBridge {
         PLAYER_WINDOWS.put(uuid, new WindowScan(player, viewDistance));
     }
 
-    /** One pass of loaded chunks nearest to the player, with no page disk probes. */
+    /** One resumable pass of loaded chunks, with no page disk probes. */
     private static void advanceScan(ServerPlayer player, WindowScan window) {
-        int total = (2 * window.viewDistance + 1) * (2 * window.viewDistance + 1);
-        for (int n = 0; n < SCAN_CHUNKS_PER_PLAYER_TICK && window.cursor < total; n++) {
-            if (PENDING_PAGES.ownerSize(player.getUUID()) >= MAX_PENDING_PAGES_PER_PLAYER) break;
-            ChunkPos pos = window.nextChunk();
-            LevelChunk chunk = player.serverLevel().getChunkSource().getChunkNow(pos.x, pos.z);
-            if (chunk != null) sendVisiblePagesForChunk(player, chunk);
-        }
+        ChunkPos center = player.chunkPosition();
+        window.scan.discardNotificationsOutside(center.x, center.z, window.viewDistance + 1);
+        window.scan.advance(SCAN_CHUNKS_PER_PLAYER_TICK,
+            (x, z) -> Math.abs((long) x - center.x) <= window.viewDistance + 1
+                && Math.abs((long) z - center.z) <= window.viewDistance + 1
+                && player.serverLevel().getChunkSource().getChunkNow(x, z) != null,
+            (x, page, z) -> enqueue(player.getUUID(), window.dimension, new VerticalPagePos(x, page, z)));
     }
 
     private static final class WindowScan {
         final String dimension;
         final int pageY, centerX, centerZ, viewDistance;
-        int cursor;
+        final PageWindowScan scan;
 
         WindowScan(ServerPlayer player, int radius) {
             this.dimension = player.level().dimension().location().toString();
@@ -146,6 +156,7 @@ public final class VerticalNetworkBridge {
             this.centerX = center.x;
             this.centerZ = center.z;
             this.viewDistance = radius;
+            this.scan = new PageWindowScan(centerX, centerZ, radius, pageY, PAGE_RADIUS);
         }
 
         boolean matches(ServerPlayer player, int radius) {
@@ -157,22 +168,6 @@ public final class VerticalNetworkBridge {
                 && Math.abs((long) current.z - centerZ) <= 3;
         }
 
-        ChunkPos nextChunk() {
-            int remaining = cursor++;
-            if (remaining == 0) return new ChunkPos(centerX, centerZ);
-            remaining--;
-            for (int r = 1; r <= viewDistance; r++) {
-                int edge = 2 * r, perimeter = 4 * edge;
-                if (remaining >= perimeter) { remaining -= perimeter; continue; }
-                int dx, dz;
-                if (remaining < edge) { dx = -r + remaining; dz = -r; }
-                else if (remaining < 2 * edge) { dx = r; dz = -r + remaining - edge; }
-                else if (remaining < 3 * edge) { dx = r - (remaining - 2 * edge); dz = r; }
-                else { dx = -r; dz = r - (remaining - 3 * edge); }
-                return new ChunkPos(centerX + dx, centerZ + dz);
-            }
-            throw new IllegalStateException("Window scan cursor outside view");
-        }
     }
 
     public static synchronized void shutdown() {

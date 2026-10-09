@@ -72,6 +72,12 @@ Changing a logical range can narrow or widen where players, commands, and compat
 
 Fresh 0.9.3 worlds keep a vanilla `[-64,320)` dense core. Existing worlds may have a wider persisted dense core when they already contain extended Anvil sections. That persisted dense layout never shrinks automatically.
 
+Native natural-spawn dispatch validates selected positions against the logical
+lower build limit. World-generation mods can therefore select habitats below
+the dense core without having those attempts rejected at Y -64. The sampling
+policy remains with vanilla or the habitat mod; this does not scan every
+logical height or increase native mob caps.
+
 Endless 0.9.3 uses fail-closed migration for existing dense-world data. Before chunks load, ambiguous section layouts, meaningful data in unsafe guard sections, conflicting heightmap packing, or untrusted migration inputs stop startup instead of allowing vanilla to silently discard sections.
 
 Back up important worlds before upgrading to 0.9.3. Sparse pages do not reinterpret existing Anvil data; they are a storage layer outside the persisted dense core.

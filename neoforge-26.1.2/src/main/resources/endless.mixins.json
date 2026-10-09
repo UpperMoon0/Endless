@@ -22,6 +22,7 @@
   "mixins": [
     "FriendlyByteBufMixin",
     "LevelHeightAccessorMixin",
+    "NaturalSpawnerMixin",
     "LevelReaderMixin",
     "LevelMixin",
     "LevelBuildBoundsMixin",

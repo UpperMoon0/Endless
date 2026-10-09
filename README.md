@@ -149,6 +149,14 @@ The release gate contains **44 required live cells**: 16 Fabric/Forge 1.20.1 cor
 
 ## License
 
+World-generation integrations on Minecraft 1.20.1/1.21.1 can use
+`VerticalSectionFactory.uniform(biomeRegistry, blockState)` to initialize an
+independent native section from a single palette entry. Native block/fluid
+counters are initialized before subsequent decoration. Terrain selection and
+biome filling remain the caller's responsibility; sparse page admission still
+uses the existing worker-preparation and server-installation contract. See
+[uniform generated sections](changelogs/uniform-section-generation.md).
+
 [MIT](LICENSE.txt)
 
 ## Author

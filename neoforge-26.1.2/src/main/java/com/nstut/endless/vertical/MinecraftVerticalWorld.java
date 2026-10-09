@@ -397,12 +397,33 @@ public final class MinecraftVerticalWorld {
     }
 
     public synchronized void flushDirtyBudgeted(int limit) {
-        if(limit<1 || disk==null) return;
+        flushDirtyBudgeted(limit, Long.MAX_VALUE, Long.MAX_VALUE);
+    }
+
+    /** Limits how many dirty pages are encoded on the server tick.
+     * A single save is atomic and may exceed the target; subsequent pages are deferred.
+     * Explicit save/unload/close still persist all revisions. */
+    public synchronized void flushDirtyBudgeted(int limit, long maxNanos, long maxEstimatedBytes) {
+        if(limit<1 || disk==null || maxNanos<1 || maxEstimatedBytes<1) return;
+        long started=System.nanoTime(), estimated=0;
         int count=0;
         for(var pos:new ArrayList<>(dirtyPages)) {
+            if(count>0 && System.nanoTime()-started>=maxNanos) break;
+            long pageEstimate=estimatedPersistBytes(pos);
+            if(count>0 && estimated+pageEstimate>maxEstimatedBytes) break;
             persist(pos);
+            estimated+=pageEstimate;
             if(++count>=limit) break;
         }
+    }
+
+    /** Lightweight conservative scheduling estimate, not an encoded-size guarantee. */
+    private long estimatedPersistBytes(VerticalPagePos pos) {
+        var page=getPage(pos,false,false);
+        if(page==null || page.isEmpty()) return 4096L;
+        long[] sections={0};
+        page.forEachOccupiedSection((sectionY,section)->sections[0]++);
+        return Math.max(4096L, sections[0]*(64L<<10));
     }
 
     public synchronized void flushDirty() {

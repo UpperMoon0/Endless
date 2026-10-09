@@ -23,7 +23,11 @@ public final class VerticalNetworkBridge {
     private static final int PAGE_RADIUS = 1;
     private static final int FLUSH_INTERVAL_TICKS = 10;
 
-    private static final Map<UUID, PlayerWindow> PLAYER_WINDOWS = new HashMap<>();
+    private static final int SCAN_CHUNKS_PER_PLAYER_TICK = 16;
+    private static final int MAX_PENDING_PAGES_PER_PLAYER = 256;
+    private static final long SEND_BYTES_PER_TICK = 4L << 20;
+    private static final long SEND_NANOS_PER_TICK = 4_000_000L;
+    private static final Map<UUID, WindowScan> PLAYER_WINDOWS = new HashMap<>();
     private record PendingPage(UUID player,String dimension,VerticalPagePos pos) {}
     private static final FairWorkQueue<UUID,PendingPage,PendingPage> PENDING_PAGES=new FairWorkQueue<>();
     private static PageSender sender;
@@ -36,17 +40,13 @@ public final class VerticalNetworkBridge {
         sender = pageSender;
     }
 
+    /** Chunk-load notifications enqueue candidates; disk checks happen only in the bounded drain. */
     public static void sendVisiblePagesForChunk(ServerPlayer player, LevelChunk chunk) {
-        if (!EndlessLogicalHeights.isActive() || sender == null) {
-            return;
-        }
+        if (!EndlessLogicalHeights.isActive() || sender == null) return;
         int centerPageY = VerticalPageLayout.pageYForBlockY(player.getBlockY());
+        String dimension = player.level().dimension().location().toString();
         for (int pageY = centerPageY - PAGE_RADIUS; pageY <= centerPageY + PAGE_RADIUS; pageY++) {
-            var pos=new VerticalPagePos(chunk.getPos().x,pageY,chunk.getPos().z);
-            if(EndlessVerticalEngine.world(player.level()).pageExists(pos)) {
-                var pending=new PendingPage(player.getUUID(),player.level().dimension().location().toString(),pos);
-                PENDING_PAGES.offer(player.getUUID(),pending,pending);
-            }
+            enqueue(player.getUUID(), dimension, new VerticalPagePos(chunk.getPos().x, pageY, chunk.getPos().z));
         }
     }
 
@@ -66,43 +66,105 @@ public final class VerticalNetworkBridge {
 
         if (++ticks >= FLUSH_INTERVAL_TICKS) {
             ticks = 0;
-            EndlessVerticalEngine.flushBudgeted(4);
+            EndlessVerticalEngine.flushBudgeted(4, 2_000_000L, 4L << 20);
         }
 
         int viewDistance = server.getPlayerList().getViewDistance();
         PLAYER_WINDOWS.keySet().removeIf(uuid -> server.getPlayerList().getPlayer(uuid) == null);
-
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-            int pageY = VerticalPageLayout.pageYForBlockY(player.getBlockY());
-            String dimension = player.level().dimension().location().toString();
-            PlayerWindow previous = PLAYER_WINDOWS.put(player.getUUID(), new PlayerWindow(dimension, pageY));
-            if (previous != null && previous.pageY == pageY && previous.dimension.equals(dimension)) {
-                continue;
+            WindowScan window = PLAYER_WINDOWS.get(player.getUUID());
+            if (window == null || !window.matches(player, viewDistance)) {
+                startWindow(player, viewDistance);
+                window = PLAYER_WINDOWS.get(player.getUUID());
             }
-
-            ServerLevel level = player.serverLevel();
-            ChunkPos center = player.chunkPosition();
-            for (int dz = -viewDistance; dz <= viewDistance; dz++) {
-                for (int dx = -viewDistance; dx <= viewDistance; dx++) {
-                    LevelChunk chunk = level.getChunkSource().getChunkNow(center.x + dx, center.z + dz);
-                    if (chunk != null) {
-                        sendVisiblePagesForChunk(player, chunk);
-                    }
-                }
-            }
+            advanceScan(player, window);
         }
-        PENDING_PAGES.removeOwners(uuid->server.getPlayerList().getPlayer(uuid)==null);
-        PENDING_PAGES.drain(64,8,pending->{
-            var player=server.getPlayerList().getPlayer(pending.player);
-            if(player==null || !player.level().dimension().location().toString().equals(pending.dimension)) return;
-            var pos=pending.pos;var center=player.chunkPosition();
-            if(Math.abs((long)pos.chunkX()-center.x)>viewDistance+1 || Math.abs((long)pos.chunkZ()-center.z)>viewDistance+1
-                || Math.abs((long)pos.pageY()-VerticalPageLayout.pageYForBlockY(player.getBlockY()))>PAGE_RADIUS) return;
-            var chunk=player.serverLevel().getChunkSource().getChunkNow(pos.chunkX(),pos.chunkZ());
-            if(chunk!=null) sendPage(player,chunk,pos.pageY());
+        PENDING_PAGES.removeOwners(uuid -> server.getPlayerList().getPlayer(uuid) == null);
+        // Prune obsolete entries BEFORE draining; old teleports must not use a send slot.
+        PENDING_PAGES.removeIf(pending -> {
+            ServerPlayer player = server.getPlayerList().getPlayer(pending.player());
+            if (player == null || !player.level().dimension().location().toString().equals(pending.dimension())) return true;
+            ChunkPos center = player.chunkPosition();
+            VerticalPagePos pos = pending.pos();
+            return Math.abs((long) pos.chunkX() - center.x) > viewDistance + 1
+                || Math.abs((long) pos.chunkZ() - center.z) > viewDistance + 1
+                || Math.abs((long) pos.pageY() - VerticalPageLayout.pageYForBlockY(player.getBlockY())) > PAGE_RADIUS;
+        });
+        PENDING_PAGES.drainBudgeted(64, 8, SEND_BYTES_PER_TICK, SEND_NANOS_PER_TICK, pending -> {
+            ServerPlayer player = server.getPlayerList().getPlayer(pending.player());
+            if (player == null) return 0;
+            VerticalPagePos pos = pending.pos();
+            LevelChunk chunk = player.serverLevel().getChunkSource().getChunkNow(pos.chunkX(), pos.chunkZ());
+            return chunk == null ? 0 : sendPage(player, chunk, pos.pageY());
         });
         // Player edits retain the existing immediate update path.
         SparseChunkUpdateQueue.flush();
+    }
+
+    private static void enqueue(UUID player, String dimension, VerticalPagePos pos) {
+        int minPage = Math.floorDiv(EndlessHeights.getMinBuildHeight(), 512);
+        int maxPage = Math.floorDiv(EndlessHeights.getMaxBuildHeight() - 1, 512);
+        if (pos.pageY() < minPage || pos.pageY() > maxPage) return;
+        PendingPage request = new PendingPage(player, dimension, pos);
+        PENDING_PAGES.offerBounded(player, request, request, MAX_PENDING_PAGES_PER_PLAYER);
+    }
+
+    private static void startWindow(ServerPlayer player, int viewDistance) {
+        UUID uuid = player.getUUID();
+        PENDING_PAGES.removeOwner(uuid);
+        PLAYER_WINDOWS.put(uuid, new WindowScan(player, viewDistance));
+    }
+
+    /** One pass of loaded chunks nearest to the player, with no page disk probes. */
+    private static void advanceScan(ServerPlayer player, WindowScan window) {
+        int total = (2 * window.viewDistance + 1) * (2 * window.viewDistance + 1);
+        for (int n = 0; n < SCAN_CHUNKS_PER_PLAYER_TICK && window.cursor < total; n++) {
+            if (PENDING_PAGES.ownerSize(player.getUUID()) >= MAX_PENDING_PAGES_PER_PLAYER) break;
+            ChunkPos pos = window.nextChunk();
+            LevelChunk chunk = player.serverLevel().getChunkSource().getChunkNow(pos.x, pos.z);
+            if (chunk != null) sendVisiblePagesForChunk(player, chunk);
+        }
+    }
+
+    private static final class WindowScan {
+        final String dimension;
+        final int pageY, centerX, centerZ, viewDistance;
+        int cursor;
+
+        WindowScan(ServerPlayer player, int radius) {
+            this.dimension = player.level().dimension().location().toString();
+            this.pageY = VerticalPageLayout.pageYForBlockY(player.getBlockY());
+            ChunkPos center = player.chunkPosition();
+            this.centerX = center.x;
+            this.centerZ = center.z;
+            this.viewDistance = radius;
+        }
+
+        boolean matches(ServerPlayer player, int radius) {
+            ChunkPos current = player.chunkPosition();
+            return dimension.equals(player.level().dimension().location().toString())
+                && pageY == VerticalPageLayout.pageYForBlockY(player.getBlockY())
+                && viewDistance == radius
+                && Math.abs((long) current.x - centerX) <= 3
+                && Math.abs((long) current.z - centerZ) <= 3;
+        }
+
+        ChunkPos nextChunk() {
+            int remaining = cursor++;
+            if (remaining == 0) return new ChunkPos(centerX, centerZ);
+            remaining--;
+            for (int r = 1; r <= viewDistance; r++) {
+                int edge = 2 * r, perimeter = 4 * edge;
+                if (remaining >= perimeter) { remaining -= perimeter; continue; }
+                int dx, dz;
+                if (remaining < edge) { dx = -r + remaining; dz = -r; }
+                else if (remaining < 2 * edge) { dx = r; dz = -r + remaining - edge; }
+                else if (remaining < 3 * edge) { dx = r - (remaining - 2 * edge); dz = r; }
+                else { dx = -r; dz = r - (remaining - 3 * edge); }
+                return new ChunkPos(centerX + dx, centerZ + dz);
+            }
+            throw new IllegalStateException("Window scan cursor outside view");
+        }
     }
 
     public static synchronized void shutdown() {
@@ -145,15 +207,15 @@ public final class VerticalNetworkBridge {
         denseInvariantChecked = true;
     }
 
-    private static void sendPage(ServerPlayer player, LevelChunk chunk, int pageY) {
+    private static long sendPage(ServerPlayer player, LevelChunk chunk, int pageY) {
         VerticalPagePos pos = new VerticalPagePos(chunk.getPos().x, pageY, chunk.getPos().z);
         MinecraftVerticalWorld world = EndlessVerticalEngine.world(player.level());
         if (!world.pageExists(pos)) {
-            return;
+            return 0;
         }
         VerticalPageSnapshot snapshot = world.snapshot(pos, true);
         if (snapshot == null) {
-            return;
+            return 0;
         }
 
         sender.send(player, snapshot);
@@ -170,6 +232,7 @@ public final class VerticalNetworkBridge {
                 player.connection.send(packet);
             }
         }
+        return snapshot.payloadBytes() + 64L;
     }
 
     @FunctionalInterface
@@ -177,5 +240,4 @@ public final class VerticalNetworkBridge {
         void send(ServerPlayer player, VerticalPageSnapshot snapshot);
     }
 
-    private record PlayerWindow(String dimension, int pageY) {}
 }

@@ -23,9 +23,13 @@ public final class EndlessVerticalEngine {
     }
 
     public static void flushBudgeted(int pagesPerWorld) {
+        flushBudgeted(pagesPerWorld, Long.MAX_VALUE, Long.MAX_VALUE);
+    }
+
+    public static void flushBudgeted(int pagesPerWorld, long nanosPerWorld, long estimatedBytesPerWorld) {
         ArrayList<MinecraftVerticalWorld> worlds;
         synchronized(EndlessVerticalEngine.class) {worlds=new ArrayList<>(WORLDS.values());}
-        for(var world:worlds) world.flushDirtyBudgeted(pagesPerWorld);
+        for(var world:worlds) world.flushDirtyBudgeted(pagesPerWorld, nanosPerWorld, estimatedBytesPerWorld);
     }
 
     public static void flushAll() {

@@ -243,7 +243,12 @@ public final class EmbeddiumShaderPreview {
             String pipelineName = "none";
             try {
                 Class<?> iris = Class.forName("net.irisshaders.iris.Iris");
-                shaders = (boolean) iris.getMethod("isPackInUseQuick").invoke(null);
+                try {
+                    shaders = (boolean) iris.getMethod("isPackInUseQuick").invoke(null);
+                } catch (NoSuchMethodException oculus17) {
+                    // Oculus 1.7.0 exposes the loaded pack through Optional.
+                    shaders = ((java.util.Optional<?>) iris.getMethod("getCurrentPack").invoke(null)).isPresent();
+                }
                 pack = String.valueOf(iris.getMethod("getCurrentPackName").invoke(null));
                 var pipelineManager = iris.getMethod("getPipelineManager").invoke(null);
                 var pipeline = pipelineManager.getClass().getMethod("getPipelineNullable").invoke(pipelineManager);

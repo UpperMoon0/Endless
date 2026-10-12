@@ -73,7 +73,7 @@ def check_jar(path: Path) -> list[str]:
                 errors.append('Forge destruction hook requires a bundled MixinExtras runtime')
             else:
                 with zipfile.ZipFile(io.BytesIO(jar.read(extras[0]['path']))) as nested:
-                    if 'com/llamalad7/mixinextras/injector/ModifyExpressionValue.class' not in nested.namelist():
+                    if not bundled_class(nested, 'com/llamalad7/mixinextras/injector/ModifyExpressionValue.class'):
                         errors.append('Bundled MixinExtras lacks the destruction expression injector')
         registered = registered_configs(jar, target[0], metadata)
         required = REQUIRED_HOOKS.get(target)
@@ -124,6 +124,20 @@ def check_jar(path: Path) -> list[str]:
                 errors.append('Development fixture bundled in normal artifact')
                 break
     return errors
+
+
+def bundled_class(jar, member):
+    if member in jar.namelist():
+        return True
+    if 'META-INF/jarjar/metadata.json' not in jar.namelist():
+        return False
+    for entry in json.loads(jar.read('META-INF/jarjar/metadata.json')).get('jars', []):
+        path = entry.get('path')
+        if path in jar.namelist():
+            with zipfile.ZipFile(io.BytesIO(jar.read(path))) as nested:
+                if bundled_class(nested, member):
+                    return True
+    return False
 
 
 if __name__ == '__main__':

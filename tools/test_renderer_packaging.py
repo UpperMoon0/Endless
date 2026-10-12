@@ -72,6 +72,24 @@ class RendererPackagingTest(unittest.TestCase):
         self.files['META-INF/jarjar/mixinextras-forge-0.4.1.jar'] = nested.getvalue()
         self.assertIn('Bundled MixinExtras lacks the destruction expression injector', self.check())
 
+    def test_forge_wrapper_must_register_its_nested_common_runtime(self):
+        self.configure_target('forge', '1.20.1')
+        path = 'META-INF/jarjar/mixinextras-forge-0.4.1.jar'
+        common = self.files[path]
+        for registered in (True, False):
+            wrapper = io.BytesIO()
+            with zipfile.ZipFile(wrapper, 'w') as jar:
+                jar.writestr('META-INF/jars/MixinExtras.jar', common)
+                if registered:
+                    jar.writestr('META-INF/jarjar/metadata.json', json.dumps({'jars': [
+                        {'path': 'META-INF/jars/MixinExtras.jar'}]}))
+            self.files[path] = wrapper.getvalue()
+            errors = self.check()
+            if registered:
+                self.assertEqual([], errors)
+            else:
+                self.assertIn('Bundled MixinExtras lacks the destruction expression injector', errors)
+
     def test_every_release_target_accepts_complete_contract(self):
         for loader, version in REQUIRED_HOOKS:
             with self.subTest(loader=loader, version=version):

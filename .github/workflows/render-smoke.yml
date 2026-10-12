@@ -19,6 +19,7 @@ jobs:
         include:
           - {target: forge-1.20.1, backend: embeddium, renderer: embeddium}
           - {target: forge-1.20.1, backend: oculus, renderer: embeddium}
+          - {target: forge-1.20.1, backend: oculus-1.7.0, renderer: embeddium, oculus_pin: vVuYfukI}
           - {target: fabric-1.20.1, backend: embeddium, renderer: embeddium}
           - {target: fabric-1.20.1, backend: sodium, renderer: sodium}
           - {target: fabric-1.20.1, backend: iris, renderer: sodium}
@@ -61,9 +62,11 @@ jobs:
           TARGET: ${{ matrix.target }}
           RENDERER: ${{ matrix.renderer }}
           SODIUM_PIN: ${{ matrix.pin }}
+          OCULUS_PIN: ${{ matrix.oculus_pin }}
         run: |
           args=()
-          if [[ "$BACKEND" == oculus ]]; then args+=(--oculus); fi
+          if [[ "$BACKEND" == oculus* ]]; then args+=(--oculus); fi
+          if [[ -n "$OCULUS_PIN" ]]; then args+=(--oculus-pin "$OCULUS_PIN"); fi
           if [[ "$BACKEND" == iris ]]; then args+=(--iris); fi
           if [[ -n "$SODIUM_PIN" ]]; then args+=(--sodium-pin "$SODIUM_PIN"); fi
           python3 tools/render_smoke_test.py --target "$TARGET" --renderer "$RENDERER" "${args[@]}"

@@ -243,7 +243,12 @@ public final class EmbeddiumShaderPreview {
             String pipelineName = "none";
             try {
                 Class<?> iris = Class.forName("net.irisshaders.iris.Iris");
-                shaders = (boolean) iris.getMethod("isPackInUseQuick").invoke(null);
+                try {
+                    shaders = (boolean) iris.getMethod("isPackInUseQuick").invoke(null);
+                } catch (NoSuchMethodException oculus17) {
+                    // Oculus 1.7.0 exposes the loaded pack through Optional.
+                    shaders = ((java.util.Optional<?>) iris.getMethod("getCurrentPack").invoke(null)).isPresent();
+                }
                 pack = String.valueOf(iris.getMethod("getCurrentPackName").invoke(null));
                 var pipelineManager = iris.getMethod("getPipelineManager").invoke(null);
                 var pipeline = pipelineManager.getClass().getMethod("getPipelineNullable").invoke(pipelineManager);
@@ -294,6 +299,8 @@ public final class EmbeddiumShaderPreview {
             record.put("camera", eye.toString()); record.put("shadersActive", shaders); record.put("shaderPack", pack);
             record.put("shaderPipeline", pipelineName);
             record.put("embeddium", embeddium); record.put("oculus", ModList.get().isLoaded("oculus"));
+            record.put("oculusVersion", ModList.get().getModContainerById("oculus")
+                .map(mod -> mod.getModInfo().getVersion().toString()).orElse("absent"));
             if (shot.has("fixtureY")) record.put("fixtureY", shot.get("fixtureY").getAsInt());
             if (embeddium && shot.has("fixtureY") && !(shot.has("edit") && shot.get("edit").getAsBoolean())) {
                 record.put("nativeRegressionMeasurements", EmbeddiumCompatibilityRegression.measurements());

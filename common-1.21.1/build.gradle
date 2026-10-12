@@ -10,6 +10,8 @@ architectury {
 }
 
 dependencies {
+    compileOnly "io.github.llamalad7:mixinextras-common:0.4.1"
+    testImplementation "io.github.llamalad7:mixinextras-common:0.4.1"
     implementation project(':common')
     modImplementation "net.fabricmc:fabric-loader:$fabric_loader_version"
     modImplementation "dev.architectury:architectury:$architectury_api_version"

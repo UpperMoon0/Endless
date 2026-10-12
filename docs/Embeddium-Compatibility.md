@@ -18,6 +18,12 @@ The loader plugins select the renderer's actual mod ID and API family. Legacy Fa
 
 NeoForge uses its own render-frame events for batching, including early renderer bootstraps. On 26.1.2 real worlds explicitly implement logical build bounds so an Iris bootstrap cannot leave inherited vanilla height checks active; dense chunk arrays retain their physical bounds.
 
+## Oculus startup regression (#25)
+
+Endless 0.9.4 replaces the destruction-position `BlockPos.of(long)` redirect with a reference expression hook that reads the current destruction-map entry. Mixin 0.8.5 can reuse noncontiguous argument slots for a two-slot long temporary and overwrite an Oculus callback, producing `VerifyError: Bad local variable type` before a world loads. The new hook retains exact high-Y keys and returns the original vanilla position when logical heights are inactive.
+
+The Forge artifact bundles MixinExtras 0.4.1 so this hook also loads without Oculus or Create. The renderer workflow includes the reported Oculus 1.7.0 artifact (`vVuYfukI`) alongside the existing Oculus 1.8.0 profile. Run `python tools/render_smoke_test.py --oculus --oculus-pin vVuYfukI` for the former; omit `--oculus-pin` for 1.8.0. Both runs use Embeddium 0.3.31 and shaders disabled, and require the existing native framebuffer and rendering regressions. Active shader validation and unrelated Oculus features remain outside this startup regression.
+
 ## Rendering contract
 
 Endless keeps vanilla's dense section array bounded. Logical `Level.isOutsideBuildHeight` therefore cannot guard another mod's direct dense-array access. The adapter supplies sections to Embeddium's clone cache, world-slice origin check and section-registration emptiness check using a bounds-checked dense lookup or an existing sparse section. Render lookups never create sparse pages.

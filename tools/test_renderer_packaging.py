@@ -1,3 +1,4 @@
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -35,6 +36,13 @@ class RendererPackagingTest(unittest.TestCase):
                                     ''.join('[[mixins]]\nconfig = "' + name + '"\n' for name in configs))
             if loader == 'forge':
                 self.files['META-INF/MANIFEST.MF'] = 'Manifest-Version: 1.0\r\nMixinConfigs: ' + ','.join(configs) + '\r\n'
+                nested = io.BytesIO()
+                with zipfile.ZipFile(nested, 'w') as jar:
+                    jar.writestr('com/llamalad7/mixinextras/injector/ModifyExpressionValue.class', b'injector')
+                path = 'META-INF/jarjar/mixinextras-forge-0.4.1.jar'
+                self.files[path] = nested.getvalue()
+                self.files['META-INF/jarjar/metadata.json'] = json.dumps({'jars': [{
+                    'identifier': {'group': 'io.github.llamalad7', 'artifact': 'mixinextras-forge'}, 'path': path}]})
         self.files['com/example/Gate.class'] = b'gate'
         for name, hooks in configs.items():
             self.files[name] = json.dumps({'package': 'com.example', 'client': sorted(hooks),
@@ -50,6 +58,37 @@ class RendererPackagingTest(unittest.TestCase):
 
     def test_production_refmap_satisfies_named_optional_hook(self):
         self.assertEqual([], self.check())
+
+    def test_forge_without_bundled_expression_runtime_is_rejected(self):
+        self.configure_target('forge', '1.20.1')
+        self.files.pop('META-INF/jarjar/metadata.json')
+        self.assertIn('Forge destruction hook requires a bundled MixinExtras runtime', self.check())
+
+    def test_forge_runtime_without_expression_injector_is_rejected(self):
+        self.configure_target('forge', '1.20.1')
+        nested = io.BytesIO()
+        with zipfile.ZipFile(nested, 'w') as jar:
+            jar.writestr('other.class', b'other')
+        self.files['META-INF/jarjar/mixinextras-forge-0.4.1.jar'] = nested.getvalue()
+        self.assertIn('Bundled MixinExtras lacks the destruction expression injector', self.check())
+
+    def test_forge_wrapper_must_register_its_nested_common_runtime(self):
+        self.configure_target('forge', '1.20.1')
+        path = 'META-INF/jarjar/mixinextras-forge-0.4.1.jar'
+        common = self.files[path]
+        for registered in (True, False):
+            wrapper = io.BytesIO()
+            with zipfile.ZipFile(wrapper, 'w') as jar:
+                jar.writestr('META-INF/jars/MixinExtras.jar', common)
+                if registered:
+                    jar.writestr('META-INF/jarjar/metadata.json', json.dumps({'jars': [
+                        {'path': 'META-INF/jars/MixinExtras.jar'}]}))
+            self.files[path] = wrapper.getvalue()
+            errors = self.check()
+            if registered:
+                self.assertEqual([], errors)
+            else:
+                self.assertIn('Bundled MixinExtras lacks the destruction expression injector', errors)
 
     def test_every_release_target_accepts_complete_contract(self):
         for loader, version in REQUIRED_HOOKS:

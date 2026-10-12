@@ -54,7 +54,7 @@ def prepare(instance: Path, output: Path, shots=SHOTS, shader_pack: Path | None 
     return request
 
 
-def validate(output: Path, request: dict, oculus: bool, target: str = "forge-1.20.1", renderer: str = "embeddium") -> list[dict]:
+def validate(output: Path, request: dict, oculus: bool, target: str = "forge-1.20.1", renderer: str = "embeddium", oculus_version: str | None = None) -> list[dict]:
     records = json.loads((output / 'capture-manifest.json').read_text())
     expected = {shot['name'] + '.png' for shot in request['shots']}
     if (output / 'failure.txt').exists():
@@ -65,6 +65,8 @@ def validate(output: Path, request: dict, oculus: bool, target: str = "forge-1.2
         active = bool(request.get('expectShaders', False))
         if not record[renderer] or record['oculus'] != oculus or record['shadersActive'] != active:
             raise RuntimeError('Unexpected renderer/Oculus/shader state')
+        if oculus_version and record.get('oculusVersion') != oculus_version:
+            raise RuntimeError('Unexpected loaded Oculus version')
         if active and 'Complementary' not in record.get('shaderPack', ''):
             raise RuntimeError('Expected active Complementary pipeline')
         if active and not record.get('shaderPipeline', '').endswith('.IrisRenderingPipeline'):
@@ -139,9 +141,12 @@ def main() -> None:
     parser.add_argument("--sodium-pin")
     parser.add_argument('--shader-pack', type=Path, help='Enable a local Complementary ZIP with Iris/Oculus')
     parser.add_argument('--oculus', action='store_true', help='Load pinned Oculus with shaders disabled')
+    parser.add_argument('--oculus-pin', choices=('vVuYfukI', 'iQ1SwGc3'), help='Oculus 1.7.0 or 1.8.0 regression artifact')
     parser.add_argument('--timeout', type=int, default=1200)
     parser.add_argument('--prepare-only', action='store_true')
     args = parser.parse_args()
+    if args.oculus_pin and (not args.oculus or args.target != 'forge-1.20.1'):
+        parser.error('--oculus-pin requires --oculus and Forge 1.20.1')
     if args.shader_pack and not (args.iris or args.oculus):
         parser.error('--shader-pack requires --iris or --oculus')
     backend = 'oculus' if args.oculus else ('iris' if args.iris else args.renderer)
@@ -157,6 +162,8 @@ def main() -> None:
                '--no-daemon', '--stacktrace', '--console=plain', '-Dorg.gradle.jvmargs=-Xmx1536m', '-Dorg.gradle.workers.max=2']
     if args.oculus:
         command.append('-PpreviewOculus')
+        if args.oculus_pin:
+            command.append('-PpreviewOculusPin=' + args.oculus_pin)
     if args.target != 'forge-1.20.1':
         command.append('-PpreviewRenderer=' + args.renderer)
     if args.iris:
@@ -185,7 +192,8 @@ def main() -> None:
                 time.sleep(1)
             if process.returncode:
                 raise RuntimeError(f'Render client/build exited {process.returncode}; inspect {output}/client.log')
-            records = validate(output, request, args.oculus, args.target, args.renderer)
+            oculus_version = ('1.7.0' if args.oculus_pin == 'vVuYfukI' else '1.8.0') if args.oculus else None
+            records = validate(output, request, args.oculus, args.target, args.renderer, oculus_version)
             if any(bool(r.get('iris')) != args.iris for r in records):
                 raise RuntimeError('Unexpected Iris loader state')
             head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()

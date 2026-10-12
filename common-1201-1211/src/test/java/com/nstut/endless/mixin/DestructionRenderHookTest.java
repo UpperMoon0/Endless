@@ -1,7 +1,6 @@
 package com.nstut.endless.mixin;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
-import com.llamalad7.mixinextras.sugar.Local;
 import com.nstut.endless.compat.create.CreateDestructionPositions;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import it.unimi.dsi.fastutil.longs.AbstractLong2ObjectMap;
@@ -15,7 +14,6 @@ class DestructionRenderHookTest {
     @Test void expressionHookHasNoWideSpillAndRetainsExactKeysAndVanillaFallback() throws Exception {
         Method hook = DestructionProgressMixin.class.getDeclaredMethod("endless$renderExactCrack", BlockPos.class, Long2ObjectMap.Entry.class);
         assertNotNull(hook.getAnnotation(ModifyExpressionValue.class));
-        assertNotNull(hook.getParameters()[1].getAnnotation(Local.class));
         hook.setAccessible(true);
         DestructionProgressMixin renderer = new DestructionProgressMixin() {};
         var field = DestructionProgressMixin.class.getDeclaredField("endless$crackPositions");

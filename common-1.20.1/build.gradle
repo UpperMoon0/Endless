@@ -12,9 +12,11 @@ architectury {
 configurations { mixin085Regression }
 
 repositories {
-    maven {
-        url = uri('https://maven.minecraftforge.net')
-        content { includeModule 'org.spongepowered', 'mixin' }
+    exclusiveContent {
+        forRepository {
+            maven { url = uri('https://maven.minecraftforge.net') }
+        }
+        filter { includeModule 'org.spongepowered', 'mixin' }
     }
 }
 

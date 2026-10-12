@@ -1,5 +1,6 @@
 """Audit the shipped optional renderer hooks without loading renderer classes."""
 import argparse
+import io
 import json
 import re
 from pathlib import Path
@@ -64,6 +65,16 @@ def check_jar(path: Path) -> list[str]:
             return ['Missing loader metadata']
         metadata = jar.read(metadata_name).decode()
         target = release_target(names, metadata)
+        if target == ('forge', '1.20.1'):
+            jarjar = json.loads(jar.read('META-INF/jarjar/metadata.json')) if 'META-INF/jarjar/metadata.json' in names else {}
+            extras = [entry for entry in jarjar.get('jars', [])
+                      if entry.get('identifier') == {'group': 'io.github.llamalad7', 'artifact': 'mixinextras-forge'}]
+            if len(extras) != 1 or extras[0].get('path') not in names:
+                errors.append('Forge destruction hook requires a bundled MixinExtras runtime')
+            else:
+                with zipfile.ZipFile(io.BytesIO(jar.read(extras[0]['path']))) as nested:
+                    if 'com/llamalad7/mixinextras/injector/ModifyExpressionValue.class' not in nested.namelist():
+                        errors.append('Bundled MixinExtras lacks the destruction expression injector')
         registered = registered_configs(jar, target[0], metadata)
         required = REQUIRED_HOOKS.get(target)
         if required is None:

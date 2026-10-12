@@ -294,6 +294,8 @@ public final class EmbeddiumShaderPreview {
             record.put("camera", eye.toString()); record.put("shadersActive", shaders); record.put("shaderPack", pack);
             record.put("shaderPipeline", pipelineName);
             record.put("embeddium", embeddium); record.put("oculus", ModList.get().isLoaded("oculus"));
+            record.put("oculusVersion", ModList.get().getModContainerById("oculus")
+                .map(mod -> mod.getModInfo().getVersion().toString()).orElse("absent"));
             if (shot.has("fixtureY")) record.put("fixtureY", shot.get("fixtureY").getAsInt());
             if (embeddium && shot.has("fixtureY") && !(shot.has("edit") && shot.get("edit").getAsBoolean())) {
                 record.put("nativeRegressionMeasurements", EmbeddiumCompatibilityRegression.measurements());

@@ -1,6 +1,6 @@
 # Endless
 
-Endless 0.9.3 provides sparse, practically unbounded vertical building space for Minecraft 1.20.1 (Fabric/Forge), 1.21.1 (Fabric/NeoForge), and 26.1.2 (NeoForge) without allocating a dense chunk column for the entire height.
+Endless 0.9.4 provides sparse, practically unbounded vertical building space for Minecraft 1.20.1 (Fabric/Forge), 1.21.1 (Fabric/NeoForge), and 26.1.2 (NeoForge) without allocating a dense chunk column for the entire height.
 
 **Supported configuration envelope:** Y=-8,000,000 through Y=7,999,999.
 
@@ -82,7 +82,7 @@ Changing a logical range can narrow or widen where players, commands, and compat
 
 ### Existing worlds
 
-Fresh 0.9.3 worlds keep a vanilla `[-64,320)` dense core. Existing worlds may have a wider persisted dense core when they already contain extended Anvil sections. That persisted dense layout never shrinks automatically.
+Fresh 0.9.4 worlds keep a vanilla `[-64,320)` dense core. Existing worlds may have a wider persisted dense core when they already contain extended Anvil sections. That persisted dense layout never shrinks automatically.
 
 Native natural-spawn dispatch validates selected positions against the logical
 lower build limit. World-generation mods can therefore select habitats below
@@ -90,9 +90,9 @@ the dense core without having those attempts rejected at Y -64. The sampling
 policy remains with vanilla or the habitat mod; this does not scan every
 logical height or increase native mob caps.
 
-Endless 0.9.3 uses fail-closed migration for existing dense-world data. Before chunks load, ambiguous section layouts, meaningful data in unsafe guard sections, conflicting heightmap packing, or untrusted migration inputs stop startup instead of allowing vanilla to silently discard sections.
+Endless 0.9.4 uses fail-closed migration for existing dense-world data. Before chunks load, ambiguous section layouts, meaningful data in unsafe guard sections, conflicting heightmap packing, or untrusted migration inputs stop startup instead of allowing vanilla to silently discard sections.
 
-Back up important worlds before upgrading to 0.9.3. Sparse pages do not reinterpret existing Anvil data; they are a storage layer outside the persisted dense core.
+Back up important worlds before upgrading to 0.9.4. Sparse pages do not reinterpret existing Anvil data; they are a storage layer outside the persisted dense core.
 
 ## Compatibility notes
 
@@ -118,7 +118,7 @@ Initial and subsequent transparent mesh sorting preserve fractional camera movem
 
 ### Create contraption coordinates (#14)
 
-Endless 0.9.3 stores versioned full XYZ local coordinates in Create's paletted block entries for both disk and entity-spawn NBT. Native block states, block-entity data, and update tags remain attached to their original entries. Existing entries without the extension keep Create's legacy interpretation; malformed extended coordinates are refused. Previously truncated data cannot be reconstructed automatically.
+Endless 0.9.4 stores versioned full XYZ local coordinates in Create's paletted block entries for both disk and entity-spawn NBT. Native block states, block-entity data, and update tags remain attached to their original entries. Existing entries without the extension keep Create's legacy interpretation; malformed extended coordinates are refused. Previously truncated data cannot be reconstructed automatically.
 
 The default-cap regression builds real mounted contraptions with 2,047 and 2,048 payload blocks and checks every position/state after both disk and spawn serialization. The latter includes the anchor and local Y=+2048, which previously became -2048. Forge 1.20.1 and NeoForge 1.21.1 require matching clients with the current handshake (Forge protocol 6 / NeoForge protocol 7) because older clients cannot read the exact spawn keys and extended train nodes. These targeted tests do not certify every Create/Flywheel behavior, arbitrary addon, imported legacy contraption, passenger/collision workflow, or complete lighting/culling lifecycle.
 

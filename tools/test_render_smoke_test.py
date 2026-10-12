@@ -9,6 +9,12 @@ import render_smoke_test as smoke
 
 
 class RenderSmokeTest(unittest.TestCase):
+    def test_oculus_regression_requires_actual_loaded_version(self):
+        self.record.update(oculus=True, oculusVersion='1.8.0')
+        self.write()
+        with self.assertRaisesRegex(RuntimeError, 'loaded Oculus version'):
+            smoke.validate(self.root, self.request, True, oculus_version='1.7.0')
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

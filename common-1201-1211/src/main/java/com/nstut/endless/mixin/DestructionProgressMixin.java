@@ -1,5 +1,7 @@
 package com.nstut.endless.mixin;
 
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
+import com.llamalad7.mixinextras.sugar.Local;
 import com.nstut.endless.compat.create.CreateDestructionPositions;
 import com.nstut.endless.compat.create.DestructionPositionLookup;
 import com.nstut.endless.heights.EndlessLogicalHeights;
@@ -40,8 +42,14 @@ public abstract class DestructionProgressMixin implements DestructionPositionLoo
     private long endless$lookupCrackKey(BlockPos pos) {
         return EndlessLogicalHeights.isActive() ? endless$crackPositions.lookup(pos) : pos.asLong();
     }
-    @Redirect(method = "renderLevel", at = @At(value = "INVOKE", target = "Lnet/minecraft/core/BlockPos;of(J)Lnet/minecraft/core/BlockPos;"), require = 1)
-    private BlockPos endless$renderExactCrack(long key) { return endless$crackPositions.position(key); }
+    // A long-argument Redirect can reuse noncontiguous Mixin 0.8.5 argument
+    // slots and overwrite Oculus's CallbackInfo. Keep the vanilla call and
+    // read its key from the unique entry local instead of spilling a long.
+    @ModifyExpressionValue(method = "renderLevel", at = @At(value = "INVOKE", target = "Lnet/minecraft/core/BlockPos;of(J)Lnet/minecraft/core/BlockPos;"), require = 1)
+    private BlockPos endless$renderExactCrack(BlockPos original,
+        @Local Long2ObjectMap.Entry<SortedSet<BlockDestructionProgress>> entry) {
+        return EndlessLogicalHeights.isActive() ? endless$crackPositions.position(entry.getLongKey()) : original;
+    }
 
     // Create inserts its extras immediately after updateTick, before native
     // primary insertion. Move those entries to exact keys before rendering.

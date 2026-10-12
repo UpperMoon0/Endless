@@ -9,7 +9,19 @@ architectury {
     common project.enabled_platforms.split(',')
 }
 
+configurations { mixin085Regression }
+
+repositories {
+    maven {
+        url = uri('https://maven.minecraftforge.net')
+        content { includeModule 'org.spongepowered', 'mixin' }
+    }
+}
+
 dependencies {
+    mixin085Regression("org.spongepowered:mixin:0.8.5") { transitive = false }
+    compileOnly "io.github.llamalad7:mixinextras-common:0.4.1"
+    testImplementation "io.github.llamalad7:mixinextras-common:0.4.1"
     implementation project(':common')
     modImplementation "net.fabricmc:fabric-loader:$fabric_loader_version"
     modImplementation "dev.architectury:architectury:$architectury_api_version"
@@ -20,6 +32,9 @@ dependencies {
 }
 
 test {
+    doFirst {
+        systemProperty 'endless.mixin085.jar', configurations.mixin085Regression.singleFile.absolutePath
+    }
     useJUnitPlatform()
     testLogging {
         events "passed", "skipped", "failed"

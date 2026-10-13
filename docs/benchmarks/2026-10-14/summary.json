@@ -1,0 +1,560 @@
+[
+  {
+    "sparse": false,
+    "workload": "edits",
+    "label": "candidate",
+    "jvms": 5,
+    "tick_median_ms": 17.6306,
+    "tick_median_ms_range": [
+      14.5844,
+      18.94545
+    ],
+    "tick_p95_ms": 31.0903,
+    "tick_p95_ms_range": [
+      18.1527,
+      37.5088
+    ],
+    "tick_p99_ms": 40.6713,
+    "tick_p99_ms_range": [
+      25.8407,
+      57.072
+    ],
+    "cpu_mean_ms": 11.703125,
+    "cpu_mean_ms_range": [
+      10.078125,
+      12.65625
+    ],
+    "allocated_mean_kib": 2176.8423125,
+    "allocated_mean_kib_range": [
+      2128.148359375,
+      2235.182671875
+    ]
+  },
+  {
+    "sparse": false,
+    "workload": "edits",
+    "label": "current",
+    "jvms": 5,
+    "tick_median_ms": 24.4777,
+    "tick_median_ms_range": [
+      23.61335,
+      27.11205
+    ],
+    "tick_p95_ms": 37.3852,
+    "tick_p95_ms_range": [
+      32.8435,
+      40.1642
+    ],
+    "tick_p99_ms": 48.1949,
+    "tick_p99_ms_range": [
+      40.28,
+      57.4218
+    ],
+    "cpu_mean_ms": 19.015625,
+    "cpu_mean_ms_range": [
+      18.421875,
+      21.296875
+    ],
+    "allocated_mean_kib": 2385.6360390625,
+    "allocated_mean_kib_range": [
+      2296.8036875,
+      2465.0938203125
+    ]
+  },
+  {
+    "sparse": false,
+    "workload": "edits",
+    "label": "fabric",
+    "jvms": 5,
+    "tick_median_ms": 15.4989,
+    "tick_median_ms_range": [
+      13.90325,
+      17.57025
+    ],
+    "tick_p95_ms": 24.7389,
+    "tick_p95_ms_range": [
+      20.3211,
+      32.639
+    ],
+    "tick_p99_ms": 34.0938,
+    "tick_p99_ms_range": [
+      24.0782,
+      55.8385
+    ],
+    "cpu_mean_ms": 10.359375,
+    "cpu_mean_ms_range": [
+      10.046875,
+      11.765625
+    ],
+    "allocated_mean_kib": 1966.0226796875,
+    "allocated_mean_kib_range": [
+      1963.350765625,
+      2010.600390625
+    ]
+  },
+  {
+    "sparse": false,
+    "workload": "edits",
+    "label": "vanilla",
+    "jvms": 5,
+    "tick_median_ms": 15.58815,
+    "tick_median_ms_range": [
+      14.53065,
+      16.3348
+    ],
+    "tick_p95_ms": 25.9935,
+    "tick_p95_ms_range": [
+      24.3456,
+      28.308
+    ],
+    "tick_p99_ms": 35.9969,
+    "tick_p99_ms_range": [
+      33.7336,
+      37.221
+    ],
+    "cpu_mean_ms": 10.203125,
+    "cpu_mean_ms_range": [
+      10.1875,
+      10.671875
+    ],
+    "allocated_mean_kib": 1965.60128125,
+    "allocated_mean_kib_range": [
+      1955.1517578125,
+      2046.554390625
+    ]
+  },
+  {
+    "sparse": false,
+    "workload": "idle",
+    "label": "candidate",
+    "jvms": 5,
+    "tick_median_ms": 0.0519,
+    "tick_median_ms_range": [
+      0.0506,
+      0.0606
+    ],
+    "tick_p95_ms": 0.1142,
+    "tick_p95_ms_range": [
+      0.0987,
+      0.1327
+    ],
+    "tick_p99_ms": 0.2596,
+    "tick_p99_ms_range": [
+      0.2446,
+      0.3143
+    ],
+    "cpu_mean_ms": 0.078125,
+    "cpu_mean_ms_range": [
+      0.0625,
+      0.078125
+    ],
+    "allocated_mean_kib": 16.0198515625,
+    "allocated_mean_kib_range": [
+      15.9619453125,
+      16.08084375
+    ]
+  },
+  {
+    "sparse": false,
+    "workload": "idle",
+    "label": "current",
+    "jvms": 5,
+    "tick_median_ms": 0.0543,
+    "tick_median_ms_range": [
+      0.0506,
+      0.059
+    ],
+    "tick_p95_ms": 0.1236,
+    "tick_p95_ms_range": [
+      0.109,
+      0.177
+    ],
+    "tick_p99_ms": 0.5725,
+    "tick_p99_ms_range": [
+      0.2699,
+      0.642
+    ],
+    "cpu_mean_ms": 0.0625,
+    "cpu_mean_ms_range": [
+      0.046875,
+      0.109375
+    ],
+    "allocated_mean_kib": 15.9551484375,
+    "allocated_mean_kib_range": [
+      15.936359375,
+      15.9708515625
+    ]
+  },
+  {
+    "sparse": false,
+    "workload": "idle",
+    "label": "fabric",
+    "jvms": 5,
+    "tick_median_ms": 0.0464,
+    "tick_median_ms_range": [
+      0.0459,
+      0.05545
+    ],
+    "tick_p95_ms": 0.1237,
+    "tick_p95_ms_range": [
+      0.1032,
+      0.1507
+    ],
+    "tick_p99_ms": 0.337,
+    "tick_p99_ms_range": [
+      0.2057,
+      0.5514
+    ],
+    "cpu_mean_ms": 0.078125,
+    "cpu_mean_ms_range": [
+      0.046875,
+      0.078125
+    ],
+    "allocated_mean_kib": 15.7278984375,
+    "allocated_mean_kib_range": [
+      15.7149609375,
+      15.976390625
+    ]
+  },
+  {
+    "sparse": false,
+    "workload": "idle",
+    "label": "vanilla",
+    "jvms": 5,
+    "tick_median_ms": 0.0513,
+    "tick_median_ms_range": [
+      0.0498,
+      0.08775
+    ],
+    "tick_p95_ms": 0.1381,
+    "tick_p95_ms_range": [
+      0.0958,
+      0.2172
+    ],
+    "tick_p99_ms": 0.3397,
+    "tick_p99_ms_range": [
+      0.1858,
+      0.6253
+    ],
+    "cpu_mean_ms": 0.078125,
+    "cpu_mean_ms_range": [
+      0.03125,
+      0.078125
+    ],
+    "allocated_mean_kib": 15.5339375,
+    "allocated_mean_kib_range": [
+      15.518921875,
+      15.9274765625
+    ]
+  },
+  {
+    "sparse": false,
+    "workload": "reads",
+    "label": "candidate",
+    "jvms": 5,
+    "tick_median_ms": 0.31245,
+    "tick_median_ms_range": [
+      0.27585,
+      0.3369
+    ],
+    "tick_p95_ms": 0.7959,
+    "tick_p95_ms_range": [
+      0.5834,
+      1.3861
+    ],
+    "tick_p99_ms": 2.0534,
+    "tick_p99_ms_range": [
+      1.0721,
+      2.2817
+    ],
+    "cpu_mean_ms": 0.390625,
+    "cpu_mean_ms_range": [
+      0.3125,
+      0.453125
+    ],
+    "allocated_mean_kib": 248.845953125,
+    "allocated_mean_kib_range": [
+      240.3643828125,
+      255.0338828125
+    ]
+  },
+  {
+    "sparse": false,
+    "workload": "reads",
+    "label": "current",
+    "jvms": 5,
+    "tick_median_ms": 0.3369,
+    "tick_median_ms_range": [
+      0.3248,
+      0.36825
+    ],
+    "tick_p95_ms": 0.6839,
+    "tick_p95_ms_range": [
+      0.6301,
+      0.8067
+    ],
+    "tick_p99_ms": 1.5619,
+    "tick_p99_ms_range": [
+      1.0707,
+      2.4018
+    ],
+    "cpu_mean_ms": 0.375,
+    "cpu_mean_ms_range": [
+      0.359375,
+      0.40625
+    ],
+    "allocated_mean_kib": 252.619234375,
+    "allocated_mean_kib_range": [
+      252.3535703125,
+      252.8388828125
+    ]
+  },
+  {
+    "sparse": false,
+    "workload": "reads",
+    "label": "fabric",
+    "jvms": 5,
+    "tick_median_ms": 0.27755,
+    "tick_median_ms_range": [
+      0.2251,
+      0.29695
+    ],
+    "tick_p95_ms": 0.5672,
+    "tick_p95_ms_range": [
+      0.459,
+      0.6642
+    ],
+    "tick_p99_ms": 1.2593,
+    "tick_p99_ms_range": [
+      1.0986,
+      2.5652
+    ],
+    "cpu_mean_ms": 0.296875,
+    "cpu_mean_ms_range": [
+      0.265625,
+      0.390625
+    ],
+    "allocated_mean_kib": 236.6519453125,
+    "allocated_mean_kib_range": [
+      236.3292578125,
+      236.795890625
+    ]
+  },
+  {
+    "sparse": false,
+    "workload": "reads",
+    "label": "vanilla",
+    "jvms": 5,
+    "tick_median_ms": 0.28055,
+    "tick_median_ms_range": [
+      0.24755,
+      0.2869
+    ],
+    "tick_p95_ms": 0.6389,
+    "tick_p95_ms_range": [
+      0.4939,
+      0.6952
+    ],
+    "tick_p99_ms": 1.6175,
+    "tick_p99_ms_range": [
+      0.8399,
+      1.8323
+    ],
+    "cpu_mean_ms": 0.3125,
+    "cpu_mean_ms_range": [
+      0.234375,
+      0.359375
+    ],
+    "allocated_mean_kib": 236.24209375,
+    "allocated_mean_kib_range": [
+      228.027875,
+      236.4151171875
+    ]
+  },
+  {
+    "sparse": true,
+    "workload": "edits",
+    "label": "candidate",
+    "jvms": 5,
+    "tick_median_ms": 6.7636,
+    "tick_median_ms_range": [
+      6.68455,
+      8.3338
+    ],
+    "tick_p95_ms": 8.1359,
+    "tick_p95_ms_range": [
+      7.966,
+      13.6331
+    ],
+    "tick_p99_ms": 11.774,
+    "tick_p99_ms_range": [
+      10.06,
+      29.8394
+    ],
+    "cpu_mean_ms": 6.671875,
+    "cpu_mean_ms_range": [
+      6.53125,
+      8.40625
+    ],
+    "allocated_mean_kib": 4077.4683125,
+    "allocated_mean_kib_range": [
+      4050.0142890625,
+      4269.644875
+    ]
+  },
+  {
+    "sparse": true,
+    "workload": "edits",
+    "label": "current",
+    "jvms": 5,
+    "tick_median_ms": 12.14185,
+    "tick_median_ms_range": [
+      11.02875,
+      13.3742
+    ],
+    "tick_p95_ms": 14.2859,
+    "tick_p95_ms_range": [
+      12.491,
+      29.4954
+    ],
+    "tick_p99_ms": 18.1847,
+    "tick_p99_ms_range": [
+      16.7865,
+      59.1665
+    ],
+    "cpu_mean_ms": 11.8125,
+    "cpu_mean_ms_range": [
+      10.953125,
+      13.3125
+    ],
+    "allocated_mean_kib": 4309.9255625,
+    "allocated_mean_kib_range": [
+      3965.900890625,
+      4745.908375
+    ]
+  },
+  {
+    "sparse": true,
+    "workload": "idle",
+    "label": "candidate",
+    "jvms": 5,
+    "tick_median_ms": 0.0543,
+    "tick_median_ms_range": [
+      0.0513,
+      0.05885
+    ],
+    "tick_p95_ms": 0.145,
+    "tick_p95_ms_range": [
+      0.1016,
+      0.2156
+    ],
+    "tick_p99_ms": 0.5495,
+    "tick_p99_ms_range": [
+      0.2535,
+      1.1619
+    ],
+    "cpu_mean_ms": 0.078125,
+    "cpu_mean_ms_range": [
+      0.0625,
+      0.09375
+    ],
+    "allocated_mean_kib": 16.095625,
+    "allocated_mean_kib_range": [
+      15.9375234375,
+      16.1353828125
+    ]
+  },
+  {
+    "sparse": true,
+    "workload": "idle",
+    "label": "current",
+    "jvms": 5,
+    "tick_median_ms": 0.0504,
+    "tick_median_ms_range": [
+      0.0499,
+      0.053
+    ],
+    "tick_p95_ms": 0.1273,
+    "tick_p95_ms_range": [
+      0.107,
+      0.1769
+    ],
+    "tick_p99_ms": 0.3953,
+    "tick_p99_ms_range": [
+      0.2821,
+      0.5898
+    ],
+    "cpu_mean_ms": 0.0625,
+    "cpu_mean_ms_range": [
+      0.0625,
+      0.078125
+    ],
+    "allocated_mean_kib": 16.0084921875,
+    "allocated_mean_kib_range": [
+      15.9700859375,
+      16.0694296875
+    ]
+  },
+  {
+    "sparse": true,
+    "workload": "reads",
+    "label": "candidate",
+    "jvms": 5,
+    "tick_median_ms": 0.30805,
+    "tick_median_ms_range": [
+      0.2897,
+      0.32295
+    ],
+    "tick_p95_ms": 0.6602,
+    "tick_p95_ms_range": [
+      0.6472,
+      0.7266
+    ],
+    "tick_p99_ms": 1.4122,
+    "tick_p99_ms_range": [
+      1.1992,
+      1.603
+    ],
+    "cpu_mean_ms": 0.359375,
+    "cpu_mean_ms_range": [
+      0.328125,
+      0.375
+    ],
+    "allocated_mean_kib": 241.11271875,
+    "allocated_mean_kib_range": [
+      240.808828125,
+      261.4110703125
+    ]
+  },
+  {
+    "sparse": true,
+    "workload": "reads",
+    "label": "current",
+    "jvms": 5,
+    "tick_median_ms": 0.33965,
+    "tick_median_ms_range": [
+      0.32745,
+      0.3666
+    ],
+    "tick_p95_ms": 0.7167,
+    "tick_p95_ms_range": [
+      0.6652,
+      0.9174
+    ],
+    "tick_p99_ms": 1.8776,
+    "tick_p99_ms_range": [
+      1.4288,
+      2.5996
+    ],
+    "cpu_mean_ms": 0.390625,
+    "cpu_mean_ms_range": [
+      0.375,
+      0.453125
+    ],
+    "allocated_mean_kib": 245.088125,
+    "allocated_mean_kib_range": [
+      244.79615625,
+      257.041671875
+    ]
+  }
+]

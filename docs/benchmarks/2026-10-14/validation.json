@@ -1,0 +1,276 @@
+{
+  "jvms": 30,
+  "exact_sprint_groups": 180,
+  "results": [
+    {
+      "run": "current-dense-0",
+      "ticks_sha256": "820f70bb47adb684a5f2731a9dde692d56e43de0bf4fda7188f35800a2035e0d",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769536,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "current-sparse-0",
+      "ticks_sha256": "91f41bd6ec7406f51d0520aeca54525bd15a3ead77dfbe4245805d093f839f76",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769280,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": true
+    },
+    {
+      "run": "candidate-dense-0",
+      "ticks_sha256": "89d8ab42a7e923bc352ec8a680d770adccdf098377e6c3ca9a3528b4e11f9bb4",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769280,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "candidate-sparse-0",
+      "ticks_sha256": "70c0063e727e6a0b167345c4ca5783b9d8180f85a161b89c4d2fccdb539e80cc",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769280,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": true
+    },
+    {
+      "run": "vanilla-dense-0",
+      "ticks_sha256": "475552541bd01e3996490c743138a20ffb66dfb503a8b0fc4438ad891162a9bd",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769536,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "fabric-dense-0",
+      "ticks_sha256": "33394431d72ecb93f100122aefab93c3db7ce4904cb3386408312ac2db4138ec",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769280,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "fabric-dense-1",
+      "ticks_sha256": "c5b45e68abe0fd26398c579a34785b8b6d557c51d1a97ef671dd5c0c39e40935",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769792,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "vanilla-dense-1",
+      "ticks_sha256": "f715ee7509087db53c4dc9d88d156a7fe95ca3b71248dbd1f2aba9ab8715a849",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769280,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "candidate-dense-1",
+      "ticks_sha256": "fa82520c6640d3347a75ed091b1d9304a8e9fcfa29d9e0e1758b391985aa50d4",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769280,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "candidate-sparse-1",
+      "ticks_sha256": "943df3cfa372ea76a58376e0a1a641c0b30056cccecb7a25b100c867e0c975db",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769536,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": true
+    },
+    {
+      "run": "current-dense-1",
+      "ticks_sha256": "f0e9f7916130d19a64e929de1e4e2f68351a72dd7d6db0f7ab7a9215926fb078",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769280,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "current-sparse-1",
+      "ticks_sha256": "cef5cf71cdd97368568d64314931ac4b732ac80a1aec9d08fbb3456b430bb8aa",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769536,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": true
+    },
+    {
+      "run": "current-dense-2",
+      "ticks_sha256": "0a9b3dc5ce0369676997b45ef66dc7683ee5e88d61d69e732547fbb365abf6c6",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769792,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "current-sparse-2",
+      "ticks_sha256": "44c1ba8b9a137ce56efad2eda4d02ddaa39765b8badd81623d96425669ffec04",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769792,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": true
+    },
+    {
+      "run": "candidate-dense-2",
+      "ticks_sha256": "abaab7a9e89ad41c548ba99aab7fad4d5f183c5b026f217e7507cd0365ac78e5",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769280,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "candidate-sparse-2",
+      "ticks_sha256": "c8289079bf600e27d8a7d54ff4900e288c71455e12ccd776d2ea1f44275a4ec2",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769280,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": true
+    },
+    {
+      "run": "vanilla-dense-2",
+      "ticks_sha256": "1f6c3ccd5b719b09e85c0aef3095a0a9f3afa1c3c4d366eece7557e48247941d",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769280,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "fabric-dense-2",
+      "ticks_sha256": "b636bfdd40f4fbfda2189eee7055f22039646319b930853d2b1415d02d264c48",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769536,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "fabric-dense-3",
+      "ticks_sha256": "3a661a08dc2b88670c68551f13e96978c9430081862ab92dc57bae045a4e59fd",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769536,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "vanilla-dense-3",
+      "ticks_sha256": "286e375e68bf9b16fbfaafb58b220d6f5f8d3d18c62a7cfdd331b5dd0643de9d",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769280,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "candidate-dense-3",
+      "ticks_sha256": "b8765797b7b6c35798f9c74c541e0ee89bc1e004364efe89798f977e2d015865",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769536,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "candidate-sparse-3",
+      "ticks_sha256": "290413ddda8df1bc29fb544fecbc6b6863c87aebc86ba3698e3624ae1400c102",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769280,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": true
+    },
+    {
+      "run": "current-dense-3",
+      "ticks_sha256": "b2f4e93520573b0f4edf6f4cb7197e03e1e3fe2cc56aae09c421050e035b989f",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769536,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "current-sparse-3",
+      "ticks_sha256": "f0918ded6ea79e5be8196ec8519be4502c65f4f80d563209a76ed54cef8210d0",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769280,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": true
+    },
+    {
+      "run": "current-dense-4",
+      "ticks_sha256": "b9bf1c0568c6d6314dec5b6982f11531e2b4ac9bf55ba9fbc809ca4be2f8c257",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769792,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "current-sparse-4",
+      "ticks_sha256": "39f63a05df3acbdbe74c840de7df0c5db3511414512476f585ff931d41fa023e",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769536,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": true
+    },
+    {
+      "run": "candidate-dense-4",
+      "ticks_sha256": "47b7b8b7fb5f0111ac02b68f78f5c43e6d58b2ff136072666c2fcabbb54f16dd",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769280,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "candidate-sparse-4",
+      "ticks_sha256": "1d849d5cd0c2436427ce05437942a470ae89e360d292bde31cd299049970d1fc",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769280,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": true
+    },
+    {
+      "run": "vanilla-dense-4",
+      "ticks_sha256": "15dfd4ad895fe030f666b38d5a7344386e8b0f4877e2bf7d206feca7e82edbd3",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769280,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    },
+    {
+      "run": "fabric-dense-4",
+      "ticks_sha256": "3d9e5c374cb5d4e52b282de2ec31bf8d45f1e9dfeb0314c54beab574acf6ffd8",
+      "warmup_ticks_each": 500,
+      "measured_ticks_each": 1000,
+      "height_queries": 769536,
+      "native_write_checked": true,
+      "sparse_page_persistence_checked": false
+    }
+  ]
+}

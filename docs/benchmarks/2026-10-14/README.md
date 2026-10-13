@@ -2,7 +2,28 @@
 
 Baseline: `67b991ec10e21a1747179dedb8d0704d72f914ac`, the default branch pulled for
 this investigation (Endless 0.9.4). Candidate: the 0.9.5 performance changes in
-this PR. The candidate's exact binary is identified in `metadata.json`.
+this PR, committed as `eecea55c647332f03d96cd1ff69de01e2600190a`. The candidate's exact binary is identified in `metadata.json`.
+
+## Results
+
+Dense edits: 24.48 to 17.63 ms median (-28.0%), p95 -16.8%, server-thread
+CPU -38.5%, allocations -8.8%. Vanilla measured 15.59 ms median in the same
+fixture, so the candidate still has about 13% median overhead against vanilla.
+
+Sparse Y=4096 edits: 12.14 to 6.76 ms median (-44.3%), p95 -43.0%, CPU
+-43.5%, allocations -5.4%. All five paired JVMs improved edit medians at both
+heights. Native height-query medians improved 7.3% dense and 9.3% sparse.
+
+Remaining regressions: dense read-query p95 increased 16.4% (0.684 to 0.796 ms)
+and its aggregate CPU mean increased 4.2%. Sparse idle median increased 7.7%
+(0.0504 to 0.0543 ms) and p95 increased 13.9%. Idle allocation increased about
+0.4-0.5%; its CPU mean increased one Windows timer quantum per 1,000 ticks.
+Run ranges overlap for the read and idle timing cases; these results do not
+establish a speedup for every workload. No combined score hides those cases.
+
+See [all workload summaries](summary.md), [per-JVM results](results.json),
+[run ranges](summary.json), [binary/host metadata](metadata.json), and
+[exact-tick receipts](validation.json). Compressed raw tick CSVs are in `raw/`.
 
 ## Method
 
@@ -51,6 +72,11 @@ or speedups on other Minecraft versions. The full unit, packaging, required live
 gameplay and renderer matrix remains the feature-preservation gate. Optimizations
 retain height predicates, empty-column caching, full X/Z identity, cache lifecycle,
 lighting invalidation, native delegation and all sparse storage/network features.
+
+The height index allocates 256 x 6 integers (6 KiB of payload) on the first query
+for a horizontal chunk and releases them on column unload. This replaces one
+map entry per cached column/type. Sparsely queried chunks can use more cache
+memory than before; allocation savings during edits do not imply lower peak RAM.
 
 The first unmerged cache implementation showed read-query/allocation overhead
 from packed chunk-key hash collisions. That calibration series was rejected.

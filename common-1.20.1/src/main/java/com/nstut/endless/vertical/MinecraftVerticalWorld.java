@@ -49,7 +49,7 @@ public final class MinecraftVerticalWorld {
     private final Set<VerticalPagePos> attemptedLoads = new HashSet<>();
     private final Set<VerticalPagePos> dirtyPages = new HashSet<>();
     private final Map<VerticalPagePos, Long> revisions = new HashMap<>();
-    private final Map<HeightKey, Integer> heightCache = new HashMap<>();
+    private final ColumnHeightCache heightCache = new ColumnHeightCache(Heightmap.Types.values().length);
     private final SectionLightCache<DataLayer> sectionBlockLight = new SectionLightCache<>(512);
     private final Map<BlockKey, Integer> skyLight = new LinkedHashMap<>(1024, 0.75f, true) {
         @Override
@@ -287,17 +287,15 @@ public final class MinecraftVerticalWorld {
     public synchronized int getExtendedHeight(Heightmap.Types type, int blockX, int blockZ) {
         int chunkX = blockX >> 4;
         int chunkZ = blockZ >> 4;
-        HeightKey key = new HeightKey(
-            ChunkPos.asLong(chunkX, chunkZ),
-            (blockX & 15) | ((blockZ & 15) << 4),
-            type);
-        Integer cached = heightCache.get(key);
-        if (cached != null) {
+        long key = ChunkPos.asLong(chunkX, chunkZ);
+        int local = (blockX & 15) | ((blockZ & 15) << 4);
+        int cached = heightCache.get(key, local, type.ordinal());
+        if (cached != ColumnHeightCache.UNKNOWN) {
             return cached;
         }
         int top = findExtendedTop(type, chunkX, chunkZ, blockX & 15, blockZ & 15);
         int result = top == Integer.MIN_VALUE ? Integer.MIN_VALUE : top + 1;
-        heightCache.put(key, result);
+        heightCache.put(key, local, type.ordinal(), result);
         return result;
     }
 
@@ -668,7 +666,7 @@ public final class MinecraftVerticalWorld {
     private void invalidateForBlockChange(BlockPos pos) {
         long key = ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4);
         int local = (pos.getX() & 15) | ((pos.getZ() & 15) << 4);
-        heightCache.keySet().removeIf(heightKey -> heightKey.chunkKey == key && heightKey.localColumn == local);
+        heightCache.invalidate(key, local);
         invalidateBlockLightAround(pos);
         // Sky exposure depends on the highest sparse block in a column and can
         // therefore change arbitrarily far below a modified high-Y block.
@@ -676,7 +674,7 @@ public final class MinecraftVerticalWorld {
     }
 
     private void invalidateHeightColumn(long key) {
-        heightCache.keySet().removeIf(heightKey -> heightKey.chunkKey == key);
+        heightCache.invalidateChunk(key);
     }
 
     private void invalidateBlockLightAround(BlockPos pos) {
@@ -711,8 +709,6 @@ public final class MinecraftVerticalWorld {
         sectionBlockLight.invalidateBox((chunkX<<4)-r,-8000000,(chunkZ<<4)-r,(chunkX<<4)+15+r,7999999,(chunkZ<<4)+15+r);
         skyLight.keySet().removeIf(key -> (key.x >> 4) == chunkX && (key.z >> 4) == chunkZ);
     }
-
-    private record HeightKey(long chunkKey, int localColumn, Heightmap.Types type) {}
 
     private record BlockKey(int x, int y, int z) {
         static BlockKey of(BlockPos pos) {

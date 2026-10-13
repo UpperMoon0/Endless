@@ -20,6 +20,8 @@ public final class EndlessLayerLightEventListener implements LayerLightEventList
         this.delegate = delegate;
     }
 
+    public boolean wraps(LayerLightEventListener listener) { return delegate == listener; }
+
     @Override
     public DataLayer getDataLayerData(SectionPos pos) {
         return delegate.getDataLayerData(pos);

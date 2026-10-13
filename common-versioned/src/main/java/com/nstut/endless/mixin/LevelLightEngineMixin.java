@@ -14,6 +14,7 @@ import net.minecraft.world.level.lighting.LevelLightEngine;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
@@ -22,6 +23,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(LevelLightEngine.class)
 public abstract class LevelLightEngineMixin {
     @Shadow @Final protected LevelHeightAccessor levelHeightAccessor;
+    @Unique private volatile EndlessLayerLightEventListener endless$blockListener;
+    @Unique private volatile EndlessLayerLightEventListener endless$skyListener;
 
     @Inject(method = "getLayerListener", at = @At("RETURN"), cancellable = true)
     private void endless$wrapLayerListener(
@@ -33,7 +36,14 @@ public abstract class LevelLightEngineMixin {
         }
         LayerLightEventListener delegate = cir.getReturnValue();
         if (!(delegate instanceof EndlessLayerLightEventListener)) {
-            cir.setReturnValue(new EndlessLayerLightEventListener(level, layer, delegate));
+            EndlessLayerLightEventListener cached = layer == LightLayer.BLOCK
+                ? endless$blockListener : endless$skyListener;
+            if (cached == null || !cached.wraps(delegate)) {
+                cached = new EndlessLayerLightEventListener(level, layer, delegate);
+                if (layer == LightLayer.BLOCK) endless$blockListener = cached;
+                else endless$skyListener = cached;
+            }
+            cir.setReturnValue(cached);
         }
     }
 

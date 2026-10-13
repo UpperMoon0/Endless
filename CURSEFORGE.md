@@ -2,7 +2,7 @@
 
 ![The Grand Amethyst Spire viewed from its ground-level entrance](https://raw.githubusercontent.com/UpperMoon0/Endless/d3e6e0f3d6ee24b2d59e17f6fd361897f61f62b9/assets/skyscraper-ground-up.jpg)
 
-Endless 0.9.4 lets you build higher and dig deeper than ever before. You can configure your world's build range anywhere from Y=-8,000,000 through Y=7,999,999 without turning every chunk into a millions-of-block-tall section array.
+Endless 0.9.5 lets you build higher and dig deeper than ever before. You can configure your world's build range anywhere from Y=-8,000,000 through Y=7,999,999 without turning every chunk into a millions-of-block-tall section array.
 
 ## Installation and dependencies
 

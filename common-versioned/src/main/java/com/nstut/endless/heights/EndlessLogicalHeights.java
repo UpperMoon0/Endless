@@ -38,7 +38,9 @@ public final class EndlessLogicalHeights {
 
     /** True when a buildable Y must be routed outside the bounded dense core. */
     public static boolean isSparseBuildHeight(int y) {
-        return contains(y) && EndlessHeights.isOutsideDenseBuildHeight(y);
+        // Ordinary terrain reads never need the logical bounds. Keep the
+        // sparse containment guard for values outside the persisted dense core.
+        return EndlessHeights.isOutsideDenseBuildHeight(y) && contains(y);
     }
 
     /** True anywhere the v0.5 sparse representation can safely address. */

@@ -68,6 +68,26 @@ Night Vision; it does not certify unassisted visibility, every terrain mesh,
 generic air rendering, shaders, other versions' pixels or sustained performance.
 
 
+## Performance regression checks
+
+`ColumnHeightCacheTest` verifies that cached empty columns remain distinct from
+unknown results, all height types are invalidated together, other local columns
+and full horizontal chunk keys survive edits, and unload/reload clears old results.
+The native section-light fixture additionally requires reused block/sky listeners,
+real sparse emission through the adapter, and stone-to-water-to-air transitions
+through every native height predicate. It prints
+`ENDLESS_HEIGHT_CACHE_INVALIDATION_PASS` alongside the existing light-cache marker.
+
+`tools/benchmark_server.py` compares official Minecraft 1.21.1 with Fabric alone,
+current Endless and a candidate build. It records exact sprint ticks after warmup
+in fresh JVMs with idle, native height-query and block-edit fixtures at normal Y
+and sparse Y=4096. Benchmark helpers are outside production source sets.
+CPU and allocation counters cover the server thread; Windows CPU counters are
+coarse, so aggregate means are useful while per-tick CPU percentiles are not.
+Client frames, GC pauses, peak RAM, multiplayer and other Minecraft versions need
+their own workload evidence. Do not treat this benchmark as a replacement for
+the required live and renderer gates.
+
 ## Navigation regressions
 
 One small region tests the lower and upper logical edges, both packed-Y edges,

@@ -1,0 +1,7 @@
+Endless 0.9.5
+
+- Index sparse height-cache results by horizontal chunk and local column. Block changes invalidate only that column's height types instead of scanning the world's cached heights.
+- Reuse per-engine block/sky light adapters while preserving delegate changes and inactive-world behavior.
+- Check the bounded dense core before the logical sparse range on ordinary terrain reads.
+- Add cached-empty-column, neighboring-column, all-height-type, lifecycle and native lighting regressions.
+- Add a reproducible dedicated-server benchmark against official vanilla, Fabric without Endless, and the previous Endless revision. Client FPS and populated multiplayer remain separate performance scopes.

@@ -1,4 +1,9 @@
 import unittest
+import csv
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 from benchmark_client import allowed, library_path, summarize_frames
 
 
@@ -27,6 +32,37 @@ class ClientBenchmarkTests(unittest.TestCase):
     def test_maven_classifier(self):
         self.assertEqual(library_path('org.lwjgl:lwjgl:3.3.3:natives-windows').as_posix(),
                          'org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-natives-windows.jar')
+
+    @unittest.skipUnless(shutil.which('javac') and shutil.which('java'), 'JDK required')
+    def test_present_window_retains_stall_at_stop_boundary(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            harness = directory / 'FrameHarness.java'
+            harness.write_text('''import endless.bench.FrameMetrics;
+import java.nio.file.*;
+public class FrameHarness {
+ public static void main(String[] args) throws Exception {
+  Path out=Path.of(args[0]);
+  Files.writeString(out.resolve("phase.txt"),"1");
+  FrameMetrics.start(out);
+  Thread.sleep(150);
+  FrameMetrics.present();
+  Thread.sleep(2); FrameMetrics.present();
+  Thread.sleep(2); FrameMetrics.present();
+  Files.writeString(out.resolve("phase.txt"),"0");
+  Thread.sleep(150); FrameMetrics.present();
+  Files.writeString(out.resolve("phase.txt"),"-1");
+  Thread.sleep(5000);
+  throw new AssertionError("controller did not exit");
+ }
+}''')
+            source = Path(__file__).parent / 'performance/FrameMetrics.java'
+            subprocess.run(['javac', '-d', str(directory), str(source), str(harness)], check=True, capture_output=True, timeout=30)
+            subprocess.run(['java', '-cp', str(directory), 'FrameHarness', str(directory)], check=True, capture_output=True, timeout=15)
+            with (directory / 'frames.csv').open() as stream:
+                rows = list(csv.DictReader(stream))
+            self.assertEqual([row['phase'] for row in rows], ['1', '1', '1'])
+            self.assertGreater(int(rows[-1]['frame_ns']), 100_000_000)
 
 
 if __name__ == '__main__':

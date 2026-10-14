@@ -143,6 +143,7 @@ def run(args, label, jar, repeat, sparse=False):
     launcher = args.vanilla_server if label == 'vanilla' else args.fabric_server
     server_log, client_log = directory / 'server.log', directory / 'client.log'
     server = client = rcon = None
+    command_counts = {}
     with server_log.open('w') as sl, client_log.open('w') as cl:
         try:
             server = subprocess.Popen([java_tool(args.java, 'java'), '-Xms1G', '-Xmx2G', '-jar', str(launcher), 'nogui'], cwd=server_dir, stdout=sl, stderr=subprocess.STDOUT)
@@ -189,11 +190,20 @@ def run(args, label, jar, repeat, sparse=False):
                         rcon.request(f'tp FrameBench 56 {y+36} -24 {yaw:.4f} 25')
                     elif workload == 'edits':
                         block = 'minecraft:stone' if step % 2 else 'minecraft:glass'
-                        rcon.request(f'fill 48 {y+16} 0 55 {y+23} 7 {block}')
+                        response = rcon.request(f'fill 48 {y+16} 0 55 {y+23} 7 {block}')
+                        if '512' not in response:
+                            raise RuntimeError('Native edit failed: ' + response)
                     step += 1
                     time.sleep(.05)
                 phase(directory, 0)
                 wait_phase(directory, 0, client)
+                command_counts[workload] = step if workload != 'static' else 0
+            response = rcon.request(f'fill 48 {y+16} 0 55 {y+23} 7 minecraft:redstone_block')
+            if '512' not in response:
+                raise RuntimeError('Native visible edit fixture failed: ' + response)
+            time.sleep(3)
+            phase(directory, 1004)
+            wait_phase(directory, 1004, client)
             phase(directory, -1)
             client.wait(timeout=60)
             rcon.request('stop')
@@ -206,13 +216,16 @@ def run(args, label, jar, repeat, sparse=False):
                     process.terminate()
                     process.wait(timeout=30)
     rows = list(csv.DictReader((directory / 'frames.csv').open()))
-    for number in range(1001, 1004):
+    for number in range(1001, 1005):
         receipt = dict(line.split('=', 1) for line in (directory / f'scene-{number}.txt').read_text().splitlines())
         if (int(receipt['width']), int(receipt['height'])) != (1280, 720) or int(receipt['neutralPixels']) < 100_000:
             raise RuntimeError('Expected visible stone fixture and framebuffer dimensions missing')
+        if number == 1004 and int(receipt['redPixels']) < 500:
+            raise RuntimeError('Native block edit did not appear in the framebuffer')
     gpu = (directory / 'gpu.txt').read_text()
     result = {'label': label, 'sparse': sparse, 'repeat': repeat, 'jar_sha256': digest(jar) if jar else None,
               'gpu': gpu,
+              'native_command_counts': command_counts,
               'metrics': {workload: summarize_frames([int(row['frame_ns']) for row in rows if int(row['phase']) == number]) for number, workload in enumerate(('static', 'orbit', 'edits'), 1)}}
     for metric in result['metrics'].values():
         if metric['frames'] < 200 or abs(metric['seconds'] - args.seconds) > 2:
@@ -233,9 +246,12 @@ def main():
     parser.add_argument('--warmup', type=int, default=20)
     parser.add_argument('--port', type=int, default=25785)
     parser.add_argument('--dense-only', action='store_true')
+    parser.add_argument('--sparse-only', action='store_true')
     args = parser.parse_args()
     if args.repeats < 1 or args.seconds < 10 or args.warmup < 5 or len(set(args.labels)) != len(args.labels):
         parser.error('Use positive repeats, at least 10 measured seconds, at least 5 warmup seconds, and unique labels')
+    if args.sparse_only and (args.dense_only or any(label in ('vanilla', 'fabric') for label in args.labels)):
+        parser.error('Sparse-only requires Endless variants and cannot be combined with dense-only')
     for name in ('java', 'cache', 'vanilla_server', 'fabric_server', 'current', 'candidate', 'output'):
         setattr(args, name, getattr(args, name).resolve())
     args.dependency = [p.resolve() for p in args.dependency]
@@ -250,7 +266,7 @@ def main():
         'inputs': {str(path): digest(path) for path in sorted(set(inputs))}}, indent=2))
     results = []
     for repeat in range(args.repeats):
-        variants = [(label, getattr(args, label) if label in ('current', 'candidate') else None, sparse) for label in args.labels for sparse in ((False, True) if label in ('current', 'candidate') and not args.dense_only else (False,))]
+        variants = [(label, getattr(args, label) if label in ('current', 'candidate') else None, sparse) for label in args.labels for sparse in ((True,) if args.sparse_only else ((False, True) if label in ('current', 'candidate') and not args.dense_only else (False,)))]
         for label, jar, sparse in variants[::(-1 if repeat % 2 else 1)]:
             results.append(run(args, label, jar, repeat, sparse))
             (args.output / 'results.json').write_text(json.dumps(results, indent=2))

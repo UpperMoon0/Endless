@@ -30,7 +30,7 @@ Architectury 13.0.8, and frozen production Endless jars. All launch libraries
 with published SHA-1 metadata are verified. Use a hardware display on Windows.
 
 ```text
-python tools/benchmark_client.py --java JAVA21_DIRECTORY --cache PRISM_DIRECTORY --vanilla-server VANILLA_SERVER.jar --fabric-server FABRIC_SERVER.jar --current ENDLESS_0.10.jar --candidate ENDLESS_0.10.1.jar --dependency FABRIC_API.jar --dependency ARCHITECTURY.jar --output build/client-fps-run --repeats 3 --warmup 20 --seconds 30
+python tools/benchmark_client.py --java JAVA21_DIRECTORY --cache PRISM_DIRECTORY --vanilla-server VANILLA_SERVER.jar --fabric-server FABRIC_SERVER.jar --current ENDLESS_0.10.jar --candidate ENDLESS_0.10.1.jar --dependency FABRIC_API.jar --dependency ARCHITECTURY.jar --output build/client-fps-run --repeats 3 --warmup 20 --seconds 20
 python tools/summarize_client_benchmark.py build/client-fps-run
 ```
 
@@ -39,3 +39,14 @@ unrelated applications. Retain and disclose host contention and GPU information.
 Inspect the native framebuffers to verify the intended scene rendered, including
 edits at the sparse height. Calibration and profiled pilots are excluded from
 reported comparison runs.
+
+## Snapshot scope
+
+Vanilla mesh workers capture sparse block palettes within 32 sections on either
+side of the main camera, including the 32-section render window, its 8-section
+rebase hysteresis and neighbor halo. The scan covers 65 sections regardless of
+world height or previously visited pages. Queries outside the snapshot retain
+the original live lookup, and block-entity discovery remains live. Copies add
+bounded palette memory; this is not a claim of lower peak process memory.
+
+The final comparison and validation are recorded in [PR #28](https://github.com/UpperMoon0/Endless/pull/28).

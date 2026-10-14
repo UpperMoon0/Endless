@@ -13,6 +13,7 @@ import json
 import math
 import os
 import platform
+import re
 import shutil
 import socket
 import statistics
@@ -71,9 +72,12 @@ def datapack(world, sparse):
     queries = [f"execute positioned {x} 0 {z} positioned over motion_blocking run scoreboard players add queries bench 1"
                for x in range(0, 128, 8) for z in range(0, 128, 8)]
     (functions / "heights.mcfunction").write_text("\n".join(queries) + "\n")
-    edits = ["scoreboard players add phase bench 1", "scoreboard players operation phase bench %= two bench",
-             f"execute if score phase bench matches 0 run fill 0 {y} 0 31 {y+1} 31 minecraft:stone",
-             f"execute if score phase bench matches 1 run fill 0 {y} 0 31 {y+1} 31 minecraft:air",
+    edits = ["scoreboard players add edits bench 1",
+             "scoreboard players add phase bench 1", "scoreboard players operation phase bench %= two bench",
+             "scoreboard players set filled bench 0",
+             f"execute if score phase bench matches 0 store result score filled bench run fill 0 {y} 0 31 {y+1} 31 minecraft:stone",
+             f"execute if score phase bench matches 1 store result score filled bench run fill 0 {y} 0 31 {y+1} 31 minecraft:air",
+             "execute if score filled bench matches 2048 run scoreboard players add fills bench 1",
              "function bench:heights"]
     (functions / "edits.mcfunction").write_text("\n".join(edits) + "\n")
     tags = pack / "data/minecraft/tags/function"
@@ -100,6 +104,39 @@ def select_sprint(rows, sprint_id, expected):
     if len(measured) != expected:
         raise RuntimeError(f"Sprint {sprint_id} had {len(measured)} ticks, expected {expected}")
     return measured
+
+
+def workload_counters(rcon):
+    counters = {}
+    for name in ("queries", "edits", "fills"):
+        response = rcon.request(f"scoreboard players get {name} bench")
+        match = re.search(rf"^{name} has (\d+) \[bench\]$", response.strip())
+        if not match:
+            raise RuntimeError(f"Missing {name} workload counter: {response}")
+        counters[name] = int(match[1])
+    return counters
+
+
+def validate_workload(workload, phase, before, after, ticks):
+    counts = {name: after[name] - before[name] for name in before}
+    prefix = f"{workload} {phase} workload"
+    if any(value < 0 for value in counts.values()):
+        raise RuntimeError(f"{prefix} counters decreased: {counts}")
+    if workload == "idle":
+        if any(counts.values()):
+            raise RuntimeError(f"{prefix} unexpectedly executed: {counts}")
+    else:
+        if counts["queries"] < 256 * ticks or counts["queries"] % 256:
+            raise RuntimeError(f"{prefix} missing height queries: {counts}")
+        if workload == "reads":
+            if counts["edits"] or counts["fills"]:
+                raise RuntimeError(f"{prefix} unexpectedly edited blocks: {counts}")
+        else:
+            if counts["edits"] < ticks or counts["queries"] != 256 * counts["edits"]:
+                raise RuntimeError(f"{prefix} missing edits or height queries: {counts}")
+            if counts["fills"] != counts["edits"]:
+                raise RuntimeError(f"{prefix} incomplete native fills: {counts}")
+    return counts
 
 
 def run(args, label, jar, repeat, sparse=False):
@@ -152,7 +189,9 @@ def run(args, label, jar, repeat, sparse=False):
             commands = ["gamerule doMobSpawning false", "gamerule randomTickSpeed 0", "gamerule doDaylightCycle false",
                         "gamerule doWeatherCycle false", "weather clear", "time set noon", "scoreboard objectives add bench dummy",
                         "scoreboard players set two bench 2", "scoreboard players set phase bench 0",
-                        "scoreboard players set enabled bench 0", "forceload add 0 0 127 127"]
+                        "scoreboard players set enabled bench 0",
+                        "scoreboard players set queries bench 0", "scoreboard players set edits bench 0",
+                        "scoreboard players set fills bench 0", "forceload add 0 0 127 127"]
             for command in commands:
                 rcon.request(command)
             # Settle chunk generation and lighting before running unlimited ticks.
@@ -180,17 +219,22 @@ def run(args, label, jar, repeat, sparse=False):
                     time.sleep(.05)
                 raise RuntimeError("Sprint timeout")
 
+            counters = workload_counters(rcon)
             for workload, enabled in (("idle", 0), ("reads", 2), ("edits", 1)):
-                rcon.request(f"scoreboard players set enabled bench {enabled}")
-                sprint(args.warmup)
-                start, end = sprint(args.ticks)
-                windows.append({"workload": workload, "start_ms": start, "end_ms": end})
-            rcon.request("scoreboard players set enabled bench 0")
-            query_response = rcon.request("scoreboard players get queries bench")
-            import re
-            match = re.search(r"has (\d+)", query_response)
-            if not match or int(match[1]) < 256 * (args.warmup + args.ticks):
-                raise RuntimeError(f"Height workload did not execute: {query_response}")
+                counts = {}
+                for phase, amount in (("warmup", args.warmup), ("measured", args.ticks)):
+                    # Disable the tick function around both snapshots so the three
+                    # counters are stable even across separate RCON requests.
+                    before = counters
+                    rcon.request(f"scoreboard players set enabled bench {enabled}")
+                    start, end = sprint(amount)
+                    rcon.request("scoreboard players set enabled bench 0")
+                    counters = workload_counters(rcon)
+                    # Normal ticks can occur before/after a sprint, so require at
+                    # least its ticks but verify every observed edit/query/fill.
+                    counts[phase] = validate_workload(workload, phase, before, counters, amount)
+                windows.append({"workload": workload, "start_ms": start, "end_ms": end,
+                                "counts": counts})
             # Confirm writes used the real requested Y before the JVM shuts down.
             y = 4096 if sparse else 80
             rcon.request(f"setblock 0 {y} 0 minecraft:stone")
@@ -209,7 +253,8 @@ def run(args, label, jar, repeat, sparse=False):
         raise RuntimeError(f"{name}: nonzero exit {process.returncode}")
     if sparse and not list((directory / "world/endless/vertical").glob("c.*/p.*.nbt")):
         raise RuntimeError("High-Y workload did not persist sparse storage")
-    rows = list(csv.DictReader(ticks_file.open()))
+    with ticks_file.open() as file:
+        rows = list(csv.DictReader(file))
     for sprint_id in (1, 3, 5):
         select_sprint(rows, sprint_id, args.warmup)
     results = {}
@@ -218,7 +263,7 @@ def run(args, label, jar, repeat, sparse=False):
         measured = select_sprint(rows, sprint_id, args.ticks)
         results[window["workload"]] = summarize(measured)
     result = {"label": label, "sparse": sparse, "repeat": repeat, "jar_sha256": digest(jar) if jar else None,
-              "height_queries": int(match[1]),
+              "height_queries": counters["queries"],
               "windows": windows, "metrics": results}
     (directory / "result.json").write_text(json.dumps(result, indent=2))
     print(name, json.dumps(results), flush=True)

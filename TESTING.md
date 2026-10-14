@@ -82,6 +82,19 @@ through every native height predicate. It prints
 current Endless and a candidate build. It records exact sprint ticks after warmup
 in fresh JVMs with idle, native height-query and block-edit fixtures at normal Y
 and sparse Y=4096. Benchmark helpers are outside production source sets.
+The runner records separate counter deltas for each workload's warmup and
+measured phase. Each read phase must complete its native height queries; every
+edit attempt must produce all 256 queries and a native fill of exactly 2,048
+blocks. Workload functions are disabled while counters are read. Normal ticks
+between RCON commands can add work outside a sprint, so counter minima are
+validated separately from the exact sprint CSV tick counts. Failed validation
+never writes a successful result. Harness tests cover absent edit functions,
+missing measured reads, and failed or partial fills even when CSVs are complete
+and a later block-write probe succeeds.
+
+The extra fill accounting changes the benchmark fixture overhead. Compare all
+variants using the same runner revision; do not pool these runs with older
+receipts. The historical October 14 report has not been rerun by this fix.
 CPU and allocation counters cover the server thread; Windows CPU counters are
 coarse, so aggregate means are useful while per-tick CPU percentiles are not.
 Client frames, GC pauses, peak RAM, multiplayer and other Minecraft versions need

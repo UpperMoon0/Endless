@@ -269,3 +269,11 @@ Both Create compatibility lanes require `ENDLESS_CREATE_SOUND_POSITIONS_PASS`. N
 Cold-restart sessions also wait up to 60 seconds for the native `session.lock` file/range lock to release after stopping the launcher. A launcher exit alone does not prove its game JVM has finished saving. Snapshotting the negative-control world, restoring it and starting phase B occur only after this shutdown check; a held lock fails the test.
 
 The cargo-cart restart fixture forces each new chunk once, verifies that those tickets survived on disk and waits for natural entity ticks before checking Create controller registration or starting powered travel. Repeated vanilla `setChunkForced` calls for an already-forced chunk clear the saved-data dirty flag; fixture setup must not accidentally discard its newly added tickets. Travel, reciprocal coupling, full height and exact cargo assertions remain required.
+
+## Client FPS benchmarking
+
+Use `tools/benchmark_client.py` and `tools/summarize_client_benchmark.py` for
+fresh production-client comparisons. See `docs/benchmarks/2026-10-14-client/README.md`
+for matching settings, height controls, average FPS and 1% low definitions.
+Keep raw frames, host paths and captures in ignored `build/` output directories.
+Do not infer FPS from dedicated-server tick or software-renderer smoke results.

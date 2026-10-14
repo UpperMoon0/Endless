@@ -1,0 +1,4 @@
+Endless 0.10.1
+
+- Capture immutable sparse block palettes in a bounded camera vicinity once per vanilla render chunk on Minecraft 1.20.1 and 1.21.1, avoiding synchronized world lookups for each meshing block read. Preserve live block-entity discovery, distant-query fallback and normal rebuild invalidation.
+- Add a production-client FPS comparison against vanilla, Fabric alone, and Endless 0.10, with frame-time tails, native framebuffer checks, and local-only raw results.

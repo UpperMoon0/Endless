@@ -56,7 +56,14 @@ public final class NativeSectionLightChecks {
    require(world.getExtendedHeight(type,pos.getX(),pos.getZ())==pos.getY()+1,"cached empty column hid stone: "+type);
    require(world.getExtendedHeight(type,neighbor.getX(),neighbor.getZ())==Integer.MIN_VALUE,"edit changed neighboring height: "+type);
   }
+  var renderStates=world.copyRenderBlockStates(pos.getX()>>4,pos.getZ()>>4,pos.getY()>>4,(pos.getY()>>4)+1);
+  require(renderStates.size()==1,"sparse render snapshot copied outside the requested section");
+  var frozen=renderStates.get(pos.getY()>>4);
+  require(frozen!=null && frozen.get(pos.getX()&15,pos.getY()&15,pos.getZ()&15).is(Blocks.STONE),"sparse render snapshot missing stone");
   level.setBlock(pos,Blocks.WATER.defaultBlockState(),3);
+  require(frozen.get(pos.getX()&15,pos.getY()&15,pos.getZ()&15).is(Blocks.STONE),"live edit mutated sparse render snapshot");
+  var refreshed=world.copyRenderBlockStates(pos.getX()>>4,pos.getZ()>>4,pos.getY()>>4,(pos.getY()>>4)+1).get(pos.getY()>>4);
+  require(refreshed!=null && refreshed.get(pos.getX()&15,pos.getY()&15,pos.getZ()&15).is(Blocks.WATER),"rebuilt sparse render snapshot hid edit");
   for(var type:types){
    boolean floor=type==Heightmap.Types.OCEAN_FLOOR || type==Heightmap.Types.OCEAN_FLOOR_WG;
    require(world.getExtendedHeight(type,pos.getX(),pos.getZ())==(floor?Integer.MIN_VALUE:pos.getY()+1),"height type retained old solid predicate: "+type);

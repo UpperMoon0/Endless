@@ -71,6 +71,18 @@ public final class MinecraftVerticalWorld {
         return level;
     }
 
+    /** Capture sparse palettes once per vanilla RenderChunk, matching its dense snapshot semantics. */
+    public synchronized it.unimi.dsi.fastutil.ints.Int2ObjectMap<PalettedContainer<BlockState>> copyRenderBlockStates(int chunkX, int chunkZ, int firstSection, int endSection) {
+        var column = columns.get(ChunkPos.pack(chunkX, chunkZ));
+        if (column == null) return it.unimi.dsi.fastutil.ints.Int2ObjectMaps.emptyMap();
+        var states = new it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap<PalettedContainer<BlockState>>();
+        for (int sectionY = firstSection; sectionY < endSection; sectionY++) {
+            var section = column.getSection(sectionY);
+            if (section != null && !section.hasOnlyAir()) states.put(sectionY, section.getStates().copy());
+        }
+        return states.isEmpty() ? it.unimi.dsi.fastutil.ints.Int2ObjectMaps.emptyMap() : states;
+    }
+
     /** Client render snapshots may read an existing page but must never allocate one. */
     public synchronized LevelChunkSection getSectionForRendering(int chunkX, int sectionY, int chunkZ) {
         return getSection(chunkX, chunkZ, sectionY, false);

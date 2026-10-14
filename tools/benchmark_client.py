@@ -156,6 +156,7 @@ def run(args, label, jar, repeat, sparse=False):
                 raise RuntimeError('Present hook missing')
             for number, workload in enumerate(('static', 'orbit', 'edits'), 1):
                 rcon.request(f'tp FrameBench 56 {y+36} -24 0 25')
+                time.sleep(2)
                 phase(directory, 1000 + number)
                 time.sleep(2)
                 phase(directory, 0)
@@ -187,7 +188,13 @@ def run(args, label, jar, repeat, sparse=False):
                     process.terminate()
                     process.wait(timeout=30)
     rows = list(csv.DictReader((directory / 'frames.csv').open()))
+    for number in range(1001, 1004):
+        receipt = dict(line.split('=', 1) for line in (directory / f'scene-{number}.txt').read_text().splitlines())
+        if (int(receipt['width']), int(receipt['height'])) != (1280, 720) or int(receipt['neutralPixels']) < 100_000:
+            raise RuntimeError('Expected visible stone fixture and framebuffer dimensions missing')
+    gpu = (directory / 'gpu.txt').read_text()
     result = {'label': label, 'sparse': sparse, 'repeat': repeat, 'jar_sha256': digest(jar) if jar else None,
+              'gpu': gpu,
               'metrics': {workload: summarize_frames([int(row['frame_ns']) for row in rows if int(row['phase']) == number]) for number, workload in enumerate(('static', 'orbit', 'edits'), 1)}}
     for metric in result['metrics'].values():
         if metric['frames'] < 200 or abs(metric['seconds'] - args.seconds) > 2:
@@ -209,6 +216,8 @@ def main():
     parser.add_argument('--port', type=int, default=25785)
     parser.add_argument('--dense-only', action='store_true')
     args = parser.parse_args()
+    if args.repeats < 1 or args.seconds < 10 or args.warmup < 5 or len(set(args.labels)) != len(args.labels):
+        parser.error('Use positive repeats, at least 10 measured seconds, at least 5 warmup seconds, and unique labels')
     for name in ('java', 'cache', 'vanilla_server', 'fabric_server', 'current', 'candidate', 'output'):
         setattr(args, name, getattr(args, name).resolve())
     args.dependency = [p.resolve() for p in args.dependency]
@@ -216,6 +225,11 @@ def main():
     compile_agent(args.java, args.output)
     args.vanilla_cp = client_classpath(args.cache, args.output, False)
     args.fabric_cp = client_classpath(args.cache, args.output, True)
+    inputs = [args.vanilla_server, args.fabric_server, args.current, args.candidate, *args.dependency,
+              *args.vanilla_cp, *args.fabric_cp, args.output / 'frame-agent.jar', args.output / 'frame-helper.jar']
+    (args.output / 'metadata.json').write_text(json.dumps({'source': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+        'warmup_seconds': args.warmup, 'measured_seconds': args.seconds, 'repeats': args.repeats,
+        'inputs': {str(path): digest(path) for path in sorted(set(inputs))}}, indent=2))
     results = []
     for repeat in range(args.repeats):
         variants = [(label, getattr(args, label) if label in ('current', 'candidate') else None, sparse) for label in args.labels for sparse in ((False, True) if label in ('current', 'candidate') and not args.dense_only else (False,))]

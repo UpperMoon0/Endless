@@ -8,6 +8,7 @@ public final class FrameMetrics {
     private static final long[] TIMES = new long[2_000_000];
     private static final int[] PHASES = new int[TIMES.length];
     private static volatile int phase;
+    private static volatile int observedPhase = Integer.MIN_VALUE;
     private static volatile int count;
     private static int lastPhase;
     private static long previous;
@@ -17,10 +18,16 @@ public final class FrameMetrics {
         Files.createDirectories(output);
         directory = output;
         Thread controller = new Thread(() -> {
+            int acknowledged = Integer.MIN_VALUE;
             while (true) {
                 try {
                     phase = Integer.parseInt(Files.readString(output.resolve("phase.txt")).trim());
                     if (phase == -1) { System.exit(0); return; }
+                    int observed = observedPhase;
+                    if (observed != acknowledged) {
+                        Files.writeString(output.resolve("phase-ack.txt"), Integer.toString(observed));
+                        acknowledged = observed;
+                    }
                 } catch (Exception missing) { phase = 0; }
                 try { Thread.sleep(50); }
                 catch (InterruptedException interrupted) { return; }
@@ -40,13 +47,14 @@ public final class FrameMetrics {
         long now = System.nanoTime();
         int current = phase;
         if (current >= 1000 && current != lastPhase) capture(current);
-        if (current > 0 && current < 1000 && current == lastPhase && previous != 0) {
+        if (lastPhase > 0 && lastPhase < 1000 && (current == lastPhase || current == 0) && previous != 0) {
             if (count == TIMES.length) throw new IllegalStateException("Frame benchmark capacity exceeded");
             TIMES[count] = now - previous;
-            PHASES[count++] = current;
+            PHASES[count++] = lastPhase;
         }
         previous = now;
         lastPhase = current;
+        observedPhase = current;
     }
 
     private static void capture(int phase) {

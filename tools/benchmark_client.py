@@ -109,6 +109,20 @@ def phase(directory, value):
     temporary.replace(directory / 'phase.txt')
 
 
+def wait_phase(directory, value, client, timeout=120):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if client.poll() is not None:
+            raise RuntimeError('Client exited before native frame acknowledgement')
+        try:
+            if (directory / 'phase-ack.txt').read_text().strip() == str(value):
+                return
+        except OSError:
+            pass
+        time.sleep(.05)
+    raise RuntimeError('Native present phase acknowledgement timed out')
+
+
 def run(args, label, jar, repeat, sparse=False):
     directory = args.output / f'{label}-{"sparse" if sparse else "dense"}-{repeat}'
     directory.mkdir()
@@ -151,6 +165,7 @@ def run(args, label, jar, repeat, sparse=False):
             wait_log(server, server_log, 'FrameBench joined the game')
             rcon.request('gamemode spectator FrameBench')
             rcon.request(f'tp FrameBench 56 {y+36} -24 0 25')
+            wait_log(client, client_log, 'Loaded 2 advancements')
             time.sleep(args.warmup)
             if 'ENDLESS_FRAME_HOOK' not in client_log.read_text(errors='replace'):
                 raise RuntimeError('Present hook missing')
@@ -158,10 +173,12 @@ def run(args, label, jar, repeat, sparse=False):
                 rcon.request(f'tp FrameBench 56 {y+36} -24 0 25')
                 time.sleep(2)
                 phase(directory, 1000 + number)
+                wait_phase(directory, 1000 + number, client)
                 time.sleep(2)
                 phase(directory, 0)
                 time.sleep(2)
                 phase(directory, number)
+                wait_phase(directory, number, client)
                 start = time.monotonic()
                 step = 0
                 while time.monotonic() - start < args.seconds:
@@ -176,6 +193,7 @@ def run(args, label, jar, repeat, sparse=False):
                     step += 1
                     time.sleep(.05)
                 phase(directory, 0)
+                wait_phase(directory, 0, client)
             phase(directory, -1)
             client.wait(timeout=60)
             rcon.request('stop')

@@ -7,7 +7,10 @@ import net.minecraft.core.SectionPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.levelgen.Heightmap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 /** Native regressions for the production section solve, invalidation and immutable render copies. */
 public final class NativeSectionLightChecks {
  private static void require(boolean ok,String message){if(!ok)throw new IllegalStateException("Section light: "+message);}
@@ -56,7 +59,24 @@ public final class NativeSectionLightChecks {
    require(world.getExtendedHeight(type,pos.getX(),pos.getZ())==pos.getY()+1,"cached empty column hid stone: "+type);
    require(world.getExtendedHeight(type,neighbor.getX(),neighbor.getZ())==Integer.MIN_VALUE,"edit changed neighboring height: "+type);
   }
-  var renderStates=world.copyRenderBlockStates(pos.getX()>>4,pos.getZ()>>4,pos.getY()>>4,(pos.getY()>>4)+1);
+  // Occupy the excluded lower/upper sections and a historical page. An empty
+  // surrounding column would let an accidentally unbounded copier pass.
+  var excluded=new BlockPos[]{pos.west().below(16),pos.west().above(16),
+   pos.west().offset(0,pos.getY()<0?1024:-1024,0)};
+  for(var outside:excluded){
+   require(EndlessVerticalEngine.isExtendedY(level,outside.getY()),"snapshot exclusion fixture is not sparse");
+   require(level.getBlockState(outside).isAir(),"snapshot exclusion fixture is not empty");
+  }
+  Int2ObjectMap<PalettedContainer<BlockState>> renderStates;
+  try{
+   for(var outside:excluded)
+    require(level.setBlock(outside,Blocks.STONE.defaultBlockState(),3),"snapshot exclusion fixture write failed");
+   renderStates=world.copyRenderBlockStates(pos.getX()>>4,pos.getZ()>>4,pos.getY()>>4,(pos.getY()>>4)+1);
+   for(var outside:excluded)
+    require(!renderStates.containsKey(outside.getY()>>4),"snapshot copied excluded section "+(outside.getY()>>4));
+  }finally{
+   for(var outside:excluded)level.setBlock(outside,Blocks.AIR.defaultBlockState(),3);
+  }
   require(renderStates.size()==1,"sparse render snapshot copied outside the requested section");
   var frozen=renderStates.get(pos.getY()>>4);
   require(frozen!=null && frozen.get(pos.getX()&15,pos.getY()&15,pos.getZ()&15).is(Blocks.STONE),"sparse render snapshot missing stone");

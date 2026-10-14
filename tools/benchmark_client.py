@@ -20,6 +20,16 @@ import urllib.request
 from benchmark_server import Rcon, digest, java_tool, percentile
 
 ROOT = Path(__file__).resolve().parents[1]
+WORKLOADS = ('static', 'orbit', 'edits')
+
+
+def planned_runs(labels, repeats, dense_only=False, sparse_only=False):
+    """Freeze the exact requested matrix before the first JVM is launched."""
+    return [{'label': label, 'sparse': sparse, 'repeat': repeat}
+            for repeat in range(repeats)
+            for label in labels
+            for sparse in ((True,) if sparse_only else
+                           ((False, True) if label in ('current', 'candidate') and not dense_only else (False,)))]
 
 
 def allowed(library):
@@ -170,7 +180,7 @@ def run(args, label, jar, repeat, sparse=False):
             time.sleep(args.warmup)
             if 'ENDLESS_FRAME_HOOK' not in client_log.read_text(errors='replace'):
                 raise RuntimeError('Present hook missing')
-            for number, workload in enumerate(('static', 'orbit', 'edits'), 1):
+            for number, workload in enumerate(WORKLOADS, 1):
                 rcon.request(f'tp FrameBench 56 {y+36} -24 0 25')
                 time.sleep(2)
                 phase(directory, 1000 + number)
@@ -226,7 +236,7 @@ def run(args, label, jar, repeat, sparse=False):
     result = {'label': label, 'sparse': sparse, 'repeat': repeat, 'jar_sha256': digest(jar) if jar else None,
               'gpu': gpu,
               'native_command_counts': command_counts,
-              'metrics': {workload: summarize_frames([int(row['frame_ns']) for row in rows if int(row['phase']) == number]) for number, workload in enumerate(('static', 'orbit', 'edits'), 1)}}
+              'metrics': {workload: summarize_frames([int(row['frame_ns']) for row in rows if int(row['phase']) == number]) for number, workload in enumerate(WORKLOADS, 1)}}
     for metric in result['metrics'].values():
         if metric['frames'] < 200 or abs(metric['seconds'] - args.seconds) > 2:
             raise RuntimeError('Incomplete measured frame window')
@@ -261,14 +271,18 @@ def main():
     args.fabric_cp = client_classpath(args.cache, args.output, True)
     inputs = [args.vanilla_server, args.fabric_server, args.current, args.candidate, *args.dependency,
               *args.vanilla_cp, *args.fabric_cp, args.output / 'frame-agent.jar', args.output / 'frame-helper.jar']
+    plan = planned_runs(args.labels, args.repeats, args.dense_only, args.sparse_only)
     (args.output / 'metadata.json').write_text(json.dumps({'source': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+        'planned_runs': plan,
         'warmup_seconds': args.warmup, 'measured_seconds': args.seconds, 'repeats': args.repeats,
         'inputs': {str(path): digest(path) for path in sorted(set(inputs))}}, indent=2))
     results = []
     for repeat in range(args.repeats):
-        variants = [(label, getattr(args, label) if label in ('current', 'candidate') else None, sparse) for label in args.labels for sparse in ((True,) if args.sparse_only else ((False, True) if label in ('current', 'candidate') and not args.dense_only else (False,)))]
-        for label, jar, sparse in variants[::(-1 if repeat % 2 else 1)]:
-            results.append(run(args, label, jar, repeat, sparse))
+        variants = [entry for entry in plan if entry['repeat'] == repeat]
+        for entry in variants[::(-1 if repeat % 2 else 1)]:
+            label = entry['label']
+            jar = getattr(args, label) if label in ('current', 'candidate') else None
+            results.append(run(args, label, jar, repeat, entry['sparse']))
             (args.output / 'results.json').write_text(json.dumps(results, indent=2))
 
 

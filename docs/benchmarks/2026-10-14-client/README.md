@@ -22,6 +22,14 @@ divided by elapsed time; 1% low is the inverse mean interval of the slowest 1%.
 Each workload excludes warmup and screenshots. Summaries use medians of independent
 JVMs and keep frame p95, p99, worst frames and each workload visible.
 
+The requested labels, heights and repetitions are frozen as `planned_runs` in
+`metadata.json` before execution. The summarizer requires exactly this matrix,
+all three workloads per JVM, and finite positive metrics for complete measured
+windows. An interrupted `results.json` is diagnostic output, not a completed
+comparison. Older receipts without a planned matrix cannot certify completeness
+and are rejected; retain any historical reports as historical evidence rather
+than inventing a plan from whichever receipts survived.
+
 ## Reproduce
 
 Use Java 21, public Prism component metadata and cached assets, the official
@@ -50,3 +58,6 @@ the original live lookup, and block-entity discovery remains live. Copies add
 bounded palette memory; this is not a claim of lower peak process memory.
 
 The final comparison and validation are recorded in [PR #28](https://github.com/UpperMoon0/Endless/pull/28).
+Later harness-validation corrections do not rerun or independently substantiate
+that historical FPS series. Native FPS claims require a fresh matched hardware
+measurement; passing unit, gameplay or renderer smoke checks is not an FPS result.

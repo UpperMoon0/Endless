@@ -2,7 +2,9 @@
 
 Baseline: `67b991ec10e21a1747179dedb8d0704d72f914ac`, the default branch pulled for
 this investigation (Endless 0.9.4). Candidate: the 0.9.5 performance changes in
-this PR, committed as `eecea55c647332f03d96cd1ff69de01e2600190a`. The candidate's exact binary is identified in `metadata.json`.
+this PR, committed as `eecea55c647332f03d96cd1ff69de01e2600190a`. The release
+version is now 0.10; the measured candidate was built as 0.9.5 with the same
+performance implementation.
 
 ## Results
 
@@ -21,9 +23,8 @@ and its aggregate CPU mean increased 4.2%. Sparse idle median increased 7.7%
 Run ranges overlap for the read and idle timing cases; these results do not
 establish a speedup for every workload. No combined score hides those cases.
 
-See [all workload summaries](summary.md), [per-JVM results](results.json),
-[run ranges](summary.json), [binary/host metadata](metadata.json), and
-[exact-tick receipts](validation.json). Compressed raw tick CSVs are in `raw/`.
+See [all workload summaries](summary.md). Generated measurements, binary/host
+metadata and exact-tick receipts remain local and are excluded from Git.
 
 ## Method
 
@@ -56,10 +57,10 @@ See [all workload summaries](summary.md), [per-JVM results](results.json),
 The host is an Intel Core i3-8100 at 3.60 GHz, four logical CPUs, 16 GiB RAM,
 Windows, and JetBrains Java 21.0.11. Local build and gameplay-test JVMs were
 closed before the final series. The host was not otherwise exclusive; an
-unrelated Minecraft process remained running. Raw run ranges are retained.
+unrelated Minecraft process remained running. Raw run ranges are retained locally.
 
 `summary.md` shows medians of independent JVM summaries rather than pooling
-ticks. `summary.json` also keeps per-JVM ranges. CPU and allocation cover the
+ticks. Local `summary.json` also keeps per-JVM ranges. CPU and allocation cover the
 server thread, not workers or the whole process. Windows CPU counters are
 coarse, so use aggregate CPU means; per-tick CPU percentiles are not meaningful.
 Timings are observations for these fixtures, not a guarantee for every world.
@@ -98,5 +99,6 @@ python tools/summarize_server_benchmark.py build/performance-run
 ```
 
 The runner writes binary hashes, JVM/host information, full tick CSVs, per-JVM
-results and scenario windows. This directory retains compressed raw tick CSVs,
-all per-JVM results and the aggregate report for review.
+results and scenario windows under the ignored output directory. Keep these
+generated files local; this directory publishes only the readable methodology
+and aggregate report.

@@ -1,4 +1,4 @@
-Endless 0.9.5
+Endless 0.10
 
 - Index sparse height-cache results by horizontal chunk and local column. Block changes invalidate only that column's height types instead of scanning the world's cached heights.
 - Reuse per-engine block/sky light adapters while preserving delegate changes and inactive-world behavior.

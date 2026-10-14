@@ -123,3 +123,10 @@ runs/
 !gradle-wrapper.jar
 /.vscode
 logs/
+
+# Local benchmark measurements and machine-specific receipts
+/docs/benchmarks/**/raw/
+/docs/benchmarks/**/metadata.json
+/docs/benchmarks/**/results.json
+/docs/benchmarks/**/summary.json
+/docs/benchmarks/**/validation.json

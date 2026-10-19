@@ -39,6 +39,20 @@ tracked horizontal column. Start at 128 or 256 sections and allow initial meshes
 to finish before recording. Increasing horizontal distance at the same time can
 multiply the cost substantially. Vanilla's dense render grid is especially costly.
 
+Complementary's TAA/DH blend normally fades native terrain using both horizontal
+and vertical distance. In expanded mode, Endless changes the recognized
+`DH_BLENDING` expression to horizontal distance during Iris/Oculus preprocessing.
+This preserves the ground-level seam, shader `far` uniform and DH near boundary;
+raising the shared `far` value would create a gap between native terrain and LODs.
+Unrecognized shader expressions and the default budget are left unchanged.
+Shader packs still control their own atmospheric/border fog; use their settings
+when haze hides a structure that the renderer has already made visible.
+
+Native skylight snapshots are cached in a bounded 512-section cache. Each clone
+receives its own copy; lighting edits, received pages and column unloads invalidate
+cached results. This avoids recalculating the same skylight for neighboring mesh
+snapshots and shadow/main passes.
+
 Distant Horizons provides its own distant terrain; this option expands native
 Minecraft geometry and does not claim to extend DH's LOD height representation.
 Keep DH and the selected shader enabled during final framing and export checks.

@@ -51,6 +51,7 @@ public final class MinecraftVerticalWorld {
     private final Map<VerticalPagePos, Long> revisions = new HashMap<>();
     private final ColumnHeightCache heightCache = new ColumnHeightCache(Heightmap.Types.values().length);
     private final SectionLightCache<DataLayer> sectionBlockLight = new SectionLightCache<>(512);
+    private final SectionLightCache<DataLayer> sectionSkyLight = new SectionLightCache<>(512);
     private final Map<BlockKey, Integer> skyLight = new LinkedHashMap<>(1024, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<BlockKey, Integer> eldest) {
@@ -181,6 +182,15 @@ public final class MinecraftVerticalWorld {
 
     /** Snapshot skylight with one height query per halo column, not per ray step. */
     public DataLayer copyRenderSkyLight(SectionPos section) {
+        return copyRenderSkyLight(section, () -> solveAndPublishSkyLight(section));
+    }
+
+    // Shared entry point keeps native snapshots independently owned, including cache hits.
+    DataLayer copyRenderSkyLight(SectionPos section, java.util.function.Supplier<DataLayer> solve) {
+        return sectionSkyLight.get(new SectionLightCache.Key(section.x(), section.y(), section.z()), solve).copy();
+    }
+
+    private DataLayer solveAndPublishSkyLight(SectionPos section) {
         while (true) {
             long epoch;
             synchronized (this) { epoch=lightCacheRevision; }
@@ -360,7 +370,7 @@ public final class MinecraftVerticalWorld {
         page.forEachOccupiedSection(column::putSection);
         attemptedLoads.add(pos);
         markDirty(pos);
-        invalidateHeightColumn(key);invalidateBlockLightPage(pos);skyLight.clear();lightCacheRevision++;
+        invalidateHeightColumn(key);invalidateBlockLightPage(pos);skyLight.clear();sectionSkyLight.clear();lightCacheRevision++;
     }
 
     public synchronized void applySnapshot(VerticalPageSnapshot snapshot) {
@@ -384,7 +394,7 @@ public final class MinecraftVerticalWorld {
         snapshots.remove(pos);
         invalidateHeightColumn(key);
         invalidateBlockLightPage(pos);
-        skyLight.clear();lightCacheRevision++;
+        skyLight.clear();sectionSkyLight.clear();lightCacheRevision++;
     }
 
     /** Client receipt, including an empty snapshot; local speculative reads are not receipt. */
@@ -478,7 +488,7 @@ public final class MinecraftVerticalWorld {
         snapshots.clear();
         heightCache.clear();
         sectionBlockLight.clear();
-        skyLight.clear();lightCacheRevision++;
+        skyLight.clear();sectionSkyLight.clear();lightCacheRevision++;
     }
 
     private void persist(VerticalPagePos pos) {
@@ -677,7 +687,7 @@ public final class MinecraftVerticalWorld {
 
     /** Dense heightmaps also participate in sparse sky exposure. */
     public synchronized void invalidateSkyLight() {
-        skyLight.clear();lightCacheRevision++;
+        skyLight.clear();sectionSkyLight.clear();lightCacheRevision++;
     }
 
     private void invalidateForBlockChange(BlockPos pos) {
@@ -687,7 +697,7 @@ public final class MinecraftVerticalWorld {
         invalidateBlockLightAround(pos);
         // Sky exposure depends on the highest sparse block in a column and can
         // therefore change arbitrarily far below a modified high-Y block.
-        skyLight.clear();lightCacheRevision++;
+        skyLight.clear();sectionSkyLight.clear();lightCacheRevision++;
     }
 
     private void invalidateHeightColumn(long key) {
@@ -708,7 +718,7 @@ public final class MinecraftVerticalWorld {
         int r=BLOCK_LIGHT_INVALIDATION_RADIUS;
         sectionBlockLight.invalidateBox(section.minBlockX()-r,section.minBlockY()-r,section.minBlockZ()-r,
             section.maxBlockX()+r,section.maxBlockY()+r,section.maxBlockZ()+r);
-        skyLight.clear();lightCacheRevision++;
+        skyLight.clear();sectionSkyLight.clear();lightCacheRevision++;
     }
 
     private void invalidateBlockLightPage(VerticalPagePos pos) {
@@ -724,6 +734,7 @@ public final class MinecraftVerticalWorld {
     private void evictColumnLightCaches(int chunkX, int chunkZ) {
         int r=BLOCK_LIGHT_INVALIDATION_RADIUS;
         sectionBlockLight.invalidateBox((chunkX<<4)-r,-8000000,(chunkZ<<4)-r,(chunkX<<4)+15+r,7999999,(chunkZ<<4)+15+r);
+        sectionSkyLight.invalidateBox((chunkX<<4)-r,-8000000,(chunkZ<<4)-r,(chunkX<<4)+15+r,7999999,(chunkZ<<4)+15+r);
         skyLight.keySet().removeIf(key -> (key.x >> 4) == chunkX && (key.z >> 4) == chunkZ);
     }
 

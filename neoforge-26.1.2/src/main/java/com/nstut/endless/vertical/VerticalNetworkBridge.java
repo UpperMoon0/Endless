@@ -22,7 +22,9 @@ import java.util.UUID;
 
 /** Loader-neutral server-side vertical page synchronization. */
 public final class VerticalNetworkBridge {
-    private static final int PAGE_RADIUS = 1;
+    public static int verticalPageRadius() {
+        return com.nstut.endless.config.EndlessConfig.getInstance().getRendering().getVerticalPageRadius();
+    }
     private static final int FLUSH_INTERVAL_TICKS = 10;
 
     private static final int SCAN_CHUNKS_PER_PLAYER_TICK = 16;
@@ -96,7 +98,7 @@ public final class VerticalNetworkBridge {
             VerticalPagePos pos = pending.pos();
             return Math.abs((long) pos.chunkX() - center.x()) > viewDistance + 1
                 || Math.abs((long) pos.chunkZ() - center.z()) > viewDistance + 1
-                || Math.abs((long) pos.pageY() - VerticalPageLayout.pageYForBlockY(player.getBlockY())) > PAGE_RADIUS;
+                || Math.abs((long) pos.pageY() - VerticalPageLayout.pageYForBlockY(player.getBlockY())) > verticalPageRadius();
         });
         PENDING_PAGES.drainBudgeted(64, 8, SEND_BYTES_PER_TICK, SEND_NANOS_PER_TICK, pending -> {
             ServerPlayer player = server.getPlayerList().getPlayer(pending.player());
@@ -134,7 +136,7 @@ public final class VerticalNetworkBridge {
 
     private static final class WindowScan {
         final String dimension;
-        final int pageY, centerX, centerZ, viewDistance;
+        final int pageY, centerX, centerZ, viewDistance, pageRadius;
         final PageWindowScan scan;
 
         WindowScan(ServerPlayer player, int radius) {
@@ -144,7 +146,8 @@ public final class VerticalNetworkBridge {
             this.centerX = center.x();
             this.centerZ = center.z();
             this.viewDistance = radius;
-            this.scan = new PageWindowScan(centerX, centerZ, radius, pageY, PAGE_RADIUS);
+            this.pageRadius = verticalPageRadius();
+            this.scan = new PageWindowScan(centerX, centerZ, radius, pageY, pageRadius);
         }
 
         boolean matches(ServerPlayer player, int radius) {
@@ -152,6 +155,7 @@ public final class VerticalNetworkBridge {
             return dimension.equals(player.level().dimension().identifier().toString())
                 && pageY == VerticalPageLayout.pageYForBlockY(player.getBlockY())
                 && viewDistance == radius
+                && pageRadius == verticalPageRadius()
                 && Math.abs((long) current.x() - centerX) <= 3
                 && Math.abs((long) current.z() - centerZ) <= 3;
         }

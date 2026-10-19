@@ -37,7 +37,6 @@ import java.util.LinkedHashMap;
  */
 @Mixin(ChunkHolder.class)
 public abstract class ChunkHolderMixin implements com.nstut.endless.vertical.SparseChunkUpdateQueue.Pending {
-    private static final int ENDLESS_PAGE_RADIUS = 1;
 
     @Shadow @Final private ChunkHolder.PlayerProvider playerProvider;
     @Unique private final Map<BlockPos, Set<ServerPlayer>> endless$sparseChanges = new LinkedHashMap<>();
@@ -65,7 +64,7 @@ public abstract class ChunkHolderMixin implements com.nstut.endless.vertical.Spa
         int page = VerticalPageLayout.pageYForBlockY(pos.getY());
         Set<ServerPlayer> recipients = endless$sparseChanges.computeIfAbsent(pos.immutable(), ignored -> new LinkedHashSet<>());
         for (ServerPlayer player : this.playerProvider.getPlayers(chunk.getPos(), false))
-            if (Math.abs(VerticalPageLayout.pageYForBlockY(player.getBlockY()) - page) <= ENDLESS_PAGE_RADIUS) recipients.add(player);
+            if (Math.abs(VerticalPageLayout.pageYForBlockY(player.getBlockY()) - page) <= com.nstut.endless.vertical.VerticalNetworkBridge.verticalPageRadius()) recipients.add(player);
         com.nstut.endless.vertical.SparseChunkUpdateQueue.enqueue(this);
         if (Boolean.getBoolean("endless.liveCreatePlayerWorkflows") && pos.getX() == 32 && pos.getZ() == 34)
             System.out.println("ENDLESS_SPARSE_CHANGE_TRACE pos="+pos+" state="+level.getBlockState(pos)+" recipients="+recipients.size()+" tick="+level.getGameTime());
@@ -84,7 +83,7 @@ public abstract class ChunkHolderMixin implements com.nstut.endless.vertical.Spa
             // vanilla's broadcast, while retaining the original audience.
             int page = VerticalPageLayout.pageYForBlockY(change.getKey().getY());
             for (ServerPlayer player : this.playerProvider.getPlayers(chunk.getPos(), false))
-                if (Math.abs(VerticalPageLayout.pageYForBlockY(player.getBlockY()) - page) <= ENDLESS_PAGE_RADIUS) change.getValue().add(player);
+                if (Math.abs(VerticalPageLayout.pageYForBlockY(player.getBlockY()) - page) <= com.nstut.endless.vertical.VerticalNetworkBridge.verticalPageRadius()) change.getValue().add(player);
             if (change.getValue().isEmpty()) continue;
             BlockPos pos = change.getKey();
             BlockState state = level.getBlockState(pos);

@@ -24,4 +24,23 @@ public abstract class OcclusionCullerMixin implements EmbeddiumWindowBounds {
 
     @Redirect(method = "init", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getMaxSection()I", remap = true))
     private int endless$maximum(Level level) { return endless$bounded ? endless$maxSection : level.getMaxSection(); }
+
+    // Keep the renderer's horizontal distance/frustum policy; the section graph bounds Y.
+    @Group(name = "endless$verticalDistance", min = 1, max = 1)
+    @ModifyArg(method = "isWithinRenderDistance", at = @At(value = "INVOKE",
+        target = "Lorg/embeddedt/embeddium/api/render/chunk/RenderSectionDistanceFilter;isWithinDistance(FFFF)Z"), index = 1, require = 0)
+    private static float endless$verticalDistance(float delta) {
+        return com.nstut.endless.heights.EndlessLogicalHeights.isActive()
+            ? com.nstut.endless.vertical.VerticalViewDistance.cullingDelta(delta,
+                com.nstut.endless.config.EndlessConfig.getInstance().getRendering().getVerticalRenderSections())
+            : delta;
+    }
+
+    // Upstream Sodium 0.5 has the same culler but no Embeddium distance-filter API.
+    @Group(name = "endless$verticalDistance", min = 1, max = 1)
+    @ModifyArg(method = "isWithinRenderDistance", at = @At(value = "INVOKE",
+        target = "Ljava/lang/Math;abs(F)F"), index = 0, require = 0)
+    private static float endless$sodiumVerticalDistance(float delta) {
+        return endless$verticalDistance(delta);
+    }
 }

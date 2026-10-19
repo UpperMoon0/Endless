@@ -13,6 +13,28 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class EndlessConfigTest {
 
+    @Test void renderingConfigSurvivesDiskLoadAndMigrationSave(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("endless.json"),
+            "{\"buildHeight\":{\"minBuildHeight\":-8000000,\"maxBuildHeight\":8000000},"
+            + "\"rendering\":{\"verticalRenderSections\":256}}");
+        var config = new EndlessConfig();
+        config.load(dir);
+        assertEquals(256, config.getRendering().getVerticalRenderSections());
+        assertEquals(5, config.getRendering().getVerticalPageRadius());
+        config.save(dir);
+        var reloaded = new EndlessConfig();
+        reloaded.load(dir);
+        assertEquals(256, reloaded.getRendering().getVerticalRenderSections());
+    }
+
+    @Test void oldAndNullRenderingConfigsKeepOriginalBudget() {
+        for (String json : new String[]{"{}", "{\"rendering\":null}"})
+            assertEquals(32, new Gson().fromJson(json, EndlessConfig.class)
+                .getRendering().getVerticalRenderSections());
+        var config = new Gson().fromJson("{\"rendering\":{\"verticalRenderSections\":2147483647}}", EndlessConfig.class);
+        assertEquals(512, config.getRendering().getVerticalRenderSections());
+    }
+
     @Test
     void defaultsAreVanilla() {
         EndlessConfig.BuildHeightConfig config = new EndlessConfig.BuildHeightConfig();

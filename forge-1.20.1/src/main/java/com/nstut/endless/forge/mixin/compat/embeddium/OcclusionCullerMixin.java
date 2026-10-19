@@ -24,4 +24,14 @@ public abstract class OcclusionCullerMixin implements EmbeddiumWindowBounds {
 
     @Redirect(method = "init", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getMaxSection()I", remap = true))
     private int endless$maximum(Level level) { return endless$bounded ? endless$maxSection : level.getMaxSection(); }
+
+    // Keep the renderer's horizontal distance/frustum policy; the section graph bounds Y.
+    @ModifyArg(method = "isWithinRenderDistance", at = @At(value = "INVOKE",
+        target = "Lorg/embeddedt/embeddium/api/render/chunk/RenderSectionDistanceFilter;isWithinDistance(FFFF)Z"), index = 1, require = 1)
+    private static float endless$verticalDistance(float delta) {
+        return com.nstut.endless.heights.EndlessLogicalHeights.isActive()
+            ? com.nstut.endless.vertical.VerticalViewDistance.cullingDelta(delta,
+                com.nstut.endless.config.EndlessConfig.getInstance().getRendering().getVerticalRenderSections())
+            : delta;
+    }
 }

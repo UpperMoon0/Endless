@@ -11,6 +11,7 @@
     "ClientPacketListenerMixin",
     "BlockStatePredictionHandlerMixin",
     "RenderChunkMixin",
+    "compat.CreateControlledContraptionMixin",
     "compat.CreateArmInteractionPointHandlerMixin",
     "compat.CreateEjectorTargetHandlerMixin",
     "DestructionProgressMixin",

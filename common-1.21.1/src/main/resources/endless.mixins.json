@@ -15,6 +15,7 @@
     "accessor.LevelRendererAccessor",
     "accessor.ViewAreaAccessor",
     "accessor.VisibleSectionsAccessor",
+    "compat.CreateControlledContraptionMixin",
     "compat.CreateArmInteractionPointHandlerMixin",
     "compat.CreateEjectorTargetHandlerMixin",
     "DestructionProgressMixin",

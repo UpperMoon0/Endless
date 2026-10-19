@@ -392,6 +392,11 @@ public final class MinecraftVerticalWorld {
         lightCacheRevision++;
     }
 
+    /** Client receipt, including an empty snapshot; local speculative reads are not receipt. */
+    public synchronized boolean hasPageSnapshot(VerticalPagePos pos) {
+        return revisions.containsKey(pos);
+    }
+
     public synchronized List<Integer> loadedPageYs(int chunkX, int chunkZ) {
         SparseVerticalColumn<LevelChunkSection> column = columns.get(ChunkPos.asLong(chunkX, chunkZ));
         return column == null ? List.of() : column.pageYs();

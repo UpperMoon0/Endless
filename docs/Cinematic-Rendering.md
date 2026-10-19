@@ -28,6 +28,12 @@ populate. Renderer adapters retain horizontal distance/frustum culling and let t
 bounded section graph govern vertical distance when the budget exceeds the default.
 The default budget keeps the renderer's original distance predicate.
 
+Create's controlled contraptions can spawn before a distant sparse controller
+page arrives. The client defers its controller-loaded check until that page has
+been received; an empty received page still counts as known, so a genuinely
+missing controller keeps Create's normal removal behavior. Horizontal chunk
+unloads and reconnects clear the receipt state.
+
 Larger budgets increase node, mesh, snapshot and page-delivery work for every
 tracked horizontal column. Start at 128 or 256 sections and allow initial meshes
 to finish before recording. Increasing horizontal distance at the same time can

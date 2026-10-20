@@ -8,6 +8,21 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class RenderSkySnapshotCacheTest {
+    @Test void emptyAirReceiptsKeepSolvedSkyAndStillMarkThePageKnown() {
+        var world = new MinecraftVerticalWorld(null);
+        var section = SectionPos.of(36, 132, 7);
+        var calls = new AtomicInteger();
+        java.util.function.Supplier<DataLayer> solve = () -> { calls.incrementAndGet(); return new DataLayer(15); };
+        world.copyRenderSkyLight(section, solve);
+        // Unknown pages are already read as air; confirming air changes no exposure.
+        world.applySnapshot(new VerticalPageSnapshot(36, 20, 7, 1, java.util.List.of()));
+        world.applySnapshot(new VerticalPageSnapshot(36, -20, 7, 2, java.util.List.of()));
+        assertTrue(world.hasPageSnapshot(new VerticalPagePos(36, 20, 7)));
+        assertTrue(world.hasPageSnapshot(new VerticalPagePos(36, -20, 7)));
+        world.copyRenderSkyLight(section, solve);
+        assertEquals(1, calls.get(), "Air receipt must not repeatedly discard unchanged scene lighting");
+    }
+
     @Test void repeatedClonesShareSolveButNeverMutableNativeSnapshotStorage() {
         var world = new MinecraftVerticalWorld(null);
         var section = SectionPos.of(36, 132, 7);

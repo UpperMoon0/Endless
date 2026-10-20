@@ -384,6 +384,8 @@ public final class MinecraftVerticalWorld {
         long key = ChunkPos.asLong(pos.chunkX(), pos.chunkZ());
         SparseVerticalColumn<LevelChunkSection> targetColumn =
             columns.computeIfAbsent(key, ignored -> new SparseVerticalColumn<>());
+        var previous = targetColumn.getPage(pos.pageY());
+        boolean lightChanged = (previous != null && !previous.isEmpty()) || !decoded.isEmpty();
         targetColumn.removePage(pos.pageY());
         decoded.forEachOccupiedSection((sectionY, section) -> targetColumn.putSection(sectionY, section));
         if (targetColumn.isEmpty()) {
@@ -392,9 +394,11 @@ public final class MinecraftVerticalWorld {
         attemptedLoads.add(pos);
         revisions.put(pos, snapshot.revision());
         snapshots.remove(pos);
-        invalidateHeightColumn(key);
-        invalidateBlockLightPage(pos);
-        skyLight.clear();sectionSkyLight.clear();lightCacheRevision++;
+        if (lightChanged) {
+            invalidateHeightColumn(key);
+            invalidateBlockLightPage(pos);
+            skyLight.clear();sectionSkyLight.clear();lightCacheRevision++;
+        }
     }
 
     /** Client receipt, including an empty snapshot; local speculative reads are not receipt. */

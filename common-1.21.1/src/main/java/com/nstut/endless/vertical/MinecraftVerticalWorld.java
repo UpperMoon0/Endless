@@ -217,6 +217,11 @@ public final class MinecraftVerticalWorld {
         DataLayer result = new DataLayer();
         Direction[] paths = {Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST};
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        BlockPos.MutableBlockPos opacityPos = new BlockPos.MutableBlockPos();
+        SectionSkyOpacityCache opacity = new SectionSkyOpacityCache(minX, section.minBlockY(), minZ, (sx,sy,sz) -> {
+            opacityPos.set(sx,sy,sz);
+            return level.getBlockState(opacityPos).getLightBlock(level, opacityPos);
+        });
         for (int x = 0; x < 16; x++) for (int z = 0; z < 16; z++) {
             int centerX = x + radius, centerZ = z + radius;
             int centerTop = tops[centerX][centerZ];
@@ -240,14 +245,15 @@ public final class MinecraftVerticalWorld {
                         for (int distance = 1; distance <= radius && cost < 15; distance++) {
                             cursor.move(direction);
                             if (!EndlessLogicalHeights.contains(cursor.getY())) break;
-                            BlockState state = level.getBlockState(cursor);
-                            cost += Math.max(1, state.getLightBlock(level, cursor));
+                            cost += opacity.get(cursor.getX(),cursor.getY(),cursor.getZ());
                             if (cost >= 15) break;
                             if (cursor.getY() > tops[cursor.getX() - minX][cursor.getZ() - minZ]) {
                                 value = Math.max(value, 15 - cost);
                                 break;
                             }
                         }
+                        // Every non-exposed ray pays at least one light level.
+                        if (value == 14) break;
                     }
                 }
                 result.set(x, localY, z, value);

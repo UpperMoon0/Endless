@@ -218,6 +218,7 @@ public abstract class SectionStorageMixin<R, P> implements ExtendedSectionStorag
                         throw new IOException("Could not decode Endless POI section " + sectionY + " at " + file);
                     }
                     R value = unpacker.apply(packed.get(), () -> endless$dirtyColumns.add(columnKey));
+                    endless$sections.add(columnKey, sectionKey);
                     storage.put(sectionKey, Optional.of(value));
                     onSectionLoad(sectionKey);
                 }

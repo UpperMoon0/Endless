@@ -5,3 +5,4 @@ Endless 0.10.1
 - Add a bounded vertical render-section budget with tall-structure Create and Complementary compatibility.
 - Index sparse POI sections by column so ordinary chunk unloads do not scan unrelated dense terrain storage.
 - Reuse bounded per-solve skylight opacity samples and stop rays at their proven maximum, avoiding repeated block reads while preserving light attenuation.
+- Restore reloaded 26.1.2 POI sections to their sparse column index so searches and subsequent saves retain them.

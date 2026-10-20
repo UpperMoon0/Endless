@@ -131,3 +131,16 @@ if (project.hasProperty("shaderPreview")) {
         if (project.hasProperty("previewIris")) runtimeOnly("maven.modrinth:iris:qE5Y7GrZ") { transitive = false }
     }
 }
+
+// Exercise the compiled sparse POI hooks on this port too.
+sourceSets.test.java {
+    srcDir rootProject.file('common-1201-1211/src/test/java')
+    include '**/SparsePoiTraversalTest.java'
+}
+dependencies {
+    testImplementation platform("org.junit:junit-bom:5.11.4")
+    testImplementation "org.junit.jupiter:junit-jupiter"
+    testImplementation "org.ow2.asm:asm-tree:9.9.1"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+test { useJUnitPlatform() }

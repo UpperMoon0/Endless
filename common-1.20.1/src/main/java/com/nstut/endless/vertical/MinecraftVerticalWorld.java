@@ -50,8 +50,8 @@ public final class MinecraftVerticalWorld {
     private final Set<VerticalPagePos> dirtyPages = new HashSet<>();
     private final Map<VerticalPagePos, Long> revisions = new HashMap<>();
     private final ColumnHeightCache heightCache = new ColumnHeightCache(Heightmap.Types.values().length);
-    private final SectionLightCache<DataLayer> sectionBlockLight = new SectionLightCache<>(512);
-    private final SectionLightCache<DataLayer> sectionSkyLight = new SectionLightCache<>(512);
+    private final SectionLightCache<DataLayer> sectionBlockLight = new SectionLightCache<>(SectionLightCache.RENDER_SECTION_LIMIT);
+    private final SectionLightCache<DataLayer> sectionSkyLight = new SectionLightCache<>(SectionLightCache.RENDER_SECTION_LIMIT);
     private final Map<BlockKey, Integer> skyLight = new LinkedHashMap<>(1024, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<BlockKey, Integer> eldest) {

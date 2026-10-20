@@ -37,8 +37,9 @@ class RenderSkySnapshotCacheTest {
         world.copyRenderSkyLight(SectionPos.of(0, -500000, 0), solve);
         world.copyRenderSkyLight(SectionPos.of(0, 499999, 0), solve);
         assertEquals(2, calls.get());
-        for (int i=0;i<513;i++) world.copyRenderSkyLight(SectionPos.of(i, 0, 0), solve);
+        int limit = SectionLightCache.RENDER_SECTION_LIMIT;
+        for (int i=0;i<=limit;i++) world.copyRenderSkyLight(SectionPos.of(i, 0, 0), solve);
         world.copyRenderSkyLight(SectionPos.of(0, -500000, 0), solve);
-        assertEquals(516, calls.get());
+        assertEquals(limit + 4, calls.get());
     }
 }

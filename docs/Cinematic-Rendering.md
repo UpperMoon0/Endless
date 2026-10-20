@@ -59,3 +59,10 @@ Distant Horizons provides its own distant terrain; this option expands native
 Minecraft geometry and does not claim to extend DH's LOD height representation.
 Keep DH and the selected shader enabled during final framing and export checks.
 A successful build alone does not establish runtime shader or LOD compatibility.
+
+Sparse POI sections are indexed by their owning horizontal column. Listing,
+saving and unloading a column visits only its admitted sparse sections; it never
+walks vanilla's global POI section map. This avoids watchdog stalls when long
+camera or player routes unload many ordinary terrain chunks. Dirty sidecars
+are still saved before their indexed sections are removed, and reloading rebuilds
+the index from the sidecar.

@@ -48,10 +48,12 @@ Unrecognized shader expressions and the default budget are left unchanged.
 Shader packs still control their own atmospheric/border fog; use their settings
 when haze hides a structure that the renderer has already made visible.
 
-Native skylight snapshots are cached in a bounded 512-section cache. Each clone
-receives its own copy; lighting edits, received pages and column unloads invalidate
-cached results. This avoids recalculating the same skylight for neighboring mesh
-snapshots and shadow/main passes.
+Native block and skylight snapshots each use a bounded 4,096-section cache, with
+at most 16 MiB of combined nibble-light payload. Each clone receives its own copy.
+Lighting edits, changed page contents and column unloads invalidate cached
+results. Confirming previously unknown air still records the page receipt, but
+retains solved lighting because the scene did not change. This lets tall moving
+views, neighboring mesh snapshots and shadow/main passes reuse their working set.
 
 Distant Horizons provides its own distant terrain; this option expands native
 Minecraft geometry and does not claim to extend DH's LOD height representation.

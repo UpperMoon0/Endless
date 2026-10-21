@@ -8,11 +8,14 @@ class SparseControllerPageReceiptTest {
     @Test void emptyReceiptIsKnownButUnseenAndUnloadedControllersAreNot() {
         // Empty snapshots do not require a registry-bearing Level to decode.
         var world = new MinecraftVerticalWorld(null);
+        long before=world.lodGeneration();
         var positive = new VerticalPagePos(36, 4, 7);
         var negative = new VerticalPagePos(36, -4, 7);
         assertFalse(world.hasPageSnapshot(positive));
         assertFalse(world.hasPageSnapshot(negative));
         world.applySnapshot(new VerticalPageSnapshot(36, 4, 7, 1, List.of()));
+        assertEquals(before,world.lodGeneration(),"Unknown air must not invalidate existing LOD working sets");
+        assertTrue(world.lodSections(36,7,-500000,500000).isEmpty(),"Inventory must not allocate/load absent sections");
         assertTrue(world.hasPageSnapshot(positive), "Known empty page must allow native missing-controller removal");
         assertFalse(world.pageExists(positive), "Receipt must not be confused with occupied storage");
         assertFalse(world.hasPageSnapshot(negative));

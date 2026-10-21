@@ -14,6 +14,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 /** Records sparse render-graph traversal after ViewArea resolves a neighboring section. */
 @Mixin(SectionOcclusionGraph.class)
 public abstract class SectionOcclusionGraphMixin {
+    @org.spongepowered.asm.mixin.injection.ModifyArg(method="getRelativeFrom",
+        at=@At(value="INVOKE",target="Lnet/minecraft/util/Mth;abs(I)I",ordinal=0),index=0)
+    private int endless$independentVerticalDistance(int delta) {
+        return EndlessLogicalHeights.isActive()
+            && com.nstut.endless.config.EndlessConfig.getInstance().getRendering().getVerticalViewSections() > 32
+            ? 0 : delta;
+    }
+
     @Inject(
         method = "getRelativeFrom(Lnet/minecraft/core/BlockPos;Lnet/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection;Lnet/minecraft/core/Direction;)Lnet/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection;",
         at = @At("RETURN")

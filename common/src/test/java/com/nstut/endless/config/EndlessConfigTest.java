@@ -27,12 +27,33 @@ class EndlessConfigTest {
         assertEquals(256, reloaded.getRendering().getVerticalRenderSections());
     }
 
-    @Test void oldAndNullRenderingConfigsKeepOriginalBudget() {
+    @Test void oldAndNullRenderingConfigsKeepDetailedBudgetAndAddDistantView() {
         for (String json : new String[]{"{}", "{\"rendering\":null}"})
             assertEquals(32, new Gson().fromJson(json, EndlessConfig.class)
                 .getRendering().getVerticalRenderSections());
+        for (String json : new String[]{"{}", "{\"rendering\":null}"}) {
+            var rendering = new Gson().fromJson(json, EndlessConfig.class).getRendering();
+            assertEquals(256, rendering.getVerticalLodSections());
+            assertEquals(256, rendering.getVerticalViewSections());
+            assertEquals(5, rendering.getVerticalPageRadius());
+        }
         var config = new Gson().fromJson("{\"rendering\":{\"verticalRenderSections\":2147483647}}", EndlessConfig.class);
         assertEquals(512, config.getRendering().getVerticalRenderSections());
+    }
+
+    @Test void distantBudgetIsConfigurableAndCanBeDisabled(@TempDir Path dir) throws Exception {
+        var config = new EndlessConfig();
+        config.getRendering().setVerticalLodSections(Integer.MAX_VALUE);
+        assertEquals(512, config.getRendering().getVerticalLodSections());
+        config.getRendering().setVerticalLodSections(1);
+        assertEquals(32, config.getRendering().getVerticalLodSections());
+        config.getRendering().setVerticalLodSections(0);
+        assertEquals(32, config.getRendering().getVerticalViewSections());
+        assertEquals(1, config.getRendering().getVerticalPageRadius());
+        config.save(dir);
+        var reloaded = new EndlessConfig();reloaded.load(dir);
+        assertEquals(0, reloaded.getRendering().getVerticalLodSections());
+        assertEquals(32, reloaded.getRendering().getVerticalRenderSections());
     }
 
     @Test

@@ -35,6 +35,11 @@ public abstract class ViewAreaMixin {
     @Shadow @Final public ChunkRenderDispatcher.RenderChunk[] chunks;
     @Shadow protected abstract int getChunkIndex(int x, int y, int z);
 
+    @Inject(method = "repositionCamera", at = @At("TAIL"))
+    private void endless$publishNativeWindow(CallbackInfo ci) {
+        com.nstut.endless.vertical.lod.VerticalLodCoverage.publish(endless$windowBaseSection, endless$windowBaseSection + chunkGridSizeY);
+    }
+
     @Unique private int endless$windowBaseSection = UNINITIALIZED;
 
     @Redirect(

@@ -59,6 +59,15 @@ public final class MinecraftVerticalWorld {
         }
     };
     private final WeightedCache<VerticalPagePos,VerticalPageSnapshot> snapshots=new WeightedCache<>(16<<20);
+    private final com.nstut.endless.vertical.lod.LodSectionRevisions lodRevisions = new com.nstut.endless.vertical.lod.LodSectionRevisions();
+    private boolean lodActive() {
+        if(level == null || !level.isClientSide()) return false;
+        var config=com.nstut.endless.config.EndlessConfig.getInstance().getRendering();
+        return config.getVerticalLodSections()>config.getVerticalRenderSections()
+            && EndlessLogicalHeights.maxSectionExclusive()-EndlessLogicalHeights.minSection()>config.getVerticalRenderSections();
+    }
+    public synchronized long lodGeneration() { return lodRevisions.generation(); }
+    public synchronized long lodRevision(int x,int y,int z) { return lodRevisions.revision(x,y,z); }
     private long nextRevision = 1L;
     private long lightCacheRevision;
 
@@ -83,6 +92,19 @@ public final class MinecraftVerticalWorld {
             if (section != null && !section.hasOnlyAir()) states.put(sectionY, section.getStates().copy());
         }
         return states.isEmpty() ? it.unimi.dsi.fastutil.ints.Int2ObjectMaps.emptyMap() : states;
+    }
+
+    /** Render-thread inventory: only admitted sections, never disk reads or world-height scans. */
+    public synchronized java.util.Map<Integer, LevelChunkSection> lodSections(int chunkX, int chunkZ, int first, int end) {
+        var result = new java.util.HashMap<Integer, LevelChunkSection>();
+        var column = columns.get(ChunkPos.asLong(chunkX, chunkZ));
+        if (column != null) for (int pageY : column.pageYs()) {
+            var page = column.getPage(pageY);
+            page.forEachOccupiedSection((y, section) -> {
+                if (y >= first && y < end && !section.hasOnlyAir()) result.put(y, section);
+            });
+        }
+        return result;
     }
 
     /** Client render snapshots may read an existing page but must never allocate one. */
@@ -401,6 +423,7 @@ public final class MinecraftVerticalWorld {
         revisions.put(pos, snapshot.revision());
         snapshots.remove(pos);
         if (lightChanged) {
+            if(lodActive()) lodRevisions.touchPage(pos.chunkX(),pos.pageY(),pos.chunkZ());
             invalidateHeightColumn(key);
             invalidateBlockLightPage(pos);
             skyLight.clear();sectionSkyLight.clear();lightCacheRevision++;
@@ -481,6 +504,7 @@ public final class MinecraftVerticalWorld {
             }
         }
         columns.remove(key);
+        lodRevisions.unloadColumn(chunkX,chunkZ);
         attemptedLoads.removeIf(pos -> pos.chunkX() == chunkX && pos.chunkZ() == chunkZ);
         dirtyPages.removeIf(pos -> pos.chunkX() == chunkX && pos.chunkZ() == chunkZ);
         revisions.keySet().removeIf(pos -> pos.chunkX() == chunkX && pos.chunkZ() == chunkZ);
@@ -490,6 +514,7 @@ public final class MinecraftVerticalWorld {
     }
 
     public synchronized void close() {
+        lodRevisions.clear();
         flushDirty();
         columns.clear();
         attemptedLoads.clear();
@@ -701,6 +726,7 @@ public final class MinecraftVerticalWorld {
     }
 
     private void invalidateForBlockChange(BlockPos pos) {
+        if(lodActive()) lodRevisions.touchSection(pos.getX()>>4,pos.getY()>>4,pos.getZ()>>4);
         long key = ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4);
         int local = (pos.getX() & 15) | ((pos.getZ() & 15) << 4);
         heightCache.invalidate(key, local);

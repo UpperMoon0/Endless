@@ -185,6 +185,16 @@ public class EndlessConfig {
 
     public static final class RenderingConfig {
         private int verticalRenderSections = com.nstut.endless.vertical.VerticalViewDistance.DEFAULT_SECTIONS;
+        private int verticalLodSections = 256;
+
+        /** Total vertical proxy span. Zero disables simplified distant geometry. */
+        public int getVerticalLodSections() {
+            return verticalLodSections <= 0 ? 0 : com.nstut.endless.vertical.VerticalViewDistance.clampSections(verticalLodSections);
+        }
+
+        public void setVerticalLodSections(int sections) {
+            verticalLodSections = sections <= 0 ? 0 : com.nstut.endless.vertical.VerticalViewDistance.clampSections(sections);
+        }
 
         public int getVerticalRenderSections() {
             return com.nstut.endless.vertical.VerticalViewDistance.clampSections(verticalRenderSections);
@@ -194,8 +204,12 @@ public class EndlessConfig {
             verticalRenderSections = com.nstut.endless.vertical.VerticalViewDistance.clampSections(sections);
         }
 
+        public int getVerticalViewSections() {
+            return Math.max(getVerticalRenderSections(), getVerticalLodSections());
+        }
+
         public int getVerticalPageRadius() {
-            return com.nstut.endless.vertical.VerticalViewDistance.pageRadius(getVerticalRenderSections());
+            return com.nstut.endless.vertical.VerticalViewDistance.pageRadius(getVerticalViewSections());
         }
     }
 

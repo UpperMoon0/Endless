@@ -1,12 +1,15 @@
 # Tall views and cinematic rendering
 
-Endless defaults to a camera-following 32-section (512-block) render window.
+Endless defaults to a camera-following 32-section (512-block) detailed window plus a
+256-section (4,096-block total) simplified vertical span. See [vertical LOD](Vertical-LOD.md)
+for the defaults, cost bounds and visual limitations.
 To keep a tall structure visible in a single frame, add this to `config/endless.json`
 on **both the client and server**, preserving the existing `buildHeight` settings:
 
 ```json
 "rendering": {
-  "verticalRenderSections": 256
+  "verticalRenderSections": 256,
+  "verticalLodSections": 256
 }
 ```
 
@@ -26,7 +29,7 @@ cover this window, including page seams and hysteresis. Existing per-player queu
 byte/time, scan and fair-send budgets still apply, so larger views take longer to
 populate. Renderer adapters retain horizontal distance/frustum culling and let the
 bounded section graph govern vertical distance when the budget exceeds the default.
-The default budget keeps the renderer's original distance predicate.
+The original distance predicate is retained only when both budgets stay at 32 sections.
 
 Create's controlled contraptions can spawn before a distant sparse controller
 page arrives. The client defers its controller-loaded check until that page has

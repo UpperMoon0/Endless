@@ -46,6 +46,10 @@ final class EmbeddiumCompatibilityRegression {
     }
     static void verify(int fixtureY) throws Exception {
         metrics.clear();
+        com.nstut.endless.testing.renderer.LodGpuRegression.verify();
+        com.nstut.endless.testing.renderer.LodFogIntegrationRegression.verify();
+        metrics.put("verticalLodNativeFog",true);
+        metrics.put("verticalLodGpu", "pixels, edits, camera anchor, far/native depth and GL state restoration");
         Minecraft mc = Minecraft.getInstance();
         var state = new TranslucentQuadAnalyzer.SortState(TranslucentQuadAnalyzer.Level.DYNAMIC,
             new float[] {0, .25f, 0, 0, .75f, 0}, null, null);

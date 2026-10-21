@@ -14,6 +14,6 @@ public abstract class ShaderPreprocessorMixin {
     @ModifyVariable(method = "glslPreprocessSource", at = @At("HEAD"), argsOnly = true, ordinal = 0, require = 1)
     private static String endless$horizontalNativeDhBlend(String source) {
         return ShaderVerticalBlend.adapt(source,
-            EndlessConfig.getInstance().getRendering().getVerticalRenderSections());
+            EndlessConfig.getInstance().getRendering().getVerticalViewSections());
     }
 }

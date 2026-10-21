@@ -9,8 +9,10 @@ public final class VerticalRenderWindow {
     private boolean initialized;
 
     public boolean update(int cameraSection, int logicalMin, int logicalMax) {
-        return update(cameraSection, logicalMin, logicalMax,
+        boolean changed = update(cameraSection, logicalMin, logicalMax,
             com.nstut.endless.config.EndlessConfig.getInstance().getRendering().getVerticalRenderSections());
+        com.nstut.endless.vertical.lod.VerticalLodCoverage.publish(min, max);
+        return changed;
     }
 
     public boolean update(int cameraSection, int logicalMin, int logicalMax, int sectionBudget) {

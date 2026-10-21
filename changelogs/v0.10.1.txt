@@ -6,3 +6,5 @@ Endless 0.10.1
 - Index sparse POI sections by column so ordinary chunk unloads do not scan unrelated dense terrain storage.
 - Reuse bounded per-solve skylight opacity samples and stop rays at their proven maximum, avoiding repeated block reads while preserving light attenuation.
 - Restore reloaded 26.1.2 POI sections to their sparse column index so searches and subsequent saves retain them.
+
+- Add bounded vertical terrain LOD: 4,096 blocks of total vertical view by default with a separate 512-block detailed window. Both spans remain configurable up to 8,192 blocks; set verticalLodSections to zero to disable simplified terrain. Cache reduced static block geometry with revision invalidation, horizontal fog/distance handling, independent far depth and native foreground occlusion.

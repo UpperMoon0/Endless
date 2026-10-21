@@ -96,6 +96,10 @@ def validate(output: Path, request: dict, oculus: bool, target: str = "forge-1.2
             if any(check not in checks for check in required):
                 raise RuntimeError('Native regression receipt missing')
             measurements = record.get('nativeRegressionMeasurements', {})
+            if measurements.get('verticalLodNativeFog') is not True:
+                raise RuntimeError('Native LOD fog parser/bind regression receipt missing')
+            if measurements.get('verticalLodGpu') != 'pixels, edits, camera anchor, far/native depth and GL state restoration':
+                raise RuntimeError('Vertical LOD GPU occlusion/state regression receipt missing')
             if target != 'forge-1.20.1' and measurements.get('completeMeshBytes', 0) <= 0:
                 raise RuntimeError('Complete native mesh measurements missing')
             if target != 'forge-1.20.1' and (measurements.get('activeMeshCancellationPolls', 0) < 2 or not measurements.get('lateUploadFiltered')):

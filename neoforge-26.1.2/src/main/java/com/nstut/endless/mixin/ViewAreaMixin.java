@@ -34,6 +34,11 @@ public abstract class ViewAreaMixin implements VerticalViewAreaWindow {
     @Shadow protected int sectionGridSizeZ;
     @Shadow public SectionRenderDispatcher.RenderSection[] sections;
 
+    @Inject(method = "repositionCamera", at = @At("TAIL"))
+    private void endless$publishNativeWindow(CallbackInfo ci) {
+        com.nstut.endless.vertical.lod.VerticalLodCoverage.publish(endless$windowBaseSection, endless$windowBaseSection + sectionGridSizeY);
+    }
+
     @Unique private int endless$windowBaseSection = UNINITIALIZED;
 
     @Override

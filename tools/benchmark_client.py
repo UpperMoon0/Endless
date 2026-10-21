@@ -10,12 +10,15 @@ import csv
 import hashlib
 import json
 import math
+import re
 import os
 from pathlib import Path
 import shutil
 import statistics
 import subprocess
 import time
+import threading
+import platform
 import urllib.request
 from benchmark_server import Rcon, digest, java_tool, percentile
 
@@ -133,20 +136,108 @@ def wait_phase(directory, value, client, timeout=120):
     raise RuntimeError('Native present phase acknowledgement timed out')
 
 
+
+def wait_tall_ready(directory, client, rendering, height, timeout):
+    """Require the endpoint and both renderer queues to settle before any FPS window."""
+    deadline = time.monotonic() + timeout
+    stable = 0
+    last_signature = None
+    while time.monotonic() < deadline:
+        phase(directory, 2000)
+        wait_phase(directory, 2000, client)
+        receipt = dict(line.split('=',1) for line in (directory/'scene-2000.txt').read_text().splitlines())
+        native = directory/'renderer-2000.txt'
+        queues = re.findall(r'(?:P[012]|U)=(\d+)', native.read_text()) if native.exists() else []
+        if native.exists() and len(queues)!=4:
+            raise RuntimeError('Native queue observer format changed; refusing an unsettled comparison')
+        lod = directory/'lod-2000.txt'
+        pending = re.search(r'pendingVisible=(\d+)',lod.read_text()) if lod.exists() else None
+        endpoint = max(rendering.values())*8 < height-36 or int(receipt.get('yellowPixels','0')) >= 60
+        settled = endpoint and all(int(value)==0 for value in queues) and (pending is None or int(pending[1])==0)
+        signature = (receipt.get('neutralPixels'),receipt.get('yellowPixels'),
+                     native.read_text() if native.exists() else '',lod.read_text() if lod.exists() else '')
+        stable = stable+1 if settled and signature==last_signature else 0
+        last_signature = signature
+        if stable >= 3:
+            return
+        phase(directory, 0)
+        wait_phase(directory, 0, client)
+        time.sleep(1)
+    raise RuntimeError('Tall scene did not settle with a visible endpoint; no performance result accepted')
+
+
+class ProcessResources:
+    """External sampling; no instrumentation or file I/O in the game's render thread."""
+    def __init__(self, directory, client, server):
+        import psutil
+        self.directory, self.rows, self.stop = directory, [], threading.Event()
+        self.processes = {'client': psutil.Process(client.pid), 'server': psutil.Process(server.pid)}
+        self.thread = threading.Thread(target=self.sample, daemon=True)
+        self.thread.start()
+
+    def sample(self):
+        while not self.stop.is_set():
+            try:
+                phase_value = int((self.directory / 'phase.txt').read_text())
+                stamp = time.monotonic()
+                import psutil
+                self.rows.append({'phase':phase_value,'time':stamp,'role':'host',
+                    'cpu_percent':psutil.cpu_percent(None),'available_bytes':psutil.virtual_memory().available})
+                for role, process in self.processes.items():
+                    cpu = process.cpu_times()
+                    self.rows.append({'phase': phase_value, 'role': role, 'time': stamp,
+                                      'rss': process.memory_info().rss, 'cpu': cpu.user + cpu.system})
+            except Exception:
+                pass
+            self.stop.wait(.25)
+
+    def finish(self):
+        self.stop.set(); self.thread.join(timeout=2)
+        (self.directory / 'resources.json').write_text(json.dumps(self.rows, indent=2))
+        result = {}
+        for phase_number, workload in enumerate(WORKLOADS, 1):
+            host=[row for row in self.rows if row['phase']==phase_number and row['role']=='host']
+            result[workload] = {'host':{'mean_cpu_percent':statistics.mean(row['cpu_percent'] for row in host),
+                'minimum_available_bytes':min(row['available_bytes'] for row in host)}}
+            for role in self.processes:
+                rows = [row for row in self.rows if row['phase'] == phase_number and row['role'] == role]
+                if len(rows) < 8:
+                    raise RuntimeError('Incomplete resource sample window')
+                result[workload][role] = {'peak_rss_bytes': max(row['rss'] for row in rows),
+                    'mean_rss_bytes': statistics.mean(row['rss'] for row in rows),
+                    'cpu_cores': (rows[-1]['cpu']-rows[0]['cpu'])/(rows[-1]['time']-rows[0]['time'])}
+        return result
+
+
 def run(args, label, jar, repeat, sparse=False):
     directory = args.output / f'{label}-{"sparse" if sparse else "dense"}-{repeat}'
     directory.mkdir()
+    frozen_jar_hash = digest(jar) if jar else None
     server_dir, client_dir = directory / 'server', directory / 'client'
     y = 4096 if sparse else 80
+    tall = getattr(args, 'tower_height', 0)
+    native = getattr(args, label + '_sections', 32)
+    lod = getattr(args, 'candidate_lod_sections', 0) if label == 'candidate' else 0
+    rendering = {'verticalRenderSections': native, 'verticalLodSections': lod}
+    edit_y = y + (512 if tall else 16)
+    edit_top = edit_y + (31 if tall else 7)
+    edit_count = '2048' if tall else '512'
+    camera_z, pitch = (-96, -55) if tall else (-24, 25)
     for game in (server_dir, client_dir):
         (game / 'mods').mkdir(parents=True)
         (game / 'config').mkdir()
-        (game / 'config/endless.json').write_text(json.dumps({'buildHeight': {'minBuildHeight': -1048576, 'maxBuildHeight': 1048576}}))
+        (game / 'config/endless.json').write_text(json.dumps({'buildHeight': {'minBuildHeight': -1048576, 'maxBuildHeight': 1048576}, 'rendering': rendering}))
         if label != 'vanilla':
             for dependency in args.dependency:
                 shutil.copy2(dependency, game / 'mods' / dependency.name)
         if jar:
             shutil.copy2(jar, game / 'mods/endless.jar')
+    if args.shader_pack:
+        packs=client_dir/'shaderpacks'; packs.mkdir()
+        shutil.copy2(args.shader_pack,packs/args.shader_pack.name)
+        (client_dir/'config/iris.properties').write_text('enableShaders=true\nshaderPack='+args.shader_pack.name+'\n')
+        if args.shader_options:
+            shutil.copy2(args.shader_options,packs/(args.shader_pack.name+'.txt'))
     (server_dir / 'eula.txt').write_text('eula=true\n')
     (server_dir / 'server.properties').write_text(f'online-mode=false\nserver-ip=127.0.0.1\nserver-port={args.port}\nenable-rcon=true\nrcon.port={args.port+1}\nrcon.password=endless-benchmark\nlevel-type=minecraft:flat\nlevel-seed=0\nview-distance=8\nsimulation-distance=4\nspawn-protection=0\nmax-tick-time=120000\n' + 'generator-settings={"layers":[{"block":"minecraft:bedrock","height":1},{"block":"minecraft:dirt","height":2},{"block":"minecraft:grass_block","height":1}],"biome":"minecraft:plains"}\n')
     (client_dir / 'options.txt').write_text('version:3955\nonboardAccessibility:false\nskipMultiplayerWarning:true\ntutorialStep:none\nrenderDistance:8\nsimulationDistance:5\nmaxFps:260\nenableVsync:false\ngraphicsMode:1\nentityDistanceScaling:1.0\nparticles:0\npauseOnLostFocus:false\nfullscreen:false\nfov:0.0\nguiScale:2\n')
@@ -154,6 +245,9 @@ def run(args, label, jar, repeat, sparse=False):
     server_log, client_log = directory / 'server.log', directory / 'client.log'
     server = client = rcon = None
     command_counts = {}
+    resource_monitor = None
+    resources = {}
+    readiness = {}
     with server_log.open('w') as sl, client_log.open('w') as cl:
         try:
             server = subprocess.Popen([java_tool(args.java, 'java'), '-Xms1G', '-Xmx2G', '-jar', str(launcher), 'nogui'], cwd=server_dir, stdout=sl, stderr=subprocess.STDOUT)
@@ -164,24 +258,40 @@ def run(args, label, jar, repeat, sparse=False):
             time.sleep(8)
             for x in range(0, 112, 16):
                 for z in range(0, 112, 16):
-                    response = rcon.request(f'fill {x} {y} {z} {x+7} {y+31} {z+7} minecraft:stone')
-                    if '2048' not in response:
-                        raise RuntimeError('Fixture fill failed: ' + response)
+                    for dy in range(0, tall or 32, 32):
+                        material = 'yellow_concrete' if tall and dy >= tall-256 else 'stone'
+                        response = rcon.request(f'fill {x} {y+dy} {z} {x+7} {y+dy+31} {z+7} minecraft:{material}')
+                        if '2048' not in response:
+                            raise RuntimeError('Fixture fill failed: ' + response)
             cp = args.fabric_cp if label != 'vanilla' else args.vanilla_cp
             main = 'net.fabricmc.loader.impl.launch.knot.KnotClient' if label != 'vanilla' else 'net.minecraft.client.main.Main'
-            command = [java_tool(args.java, 'java'), '-Xms1G', '-Xmx2G', '-Dfabric.debug.disableClassPathIsolation=true', '--add-exports=java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED', f'-javaagent:{args.output / "frame-agent.jar"}={directory}', '-cp', os.pathsep.join(map(str, cp)), main, '--username', 'FrameBench', '--uuid', '00000000-0000-0000-0000-000000000001', '--accessToken', 'offline', '--version', '1.21.1', '--gameDir', str(client_dir), '--assetsDir', str(args.cache / 'assets'), '--assetIndex', '17', '--width', '1280', '--height', '720', '--quickPlayMultiplayer', f'127.0.0.1:{args.port}']
+            command = [java_tool(args.java, 'java'), '-Xms1G', '-Xmx2G', '-Dfabric.debug.disableClassPathIsolation=true', '-Dendless.lodMetrics=true', f'-Dendless.bench.noFog={str(args.disable_fog).lower()}', f'-Dendless.bench.farPlane={args.far_plane}', '--add-exports=java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED', f'-javaagent:{args.output / "frame-agent.jar"}={directory}', '-cp', os.pathsep.join(map(str, cp)), main, '--username', 'FrameBench', '--uuid', '00000000-0000-0000-0000-000000000001', '--accessToken', 'offline', '--version', '1.21.1', '--gameDir', str(client_dir), '--assetsDir', str(args.cache / 'assets'), '--assetIndex', '17', '--width', str(args.width), '--height', str(args.height), '--quickPlayMultiplayer', f'127.0.0.1:{args.port}']
             argfile = directory / 'client-args.txt'
             argfile.write_text('\n'.join('"' + word.replace('\\', '/').replace('"', '\\"') + '"' for word in command[1:]))
             client = subprocess.Popen([command[0], '@' + str(argfile)], cwd=client_dir, stdout=cl, stderr=subprocess.STDOUT)
             wait_log(server, server_log, 'FrameBench joined the game')
             rcon.request('gamemode spectator FrameBench')
-            rcon.request(f'tp FrameBench 56 {y+36} -24 0 25')
+            rcon.request(f'tp FrameBench 56 {y+36} {camera_z} 0 {pitch}')
             wait_log(client, client_log, 'Loaded 2 advancements')
+            joined = time.monotonic()
+            phase(directory, 0)
+            resource_monitor = ProcessResources(directory, client, server)
             time.sleep(args.warmup)
+            if tall:
+                wait_tall_ready(directory, client, rendering, tall, args.ready_timeout)
+            readiness = {'join_to_ready_seconds': time.monotonic()-joined,
+                'peak_rss_bytes': {role: max((row['rss'] for row in resource_monitor.rows if row['role']==role), default=0)
+                                   for role in ('client','server')}}
+            if args.far_plane and 'ENDLESS_BENCH_FAR' not in client_log.read_text(errors='replace'):
+                raise RuntimeError('Matched far projection hook missing')
+            if args.disable_fog and client_log.read_text(errors='replace').count('ENDLESS_BENCH_FOG ') != 2:
+                raise RuntimeError('Both native fog hooks must be verified for matched tall-view visibility')
+            if args.shader_pack and 'Using shaderpack: '+args.shader_pack.name not in client_log.read_text(errors='replace'):
+                raise RuntimeError('Requested shader pack was not proven active')
             if 'ENDLESS_FRAME_HOOK' not in client_log.read_text(errors='replace'):
                 raise RuntimeError('Present hook missing')
             for number, workload in enumerate(WORKLOADS, 1):
-                rcon.request(f'tp FrameBench 56 {y+36} -24 0 25')
+                rcon.request(f'tp FrameBench 56 {y+36} {camera_z} 0 {pitch}')
                 time.sleep(2)
                 phase(directory, 1000 + number)
                 wait_phase(directory, 1000 + number, client)
@@ -191,34 +301,55 @@ def run(args, label, jar, repeat, sparse=False):
                 phase(directory, number)
                 wait_phase(directory, number, client)
                 start = time.monotonic()
-                step = 0
-                while time.monotonic() - start < args.seconds:
+                cadence = .2 if tall and workload=='edits' else .05
+                steps = math.ceil(args.seconds/cadence)
+                for step in range(steps):
+                    delay=start+step*cadence-time.monotonic()
+                    if delay>0: time.sleep(delay)
                     if client.poll() is not None:
                         raise RuntimeError('Client exited during measurement')
                     if workload == 'orbit':
-                        yaw = 40 * math.sin((time.monotonic() - start) * .5)
-                        rcon.request(f'tp FrameBench 56 {y+36} -24 {yaw:.4f} 25')
+                        yaw = 40 * math.sin(step*cadence*.5)
+                        rcon.request(f'tp FrameBench 56 {y+36} {camera_z} {yaw:.4f} {pitch}')
                     elif workload == 'edits':
-                        block = 'minecraft:stone' if step % 2 else 'minecraft:glass'
-                        response = rcon.request(f'fill 48 {y+16} 0 55 {y+23} 7 {block}')
-                        if '512' not in response:
+                        block = 'minecraft:stone' if step % 2 else ('minecraft:copper_block' if tall else 'minecraft:glass')
+                        response = rcon.request(f'fill 48 {edit_y} 0 55 {edit_top} 7 {block}')
+                        if edit_count not in response:
                             raise RuntimeError('Native edit failed: ' + response)
-                    step += 1
-                    time.sleep(.05)
+                delay=start+args.seconds-time.monotonic()
+                if delay>0: time.sleep(delay)
                 phase(directory, 0)
                 wait_phase(directory, 0, client)
-                command_counts[workload] = step if workload != 'static' else 0
-            response = rcon.request(f'fill 48 {y+16} 0 55 {y+23} 7 minecraft:redstone_block')
-            if '512' not in response:
+                command_counts[workload] = steps if workload != 'static' else 0
+            response = rcon.request(f'fill 48 {edit_y} 0 55 {edit_top} 7 minecraft:redstone_block')
+            if edit_count not in response:
                 raise RuntimeError('Native visible edit fixture failed: ' + response)
             time.sleep(3)
             phase(directory, 1004)
             wait_phase(directory, 1004, client)
+            if tall:
+                # Native opaque foreground must hide far LOD after the full world pass.
+                for bottom in range(64,256,64):
+                    response=rcon.request(f'fill -32 {y+bottom} -91 144 {y+bottom+63} -91 minecraft:magenta_concrete')
+                    if '11328' not in response: raise RuntimeError('Occluder fill failed: '+response)
+                deadline=time.monotonic()+60
+                while True:
+                    time.sleep(1)
+                    phase(directory,1005);wait_phase(directory,1005,client)
+                    receipt=dict(line.split('=',1) for line in (directory/'scene-1005.txt').read_text().splitlines())
+                    prior=dict(line.split('=',1) for line in (directory/'scene-1004.txt').read_text().splitlines())
+                    if int(receipt.get('magentaPixels','0'))>=5000 and int(receipt.get('yellowPixels','0'))<=max(8,int(prior.get('yellowPixels','0'))*.03): break
+                    if time.monotonic()>deadline: raise RuntimeError('Opaque native foreground did not mask distant geometry')
+                    phase(directory,0);wait_phase(directory,0,client)
+            resources = resource_monitor.finish()
+            resource_monitor = None
             phase(directory, -1)
             client.wait(timeout=60)
             rcon.request('stop')
             server.wait(timeout=90)
         finally:
+            if resource_monitor:
+                resource_monitor.stop.set(); resource_monitor.thread.join(timeout=2)
             if rcon:
                 rcon.close()
             for process in (client, server):
@@ -228,14 +359,23 @@ def run(args, label, jar, repeat, sparse=False):
     rows = list(csv.DictReader((directory / 'frames.csv').open()))
     for number in range(1001, 1005):
         receipt = dict(line.split('=', 1) for line in (directory / f'scene-{number}.txt').read_text().splitlines())
-        if (int(receipt['width']), int(receipt['height'])) != (1280, 720) or int(receipt['neutralPixels']) < 100_000:
+        if (int(receipt['width']), int(receipt['height'])) != (args.width, args.height) or (not args.shader_pack and int(receipt['neutralPixels']) < (5_000 if tall else 100_000)):
             raise RuntimeError('Expected visible stone fixture and framebuffer dimensions missing')
-        if number == 1004 and int(receipt['redPixels']) < 500:
+        if tall and max(native,lod)*8>=tall-36 and int(receipt.get('yellowPixels','0'))<8:
+            raise RuntimeError('Distant tower-top marker missing; shortened/incomplete views cannot pass')
+        if number==1001 and tall and label=='candidate' and lod>native and not args.shader_pack and not args.disable_fog:
+            rgb=int(receipt['seamRgb']);channels=[(rgb>>shift)&255 for shift in (16,8,0)]
+            if max(channels)>150 or max(channels)-min(channels)>12:
+                raise RuntimeError('Native/LOD transition is fogged or missing in the framebuffer')
+        expected_edit = not tall or max(native,lod)*8 >= edit_top-y-36
+        if number == 1004 and expected_edit and int(receipt['redPixels']) < (8 if tall else 500):
             raise RuntimeError('Native block edit did not appear in the framebuffer')
+    if jar and (digest(jar)!=frozen_jar_hash or digest(client_dir/'mods/endless.jar')!=frozen_jar_hash):
+        raise RuntimeError('Candidate input changed during the benchmark')
     gpu = (directory / 'gpu.txt').read_text()
-    result = {'label': label, 'sparse': sparse, 'repeat': repeat, 'jar_sha256': digest(jar) if jar else None,
-              'gpu': gpu,
-              'native_command_counts': command_counts,
+    result = {'label': label, 'sparse': sparse, 'repeat': repeat, 'jar_sha256': frozen_jar_hash,
+              'gpu': gpu, 'rendering': rendering, 'tower_height': tall, 'full_tower_expected': max(native,lod)*8>=tall-36,
+              'native_command_counts': command_counts, 'resources': resources, 'readiness': readiness,
               'metrics': {workload: summarize_frames([int(row['frame_ns']) for row in rows if int(row['phase']) == number]) for number, workload in enumerate(WORKLOADS, 1)}}
     for metric in result['metrics'].values():
         if metric['frames'] < 200 or abs(metric['seconds'] - args.seconds) > 2:
@@ -255,25 +395,47 @@ def main():
     parser.add_argument('--seconds', type=int, default=30)
     parser.add_argument('--warmup', type=int, default=20)
     parser.add_argument('--port', type=int, default=25785)
+    parser.add_argument('--shader-pack', type=Path)
+    parser.add_argument('--shader-options', type=Path)
+    parser.add_argument('--width', type=int, default=1280)
+    parser.add_argument('--height', type=int, default=720)
+    parser.add_argument('--ready-timeout', type=int, default=600)
+    parser.add_argument('--far-plane', type=float, default=0, help='Benchmark-only minimum projection far plane for equal visible geometry')
+    parser.add_argument('--disable-fog', action='store_true', help='Benchmark-only equal native fog distances, verified by agent receipts')
+    parser.add_argument('--tower-height', type=int, default=0)
+    parser.add_argument('--current-sections', type=int, default=32)
+    parser.add_argument('--candidate-sections', type=int, default=32)
+    parser.add_argument('--candidate-lod-sections', type=int, default=0)
     parser.add_argument('--dense-only', action='store_true')
     parser.add_argument('--sparse-only', action='store_true')
     args = parser.parse_args()
+    if min(args.width,args.height)<360 or max(args.width,args.height)>3840:
+        parser.error('Framebuffer dimensions must be in [360,3840]')
     if args.repeats < 1 or args.seconds < 10 or args.warmup < 5 or len(set(args.labels)) != len(args.labels):
         parser.error('Use positive repeats, at least 10 measured seconds, at least 5 warmup seconds, and unique labels')
+    if args.tower_height and (args.tower_height % 32 or args.tower_height < 544 or args.tower_height > 4096):
+        parser.error('Tower height must be a multiple of 32 in [544, 4096]')
     if args.sparse_only and (args.dense_only or any(label in ('vanilla', 'fabric') for label in args.labels)):
         parser.error('Sparse-only requires Endless variants and cannot be combined with dense-only')
     for name in ('java', 'cache', 'vanilla_server', 'fabric_server', 'current', 'candidate', 'output'):
         setattr(args, name, getattr(args, name).resolve())
     args.dependency = [p.resolve() for p in args.dependency]
+    if args.shader_pack: args.shader_pack=args.shader_pack.resolve(strict=True)
+    if args.shader_options: args.shader_options=args.shader_options.resolve(strict=True)
     args.output.mkdir(parents=True, exist_ok=False)
     compile_agent(args.java, args.output)
     args.vanilla_cp = client_classpath(args.cache, args.output, False)
     args.fabric_cp = client_classpath(args.cache, args.output, True)
-    inputs = [args.vanilla_server, args.fabric_server, args.current, args.candidate, *args.dependency,
+    inputs = [ROOT/'tools/benchmark_client.py', ROOT/'tools/benchmark_server.py', ROOT/'tools/performance/FrameAgent.java', ROOT/'tools/performance/FrameMetrics.java', args.vanilla_server, args.fabric_server, args.current, args.candidate, *args.dependency,
               *args.vanilla_cp, *args.fabric_cp, args.output / 'frame-agent.jar', args.output / 'frame-helper.jar']
+    if args.shader_pack: inputs.append(args.shader_pack)
+    if args.shader_options: inputs.append(args.shader_options)
     plan = planned_runs(args.labels, args.repeats, args.dense_only, args.sparse_only)
-    (args.output / 'metadata.json').write_text(json.dumps({'source': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+    import psutil
+    (args.output / 'metadata.json').write_text(json.dumps({'host':{'os':platform.platform(),'cpu_logical':psutil.cpu_count(),
+        'physical_memory_bytes':psutil.virtual_memory().total},'dirty': bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).strip()), 'source': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
         'planned_runs': plan,
+        'width':args.width,'height':args.height,'shader_pack': args.shader_pack.name if args.shader_pack else None, 'ready_timeout': args.ready_timeout, 'far_plane': args.far_plane, 'disable_fog': args.disable_fog, 'tower_height': args.tower_height, 'current_sections': args.current_sections, 'candidate_sections': args.candidate_sections, 'candidate_lod_sections': args.candidate_lod_sections,
         'warmup_seconds': args.warmup, 'measured_seconds': args.seconds, 'repeats': args.repeats,
         'inputs': {str(path): digest(path) for path in sorted(set(inputs))}}, indent=2))
     results = []

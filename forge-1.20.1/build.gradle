@@ -5,6 +5,7 @@ plugins {
 // Hidden-window framebuffer fixture, never included in normal/release builds.
 if (project.hasProperty('shaderPreview')) {
     sourceSets.main.java.srcDir 'src/shaderPreview/java'
+    sourceSets.main.java.srcDir rootProject.file('renderer-preview-common/src/main/java')
     tasks.named('remapJar') { archiveClassifier = 'shader-preview' }
 }
 

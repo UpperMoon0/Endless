@@ -31,7 +31,7 @@ public abstract class OcclusionCullerMixin implements EmbeddiumWindowBounds {
     private static float endless$verticalDistance(float delta) {
         return com.nstut.endless.heights.EndlessLogicalHeights.isActive()
             ? com.nstut.endless.vertical.VerticalViewDistance.cullingDelta(delta,
-                com.nstut.endless.config.EndlessConfig.getInstance().getRendering().getVerticalRenderSections())
+                com.nstut.endless.config.EndlessConfig.getInstance().getRendering().getVerticalViewSections())
             : delta;
     }
 }

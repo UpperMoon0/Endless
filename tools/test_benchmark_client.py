@@ -5,10 +5,41 @@ import shutil
 import subprocess
 import tempfile
 from unittest import mock
-from benchmark_client import allowed, library_path, summarize_frames, phase
+from benchmark_client import allowed, library_path, summarize_frames, phase, wait_tall_ready
 
 
 class ClientBenchmarkTests(unittest.TestCase):
+    def tall_readiness(self, directory, rendering):
+        (directory/'scene-2000.txt').write_text('neutralPixels=100000\nyellowPixels=100')
+        with mock.patch('benchmark_client.phase'), mock.patch('benchmark_client.wait_phase'), \
+                mock.patch('benchmark_client.time.sleep'), \
+                mock.patch('benchmark_client.time.monotonic', side_effect=range(100)):
+            wait_tall_ready(directory, mock.Mock(), rendering, 2048, 20)
+
+    def test_lod_readiness_requires_a_complete_queue_receipt(self):
+        for receipt in (None, '{}', '{cachedSections=100}', '{pendingVisible=unknown}',
+                        '{pendingVisible=-1}', '{pendingVisible=0.5}', '{pendingVisible=0unknown}'):
+            with self.subTest(receipt=receipt), tempfile.TemporaryDirectory() as temporary:
+                directory=Path(temporary)
+                if receipt is not None:
+                    (directory/'lod-2000.txt').write_text(receipt)
+                with self.assertRaisesRegex(RuntimeError, 'LOD queue observer'):
+                    self.tall_readiness(directory, {'verticalRenderSections':32, 'verticalLodSections':256})
+
+    def test_pending_lod_builds_cannot_pass_readiness(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory=Path(temporary)
+            (directory/'lod-2000.txt').write_text('{pendingVisible=1}')
+            with self.assertRaisesRegex(RuntimeError, 'did not settle'):
+                self.tall_readiness(directory, {'verticalRenderSections':32, 'verticalLodSections':256})
+
+    def test_idle_lod_and_native_only_controls_can_settle(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory=Path(temporary)
+            self.tall_readiness(directory, {'verticalRenderSections':256, 'verticalLodSections':0})
+            (directory/'lod-2000.txt').write_text('{pendingVisible=0}')
+            self.tall_readiness(directory, {'verticalRenderSections':32, 'verticalLodSections':256})
+
     def test_transient_reader_lock_preserves_atomic_phase_publication(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory=Path(temporary);live=directory/'phase.txt';live.write_text('0')
@@ -63,16 +94,25 @@ class ClientBenchmarkTests(unittest.TestCase):
             harness.write_text('''import endless.bench.FrameMetrics;
 import java.nio.file.*;
 public class FrameHarness {
+ static void awaitPhase(int expected) throws Exception {
+  var phase=FrameMetrics.class.getDeclaredField("phase");
+  phase.setAccessible(true);
+  long deadline=System.nanoTime()+3_000_000_000L;
+  while (phase.getInt(null)!=expected) {
+   if (System.nanoTime()>deadline) throw new AssertionError("controller did not observe phase "+expected);
+   Thread.sleep(5);
+  }
+ }
  public static void main(String[] args) throws Exception {
   Path out=Path.of(args[0]);
   Files.writeString(out.resolve("phase.txt"),"1");
   FrameMetrics.start(out);
-  Thread.sleep(150);
+  awaitPhase(1);
   FrameMetrics.present();
   Thread.sleep(2); FrameMetrics.present();
   Thread.sleep(2); FrameMetrics.present();
   Files.writeString(out.resolve("phase.txt"),"0");
-  Thread.sleep(150); FrameMetrics.present();
+  Thread.sleep(150); awaitPhase(0); FrameMetrics.present();
   Files.writeString(out.resolve("phase.txt"),"-1");
   Thread.sleep(5000);
   throw new AssertionError("controller did not exit");

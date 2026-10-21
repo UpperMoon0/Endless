@@ -162,7 +162,9 @@ def wait_tall_ready(directory, client, rendering, height, timeout):
         if native.exists() and len(queues)!=4:
             raise RuntimeError('Native queue observer format changed; refusing an unsettled comparison')
         lod = directory/'lod-2000.txt'
-        pending = re.search(r'pendingVisible=(\d+)',lod.read_text()) if lod.exists() else None
+        pending = re.search(r'\bpendingVisible=(\d+)(?=[,}]|$)',lod.read_text()) if lod.exists() else None
+        if rendering['verticalLodSections'] > rendering['verticalRenderSections'] and pending is None:
+            raise RuntimeError('LOD queue observer missing or malformed; refusing an unsettled comparison')
         endpoint = max(rendering.values())*8 < height-36 or int(receipt.get('yellowPixels','0')) >= 60
         settled = endpoint and all(int(value)==0 for value in queues) and (pending is None or int(pending[1])==0)
         signature = (receipt.get('neutralPixels'),receipt.get('yellowPixels'),

@@ -159,8 +159,8 @@ def wait_tall_ready(directory, client, rendering, height, timeout):
         receipt = dict(line.split('=',1) for line in (directory/'scene-2000.txt').read_text().splitlines())
         native = directory/'renderer-2000.txt'
         queues = re.findall(r'(?:P[012]|U)=(\d+)', native.read_text()) if native.exists() else []
-        if native.exists() and len(queues)!=4:
-            raise RuntimeError('Native queue observer format changed; refusing an unsettled comparison')
+        if len(queues)!=4:
+            raise RuntimeError('Native queue observer missing or malformed; refusing an unsettled comparison')
         lod = directory/'lod-2000.txt'
         pending = re.search(r'\bpendingVisible=(\d+)(?=[,}]|$)',lod.read_text()) if lod.exists() else None
         if rendering['verticalLodSections'] > rendering['verticalRenderSections'] and pending is None:

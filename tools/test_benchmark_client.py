@@ -9,12 +9,27 @@ from benchmark_client import allowed, library_path, summarize_frames, phase, wai
 
 
 class ClientBenchmarkTests(unittest.TestCase):
-    def tall_readiness(self, directory, rendering):
+    def tall_readiness(self, directory, rendering, native='P0=0 P1=0 P2=0 U=0'):
         (directory/'scene-2000.txt').write_text('neutralPixels=100000\nyellowPixels=100')
+        if native is not None:
+            (directory/'renderer-2000.txt').write_text(native)
         with mock.patch('benchmark_client.phase'), mock.patch('benchmark_client.wait_phase'), \
                 mock.patch('benchmark_client.time.sleep'), \
                 mock.patch('benchmark_client.time.monotonic', side_effect=range(100)):
             wait_tall_ready(directory, mock.Mock(), rendering, 2048, 20)
+
+    def test_native_readiness_requires_a_complete_queue_receipt(self):
+        for receipt in (None, '{}', 'P0=0 P1=0 P2=0', 'P0=0 P1=0 P2=0 U=unknown'):
+            with self.subTest(receipt=receipt), tempfile.TemporaryDirectory() as temporary:
+                with self.assertRaisesRegex(RuntimeError, 'Native queue observer'):
+                    self.tall_readiness(Path(temporary),
+                        {'verticalRenderSections':256, 'verticalLodSections':0}, native=receipt)
+
+    def test_pending_native_builds_cannot_pass_readiness(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(RuntimeError, 'did not settle'):
+                self.tall_readiness(Path(temporary),
+                    {'verticalRenderSections':256, 'verticalLodSections':0}, native='P0=0 P1=1 P2=0 U=0')
 
     def test_lod_readiness_requires_a_complete_queue_receipt(self):
         for receipt in (None, '{}', '{cachedSections=100}', '{pendingVisible=unknown}',

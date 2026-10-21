@@ -24,6 +24,7 @@ from benchmark_server import Rcon, digest, java_tool, percentile
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKLOADS = ('static', 'orbit', 'edits')
+PHASE_RETRIES = {}
 
 
 def planned_runs(labels, repeats, dense_only=False, sparse_only=False):
@@ -119,7 +120,17 @@ def wait_log(process, path, marker, timeout=240):
 def phase(directory, value):
     temporary = directory / 'phase.tmp'
     temporary.write_text(str(value))
-    temporary.replace(directory / 'phase.txt')
+    # Windows readers may briefly deny FILE_SHARE_DELETE. Preserve atomic
+    # publication and fail boundedly rather than truncating the live control file.
+    for attempt in range(100):
+        try:
+            temporary.replace(directory / 'phase.txt')
+            PHASE_RETRIES[str(directory)] = PHASE_RETRIES.get(str(directory), 0) + attempt
+            return
+        except PermissionError:
+            if attempt == 99:
+                raise
+            time.sleep(.01)
 
 
 def wait_phase(directory, value, client, timeout=120):
@@ -375,7 +386,7 @@ def run(args, label, jar, repeat, sparse=False):
     gpu = (directory / 'gpu.txt').read_text()
     result = {'label': label, 'sparse': sparse, 'repeat': repeat, 'jar_sha256': frozen_jar_hash,
               'gpu': gpu, 'rendering': rendering, 'tower_height': tall, 'full_tower_expected': max(native,lod)*8>=tall-36,
-              'native_command_counts': command_counts, 'resources': resources, 'readiness': readiness,
+              'native_command_counts': command_counts, 'control_file_retries': PHASE_RETRIES.get(str(directory),0), 'resources': resources, 'readiness': readiness,
               'metrics': {workload: summarize_frames([int(row['frame_ns']) for row in rows if int(row['phase']) == number]) for number, workload in enumerate(WORKLOADS, 1)}}
     for metric in result['metrics'].values():
         if metric['frames'] < 200 or abs(metric['seconds'] - args.seconds) > 2:

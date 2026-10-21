@@ -4,10 +4,32 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-from benchmark_client import allowed, library_path, summarize_frames
+from unittest import mock
+from benchmark_client import allowed, library_path, summarize_frames, phase
 
 
 class ClientBenchmarkTests(unittest.TestCase):
+    def test_transient_reader_lock_preserves_atomic_phase_publication(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory=Path(temporary);live=directory/'phase.txt';live.write_text('0')
+            original=Path.replace;attempts=[]
+            def locked_then_publish(path,target):
+                attempts.append(1)
+                self.assertEqual('0',live.read_text())
+                if len(attempts)<3: raise PermissionError('Windows reader lock')
+                return original(path,target)
+            with mock.patch.object(Path,'replace',autospec=True,side_effect=locked_then_publish), mock.patch('benchmark_client.time.sleep'):
+                phase(directory,3)
+            self.assertEqual(3,len(attempts));self.assertEqual('3',live.read_text())
+            self.assertFalse((directory/'phase.tmp').exists())
+
+    def test_persistent_reader_lock_fails_without_corrupting_live_phase(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory=Path(temporary);live=directory/'phase.txt';live.write_text('0')
+            with mock.patch.object(Path,'replace',side_effect=PermissionError('locked')) as replace, mock.patch('benchmark_client.time.sleep'):
+                with self.assertRaises(PermissionError): phase(directory,3)
+            self.assertEqual(100,replace.call_count);self.assertEqual('0',live.read_text())
+
     def test_average_is_frames_over_elapsed_time(self):
         result = summarize_frames([10_000_000, 30_000_000])
         self.assertEqual(result['average_fps'], 50)

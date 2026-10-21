@@ -19,10 +19,12 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** Camera-following 512-block render window for the sparse vertical engine. */
+/** Camera-following bounded vertical render window for the sparse vertical engine. */
 @Mixin(ViewArea.class)
 public abstract class ViewAreaMixin implements VerticalViewAreaWindow {
-    @Unique private static final int RENDER_WINDOW_SECTIONS = 32;
+    @Unique private static int endless$renderSections() {
+        return com.nstut.endless.config.EndlessConfig.getInstance().getRendering().getVerticalRenderSections();
+    }
     @Unique private static final int REBASE_HYSTERESIS_SECTIONS = 8;
     @Unique private static final int UNINITIALIZED = Integer.MIN_VALUE;
 
@@ -31,6 +33,11 @@ public abstract class ViewAreaMixin implements VerticalViewAreaWindow {
     @Shadow protected int sectionGridSizeY;
     @Shadow protected int sectionGridSizeZ;
     @Shadow public SectionRenderDispatcher.RenderSection[] sections;
+
+    @Inject(method = "repositionCamera", at = @At("TAIL"))
+    private void endless$publishNativeWindow(CallbackInfo ci) {
+        com.nstut.endless.vertical.lod.VerticalLodCoverage.publish(endless$windowBaseSection, endless$windowBaseSection + sectionGridSizeY);
+    }
 
     @Unique private int endless$windowBaseSection = UNINITIALIZED;
 
@@ -62,8 +69,8 @@ public abstract class ViewAreaMixin implements VerticalViewAreaWindow {
     )
     private int endless$capRenderSections(Level level) {
         return EndlessLogicalHeights.isActive()
-            ? RENDER_WINDOW_SECTIONS
-            : Math.min(level.getSectionsCount(), RENDER_WINDOW_SECTIONS);
+            ? endless$renderSections()
+            : Math.min(level.getSectionsCount(), com.nstut.endless.vertical.VerticalViewDistance.DEFAULT_SECTIONS);
     }
 
     @Inject(method = "repositionCamera", at = @At("HEAD"))

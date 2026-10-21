@@ -37,6 +37,7 @@ public class EndlessConfig {
     private static EndlessConfig instance;
     private BuildHeightConfig buildHeight = new BuildHeightConfig();
     private boolean debug = false;
+    private RenderingConfig rendering = new RenderingConfig();
 
     // Migration bookkeeping is deliberately transient. rawLoadedBuildHeight
     // preserves the exact pre-normalization evidence from disk until a pre-v0.4
@@ -63,6 +64,7 @@ public class EndlessConfig {
         Path configFile = configDir.resolve(CONFIG_FILENAME);
         buildHeight = new BuildHeightConfig();
         debug = false;
+        rendering = new RenderingConfig();
         rawLoadedBuildHeight = null;
         normalizationPending = false;
         normalizationWriteAllowed = true;
@@ -84,6 +86,8 @@ public class EndlessConfig {
                 EndlessConfig loadedConfig = GSON.fromJson(reader, EndlessConfig.class);
                 loadedHeight = loadedConfig != null ? loadedConfig.buildHeight : null;
                 debug = loadedConfig != null && loadedConfig.debug;
+                rendering = loadedConfig == null || loadedConfig.rendering == null
+                    ? new RenderingConfig() : loadedConfig.rendering;
             } catch (RuntimeException e) {
                 Path broken = configFile.resolveSibling(CONFIG_FILENAME + ".broken");
                 try {
@@ -171,6 +175,42 @@ public class EndlessConfig {
     /** Exact values parsed from disk before v0.5 envelope/alignment normalization. */
     public BuildHeightConfig getRawLoadedBuildHeight() {
         return rawLoadedBuildHeight == null ? null : rawLoadedBuildHeight.copy();
+    }
+
+    /** Local render budget; on a server this also bounds sparse page delivery. */
+    public RenderingConfig getRendering() {
+        if (rendering == null) rendering = new RenderingConfig();
+        return rendering;
+    }
+
+    public static final class RenderingConfig {
+        private int verticalRenderSections = com.nstut.endless.vertical.VerticalViewDistance.DEFAULT_SECTIONS;
+        private int verticalLodSections = 256;
+
+        /** Total vertical proxy span. Zero disables simplified distant geometry. */
+        public int getVerticalLodSections() {
+            return verticalLodSections <= 0 ? 0 : com.nstut.endless.vertical.VerticalViewDistance.clampSections(verticalLodSections);
+        }
+
+        public void setVerticalLodSections(int sections) {
+            verticalLodSections = sections <= 0 ? 0 : com.nstut.endless.vertical.VerticalViewDistance.clampSections(sections);
+        }
+
+        public int getVerticalRenderSections() {
+            return com.nstut.endless.vertical.VerticalViewDistance.clampSections(verticalRenderSections);
+        }
+
+        public void setVerticalRenderSections(int sections) {
+            verticalRenderSections = com.nstut.endless.vertical.VerticalViewDistance.clampSections(sections);
+        }
+
+        public int getVerticalViewSections() {
+            return Math.max(getVerticalRenderSections(), getVerticalLodSections());
+        }
+
+        public int getVerticalPageRadius() {
+            return com.nstut.endless.vertical.VerticalViewDistance.pageRadius(getVerticalViewSections());
+        }
     }
 
     public static class BuildHeightConfig {

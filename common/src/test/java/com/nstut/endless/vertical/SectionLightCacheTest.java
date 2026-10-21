@@ -4,6 +4,17 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 class SectionLightCacheTest {
+ @Test void tallMovingViewRetainsItsLightWorkingSet() {
+  var c=new SectionLightCache<Integer>(SectionLightCache.RENDER_SECTION_LIMIT);
+  var solves=new AtomicInteger();
+  // Eight neighboring columns across a 3072-block view exceed the old 512-entry cache.
+  for(int pass=0;pass<4;pass++) for(int y=-64;y<128;y++) for(int x=0;x<8;x++)
+   c.get(new SectionLightCache.Key(x,y,0),solves::incrementAndGet);
+  assertEquals(1536,solves.get(),"Moving views must reuse solved light instead of cycling the entire working set");
+  c.invalidateBox(0,-1024,0,15,-1009,15);
+  c.get(new SectionLightCache.Key(0,-64,0),solves::incrementAndGet);
+  assertEquals(1537,solves.get(),"An edited section still needs a fresh solve");
+ }
  @Test void neighboringQueriesReuseOneSectionAndEvictByAccess() {
   var c=new SectionLightCache<Integer>(2);var calls=new AtomicInteger();
   var a=new SectionLightCache.Key(0,-65,0);var b=new SectionLightCache.Key(1,-65,0);var d=new SectionLightCache.Key(2,-65,0);

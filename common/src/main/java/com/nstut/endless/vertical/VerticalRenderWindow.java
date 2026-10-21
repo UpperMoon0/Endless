@@ -2,15 +2,22 @@ package com.nstut.endless.vertical;
 
 /** Bounded, section-aligned camera window; never scales with the logical height. */
 public final class VerticalRenderWindow {
-    public static final int MAX_SECTIONS = 32;
-    private static final int HYSTERESIS = 8;
+    public static final int MAX_SECTIONS = VerticalViewDistance.MAX_SECTIONS;
+    private static final int HYSTERESIS = VerticalViewDistance.HYSTERESIS_SECTIONS;
     private int min;
     private int max;
     private boolean initialized;
 
     public boolean update(int cameraSection, int logicalMin, int logicalMax) {
+        boolean changed = update(cameraSection, logicalMin, logicalMax,
+            com.nstut.endless.config.EndlessConfig.getInstance().getRendering().getVerticalRenderSections());
+        com.nstut.endless.vertical.lod.VerticalLodCoverage.publish(min, max);
+        return changed;
+    }
+
+    public boolean update(int cameraSection, int logicalMin, int logicalMax, int sectionBudget) {
         if (logicalMax <= logicalMin) throw new IllegalArgumentException("Empty render range");
-        int size = Math.min(MAX_SECTIONS, logicalMax - logicalMin);
+        int size = Math.min(VerticalViewDistance.clampSections(sectionBudget), logicalMax - logicalMin);
         if (initialized && max - min == size && min >= logicalMin && max <= logicalMax
             && (size == logicalMax - logicalMin || Math.abs((long) cameraSection - (min + size / 2)) <= HYSTERESIS)) {
             return false;

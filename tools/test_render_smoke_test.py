@@ -31,7 +31,8 @@ class RenderSmokeTest(unittest.TestCase):
             for suffix in ('Ms', 'RenderThreadBytes')}
         self.record['nativeRegressionMeasurements'].update(denseBurstFrames=120, denseBurstEdits=7680,
             denseBurstNotifications=130560, denseBurstRefreshedColumns=1080,
-            globalRendererLifecycle=True, offThreadRebuild=True)
+            globalRendererLifecycle=True, offThreadRebuild=True,
+            verticalLodNativeFog=True, verticalLodGpu='pixels, edits, camera anchor, far/native depth and GL state restoration')
         (self.root / self.record['file']).write_bytes(b'fixture')
 
     def write(self, records=None):
@@ -41,6 +42,12 @@ class RenderSmokeTest(unittest.TestCase):
     def test_complete_receipt(self):
         self.write()
         self.assertEqual(1, len(smoke.validate(self.root, self.request, False)))
+
+    def test_requires_vertical_lod_depth_and_state_receipt(self):
+        self.record['nativeRegressionMeasurements'].pop('verticalLodGpu')
+        self.write()
+        with self.assertRaisesRegex(RuntimeError,'Vertical LOD GPU'):
+            smoke.validate(self.root,self.request,False)
 
     def test_requires_global_renderer_lifecycle_receipt(self):
         self.record['nativeRegressionMeasurements'].pop('globalRendererLifecycle')

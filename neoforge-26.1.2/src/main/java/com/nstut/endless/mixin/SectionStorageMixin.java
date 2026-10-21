@@ -5,6 +5,7 @@ import com.mojang.serialization.DataResult;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import com.nstut.endless.heights.EndlessLogicalHeights;
 import com.nstut.endless.vertical.ExtendedSectionStorageAccess;
+import com.nstut.endless.vertical.SparseSectionIndex;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.SectionPos;
 import net.minecraft.nbt.CompoundTag;
@@ -33,7 +34,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -55,6 +55,7 @@ public abstract class SectionStorageMixin<R, P> implements ExtendedSectionStorag
     @Shadow protected abstract void onSectionLoad(long sectionKey);
 
     @Unique private Path endless$poiRoot;
+    @Unique private final SparseSectionIndex endless$sections = new SparseSectionIndex();
     @Unique private final Set<Long> endless$loadedColumns = new HashSet<>();
     @Unique private final Set<Long> endless$dirtyColumns = new HashSet<>();
 
@@ -85,6 +86,7 @@ public abstract class SectionStorageMixin<R, P> implements ExtendedSectionStorag
         Optional<R> value = storage.get(sectionKey);
         if (value == null) {
             value = Optional.empty();
+            endless$sections.add(columnKey, sectionKey);
             storage.put(sectionKey, value);
         }
         cir.setReturnValue(value);
@@ -135,12 +137,9 @@ public abstract class SectionStorageMixin<R, P> implements ExtendedSectionStorag
         long columnKey = chunkPos.pack();
         endless$loadColumn(columnKey);
         ArrayList<R> result = new ArrayList<>();
-        for (Long2ObjectMap.Entry<Optional<R>> entry : storage.long2ObjectEntrySet()) {
-            long sectionKey = entry.getLongKey();
-            if (SectionPos.x(sectionKey) == chunkPos.x() && SectionPos.z(sectionKey) == chunkPos.z()
-                && endless$isExtendedPoiSection(sectionKey)) {
-                entry.getValue().ifPresent(result::add);
-            }
+        for (long sectionKey : endless$sections.sections(columnKey)) {
+            Optional<R> value = storage.get(sectionKey);
+            if (value != null) value.ifPresent(result::add);
         }
         return result;
     }
@@ -165,13 +164,8 @@ public abstract class SectionStorageMixin<R, P> implements ExtendedSectionStorag
         if (endless$dirtyColumns.contains(columnKey)) {
             endless$saveColumn(columnKey);
         }
-        Iterator<Long2ObjectMap.Entry<Optional<R>>> iterator = storage.long2ObjectEntrySet().iterator();
-        while (iterator.hasNext()) {
-            long sectionKey = iterator.next().getLongKey();
-            if (SectionPos.x(sectionKey) == chunkPos.x() && SectionPos.z(sectionKey) == chunkPos.z()
-                && endless$isExtendedPoiSection(sectionKey)) {
-                iterator.remove();
-            }
+        for (long sectionKey : endless$sections.remove(columnKey)) {
+            storage.remove(sectionKey);
         }
         endless$loadedColumns.remove(columnKey);
     }
@@ -224,6 +218,7 @@ public abstract class SectionStorageMixin<R, P> implements ExtendedSectionStorag
                         throw new IOException("Could not decode Endless POI section " + sectionY + " at " + file);
                     }
                     R value = unpacker.apply(packed.get(), () -> endless$dirtyColumns.add(columnKey));
+                    endless$sections.add(columnKey, sectionKey);
                     storage.put(sectionKey, Optional.of(value));
                     onSectionLoad(sectionKey);
                 }
@@ -242,14 +237,11 @@ public abstract class SectionStorageMixin<R, P> implements ExtendedSectionStorag
             RegistryOps<Tag> ops = RegistryOps.create(NbtOps.INSTANCE, registryAccess);
             CompoundTag sections = new CompoundTag();
             int written = 0;
-            for (Long2ObjectMap.Entry<Optional<R>> entry : storage.long2ObjectEntrySet()) {
-                long sectionKey = entry.getLongKey();
-                if (SectionPos.x(sectionKey) != chunkX || SectionPos.z(sectionKey) != chunkZ
-                    || !endless$isExtendedPoiSection(sectionKey) || entry.getValue().isEmpty()) {
-                    continue;
-                }
+            for (long sectionKey : endless$sections.sections(columnKey)) {
+                Optional<R> value = storage.get(sectionKey);
+                if (value == null || value.isEmpty()) continue;
                 int sectionY = SectionPos.y(sectionKey);
-                P packed = packer.apply(entry.getValue().get());
+                P packed = packer.apply(value.get());
                 DataResult<Tag> encoded = codec.encodeStart(ops, packed);
                 Optional<Tag> tag = encoded.result();
                 if (tag.isEmpty()) {

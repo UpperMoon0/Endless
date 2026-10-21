@@ -17,6 +17,10 @@ final class RendererRegression {
     static int flush(Object manager) { return (int)call(manager,"endless$flushDenseSkyColumns"); }
     static void verify(int y) throws Exception {
         metrics.clear();
+        LodGpuRegression.verify();
+        LodFogIntegrationRegression.verify();
+        metrics.put("verticalLodNativeFog",true);
+        metrics.put("verticalLodGpu", "pixels, edits, camera anchor, far/native depth and GL state restoration");
         if (loaded("embeddium")) {
             var helper=Class.forName("com.nstut.endless.testing.renderer.EmbeddiumSortRegression");
             var check=helper.getDeclaredMethod("verify",int.class);check.setAccessible(true);check.invoke(null,y);

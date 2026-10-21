@@ -8,6 +8,8 @@ import java.util.function.Supplier;
 
 /** Bounded full-coordinate cache. Solves never hold the cache monitor. */
 public final class SectionLightCache<V> {
+    /** Two full nibble-layer caches retain at most 16 MiB of light payload. */
+    public static final int RENDER_SECTION_LIMIT = 4096;
     public record Key(int x, int y, int z) {}
     private static final class Flight {
         long generation;

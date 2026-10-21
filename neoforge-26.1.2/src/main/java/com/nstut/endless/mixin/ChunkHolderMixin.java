@@ -33,7 +33,6 @@ import java.util.List;
  */
 @Mixin(ChunkHolder.class)
 public abstract class ChunkHolderMixin {
-    private static final int ENDLESS_PAGE_RADIUS = 1;
 
     @Shadow @Final private ChunkHolder.PlayerProvider playerProvider;
 
@@ -71,7 +70,7 @@ public abstract class ChunkHolderMixin {
 
         for (ServerPlayer player : players) {
             int playerPageY = VerticalPageLayout.pageYForBlockY(player.getBlockY());
-            if (Math.abs(playerPageY - changedPageY) > ENDLESS_PAGE_RADIUS) {
+            if (Math.abs(playerPageY - changedPageY) > com.nstut.endless.vertical.VerticalNetworkBridge.verticalPageRadius()) {
                 continue;
             }
             player.connection.send(blockPacket);

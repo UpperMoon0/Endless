@@ -49,7 +49,8 @@ public final class MinecraftVerticalWorld {
     private final Set<VerticalPagePos> dirtyPages = new HashSet<>();
     private final Map<VerticalPagePos, Long> revisions = new HashMap<>();
     private final ColumnHeightCache heightCache = new ColumnHeightCache(Heightmap.Types.values().length);
-    private final SectionLightCache<DataLayer> sectionBlockLight = new SectionLightCache<>(512);
+    private final SectionLightCache<DataLayer> sectionBlockLight = new SectionLightCache<>(SectionLightCache.RENDER_SECTION_LIMIT);
+    private final SectionLightCache<DataLayer> sectionSkyLight = new SectionLightCache<>(SectionLightCache.RENDER_SECTION_LIMIT);
     private final Map<BlockKey, Integer> skyLight = new LinkedHashMap<>(1024, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<BlockKey, Integer> eldest) {
@@ -57,6 +58,15 @@ public final class MinecraftVerticalWorld {
         }
     };
     private final WeightedCache<VerticalPagePos,VerticalPageSnapshot> snapshots=new WeightedCache<>(16<<20);
+    private final com.nstut.endless.vertical.lod.LodSectionRevisions lodRevisions = new com.nstut.endless.vertical.lod.LodSectionRevisions();
+    private boolean lodActive() {
+        if(level == null || !level.isClientSide()) return false;
+        var config=com.nstut.endless.config.EndlessConfig.getInstance().getRendering();
+        return config.getVerticalLodSections()>config.getVerticalRenderSections()
+            && EndlessLogicalHeights.maxSectionExclusive()-EndlessLogicalHeights.minSection()>config.getVerticalRenderSections();
+    }
+    public synchronized long lodGeneration() { return lodRevisions.generation(); }
+    public synchronized long lodRevision(int x,int y,int z) { return lodRevisions.revision(x,y,z); }
     private long nextRevision = 1L;
     private long lightCacheRevision;
 
@@ -81,6 +91,19 @@ public final class MinecraftVerticalWorld {
             if (section != null && !section.hasOnlyAir()) states.put(sectionY, section.getStates().copy());
         }
         return states.isEmpty() ? it.unimi.dsi.fastutil.ints.Int2ObjectMaps.emptyMap() : states;
+    }
+
+    /** Render-thread inventory: only admitted sections, never disk reads or world-height scans. */
+    public synchronized java.util.Map<Integer, LevelChunkSection> lodSections(int chunkX, int chunkZ, int first, int end) {
+        var result = new java.util.HashMap<Integer, LevelChunkSection>();
+        var column = columns.get(ChunkPos.pack(chunkX, chunkZ));
+        if (column != null) for (int pageY : column.pageYs()) {
+            var page = column.getPage(pageY);
+            page.forEachOccupiedSection((y, section) -> {
+                if (y >= first && y < end && !section.hasOnlyAir()) result.put(y, section);
+            });
+        }
+        return result;
     }
 
     /** Client render snapshots may read an existing page but must never allocate one. */
@@ -180,6 +203,15 @@ public final class MinecraftVerticalWorld {
 
     /** Snapshot skylight with one height query per halo column, not per ray step. */
     public DataLayer copyRenderSkyLight(SectionPos section) {
+        return copyRenderSkyLight(section, () -> solveAndPublishSkyLight(section));
+    }
+
+    // Shared entry point keeps native snapshots independently owned, including cache hits.
+    DataLayer copyRenderSkyLight(SectionPos section, java.util.function.Supplier<DataLayer> solve) {
+        return sectionSkyLight.get(new SectionLightCache.Key(section.x(), section.y(), section.z()), solve).copy();
+    }
+
+    private DataLayer solveAndPublishSkyLight(SectionPos section) {
         while (true) {
             long epoch;
             synchronized (this) { epoch=lightCacheRevision; }
@@ -206,6 +238,11 @@ public final class MinecraftVerticalWorld {
         DataLayer result = new DataLayer();
         Direction[] paths = {Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST};
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        BlockPos.MutableBlockPos opacityPos = new BlockPos.MutableBlockPos();
+        SectionSkyOpacityCache opacity = new SectionSkyOpacityCache(minX, section.minBlockY(), minZ, (sx,sy,sz) -> {
+            opacityPos.set(sx,sy,sz);
+            return level.getBlockState(opacityPos).getLightDampening();
+        });
         for (int x = 0; x < 16; x++) for (int z = 0; z < 16; z++) {
             int centerX = x + radius, centerZ = z + radius;
             int centerTop = tops[centerX][centerZ];
@@ -229,14 +266,15 @@ public final class MinecraftVerticalWorld {
                         for (int distance = 1; distance <= radius && cost < 15; distance++) {
                             cursor.move(direction);
                             if (!EndlessLogicalHeights.contains(cursor.getY())) break;
-                            BlockState state = level.getBlockState(cursor);
-                            cost += Math.max(1, state.getLightDampening());
+                            cost += opacity.get(cursor.getX(),cursor.getY(),cursor.getZ());
                             if (cost >= 15) break;
                             if (cursor.getY() > tops[cursor.getX() - minX][cursor.getZ() - minZ]) {
                                 value = Math.max(value, 15 - cost);
                                 break;
                             }
                         }
+                        // Every non-exposed ray pays at least one light level.
+                        if (value == 14) break;
                     }
                 }
                 result.set(x, localY, z, value);
@@ -365,7 +403,7 @@ public final class MinecraftVerticalWorld {
         page.forEachOccupiedSection(column::putSection);
         attemptedLoads.add(pos);
         markDirty(pos);
-        invalidateHeightColumn(key);invalidateBlockLightPage(pos);skyLight.clear();lightCacheRevision++;
+        invalidateHeightColumn(key);invalidateBlockLightPage(pos);skyLight.clear();sectionSkyLight.clear();lightCacheRevision++;
     }
 
     public synchronized void applySnapshot(VerticalPageSnapshot snapshot) {
@@ -379,6 +417,8 @@ public final class MinecraftVerticalWorld {
         long key = ChunkPos.pack(pos.chunkX(), pos.chunkZ());
         SparseVerticalColumn<LevelChunkSection> targetColumn =
             columns.computeIfAbsent(key, ignored -> new SparseVerticalColumn<>());
+        var previous = targetColumn.getPage(pos.pageY());
+        boolean lightChanged = (previous != null && !previous.isEmpty()) || !decoded.isEmpty();
         targetColumn.removePage(pos.pageY());
         decoded.forEachOccupiedSection((sectionY, section) -> targetColumn.putSection(sectionY, section));
         if (targetColumn.isEmpty()) {
@@ -387,10 +427,12 @@ public final class MinecraftVerticalWorld {
         attemptedLoads.add(pos);
         revisions.put(pos, snapshot.revision());
         snapshots.remove(pos);
-        invalidateHeightColumn(key);
-        invalidateBlockLightPage(pos);
-        skyLight.clear();
-        lightCacheRevision++;
+        if (lightChanged) {
+            if(lodActive()) lodRevisions.touchPage(pos.chunkX(),pos.pageY(),pos.chunkZ());
+            invalidateHeightColumn(key);
+            invalidateBlockLightPage(pos);
+            skyLight.clear();sectionSkyLight.clear();lightCacheRevision++;
+        }
     }
 
     public synchronized List<Integer> loadedPageYs(int chunkX, int chunkZ) {
@@ -455,6 +497,7 @@ public final class MinecraftVerticalWorld {
             }
         }
         columns.remove(key);
+        lodRevisions.unloadColumn(chunkX,chunkZ);
         attemptedLoads.removeIf(pos -> pos.chunkX() == chunkX && pos.chunkZ() == chunkZ);
         dirtyPages.removeIf(pos -> pos.chunkX() == chunkX && pos.chunkZ() == chunkZ);
         revisions.keySet().removeIf(pos -> pos.chunkX() == chunkX && pos.chunkZ() == chunkZ);
@@ -465,6 +508,7 @@ public final class MinecraftVerticalWorld {
     }
 
     public synchronized void close() {
+        lodRevisions.clear();
         flushDirty();
         columns.clear();
         attemptedLoads.clear();
@@ -473,7 +517,7 @@ public final class MinecraftVerticalWorld {
         snapshots.clear();
         heightCache.clear();
         sectionBlockLight.clear();
-        skyLight.clear();
+        skyLight.clear();sectionSkyLight.clear();
         lightCacheRevision++;
     }
 
@@ -670,13 +714,14 @@ public final class MinecraftVerticalWorld {
     }
 
     private void invalidateForBlockChange(BlockPos pos) {
+        if(lodActive()) lodRevisions.touchSection(pos.getX()>>4,pos.getY()>>4,pos.getZ()>>4);
         long key = ChunkPos.pack(pos.getX() >> 4, pos.getZ() >> 4);
         int local = (pos.getX() & 15) | ((pos.getZ() & 15) << 4);
         heightCache.invalidate(key, local);
         invalidateBlockLightAround(pos);
         // Sky exposure depends on the highest sparse block in a column and can
         // therefore change arbitrarily far below a modified high-Y block.
-        skyLight.clear();
+        skyLight.clear();sectionSkyLight.clear();
         lightCacheRevision++;
     }
 
@@ -684,7 +729,7 @@ public final class MinecraftVerticalWorld {
         heightCache.invalidateChunk(key);
     }
 
-    public synchronized void invalidateSkyLight() { skyLight.clear();lightCacheRevision++; }
+    public synchronized void invalidateSkyLight() { skyLight.clear();sectionSkyLight.clear();lightCacheRevision++; }
 
     private void invalidateBlockLightAround(BlockPos pos) {
         int r=BLOCK_LIGHT_INVALIDATION_RADIUS;
@@ -700,7 +745,7 @@ public final class MinecraftVerticalWorld {
         int r=BLOCK_LIGHT_INVALIDATION_RADIUS;
         sectionBlockLight.invalidateBox(section.minBlockX()-r,section.minBlockY()-r,section.minBlockZ()-r,
             section.maxBlockX()+r,section.maxBlockY()+r,section.maxBlockZ()+r);
-        skyLight.clear();lightCacheRevision++;
+        skyLight.clear();sectionSkyLight.clear();lightCacheRevision++;
     }
 
     private void invalidateBlockLightPage(VerticalPagePos pos) {
@@ -716,6 +761,7 @@ public final class MinecraftVerticalWorld {
     private void evictColumnLightCaches(int chunkX, int chunkZ) {
         int r=BLOCK_LIGHT_INVALIDATION_RADIUS;
         sectionBlockLight.invalidateBox((chunkX<<4)-r,-8000000,(chunkZ<<4)-r,(chunkX<<4)+15+r,7999999,(chunkZ<<4)+15+r);
+        sectionSkyLight.invalidateBox((chunkX<<4)-r,-8000000,(chunkZ<<4)-r,(chunkX<<4)+15+r,7999999,(chunkZ<<4)+15+r);
         skyLight.keySet().removeIf(key -> (key.x >> 4) == chunkX && (key.z >> 4) == chunkZ);
     }
 

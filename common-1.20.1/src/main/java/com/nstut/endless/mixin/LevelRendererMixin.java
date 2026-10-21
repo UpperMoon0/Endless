@@ -17,6 +17,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 /** Keep vanilla's render graph inside the logical sparse range, not the dense section-array core. */
 @Mixin(LevelRenderer.class)
 public abstract class LevelRendererMixin {
+    @org.spongepowered.asm.mixin.injection.ModifyArg(method="getRelativeFrom",
+        at=@At(value="INVOKE",target="Lnet/minecraft/util/Mth;abs(I)I",ordinal=1),index=0)
+    private int endless$independentVerticalDistance(int delta) {
+        return EndlessLogicalHeights.isActive()
+            && com.nstut.endless.config.EndlessConfig.getInstance().getRendering().getVerticalViewSections() > 32
+            ? 0 : delta;
+    }
+
     @Redirect(
         method = {"initializeQueueForFullUpdate", "updateRenderChunks", "getRelativeFrom"},
         at = @At(value = "INVOKE", target = "Lnet/minecraft/client/multiplayer/ClientLevel;getMinBuildHeight()I")

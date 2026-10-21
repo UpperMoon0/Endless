@@ -21,6 +21,9 @@ EXPECTED = {
         "Lnet/minecraft/core/BlockPos;betweenClosedStream(Lnet/minecraft/core/BlockPos;Lnet/minecraft/core/BlockPos;)Ljava/util/stream/Stream;":
             "Lnet/minecraft/core/BlockPos;m_121990_(Lnet/minecraft/core/BlockPos;Lnet/minecraft/core/BlockPos;)Ljava/util/stream/Stream;",
     },
+    "CreateControlledContraptionMixin": {
+        "Lnet/minecraft/world/level/Level;isLoaded(Lnet/minecraft/core/BlockPos;)Z": "Lnet/minecraft/world/level/Level;m_46749_(Lnet/minecraft/core/BlockPos;)Z",
+    },
     "CreateContraptionMixin": {
         "Lnet/minecraft/core/BlockPos;of(J)Lnet/minecraft/core/BlockPos;":
             "Lnet/minecraft/core/BlockPos;m_122022_(J)Lnet/minecraft/core/BlockPos;",

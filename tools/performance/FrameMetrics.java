@@ -71,16 +71,32 @@ public final class FrameMetrics {
             gl.getMethod("glReadPixels", int.class, int.class, int.class, int.class, int.class, int.class, java.nio.ByteBuffer.class)
                 .invoke(null, 0, 0, width, height, 0x1908, 0x1401, pixels);
             var image = new java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_RGB);
-            int neutralPixels = 0, redPixels = 0;
+            int neutralPixels = 0, redPixels = 0, yellowPixels = 0, magentaPixels = 0;
             for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
                 int offset = ((height - y - 1) * width + x) * 4;
                 int red = pixels.get(offset) & 255, green = pixels.get(offset + 1) & 255, blue = pixels.get(offset + 2) & 255;
                 if (red > 20 && red < 220 && Math.abs(red - green) <= 10 && Math.abs(green - blue) <= 10) neutralPixels++;
-                if (red > 80 && red > green * 1.3 && red > blue * 1.3) redPixels++;
+                if (red > 80 && red > green * 1.8 && red > blue * 1.8) redPixels++;
+                if (red > 100 && green > 80 && blue < red * .6 && red < green * 1.6) yellowPixels++;
+                if (red > 80 && blue > 80 && green < Math.min(red,blue)*.85 && red > blue*.6 && blue > red*.6) magentaPixels++;
                 image.setRGB(x, y, (red << 16) | (green << 8) | blue);
             }
+            try {
+                Class<?> renderer = Class.forName("net.caffeinemc.mods.sodium.client.render.SodiumWorldRenderer", true,
+                    Thread.currentThread().getContextClassLoader());
+                Object instance = renderer.getMethod("instance").invoke(null);
+                Object debug = renderer.getMethod("getDebugStrings").invoke(instance);
+                Files.writeString(directory.resolve("renderer-" + phase + ".txt"), debug.toString());
+            } catch (ClassNotFoundException absent) { /* Vanilla control. */ }
+            catch (ReflectiveOperationException failure) { throw new IllegalStateException("Native renderer resource receipt unavailable", failure); }
+            try {
+                Class<?> lod = Class.forName("com.nstut.endless.vertical.lod.VerticalLodClient", true,
+                    Thread.currentThread().getContextClassLoader());
+                Files.writeString(directory.resolve("lod-" + phase + ".txt"), lod.getMethod("resourceReceipt").invoke(null).toString());
+            } catch (ClassNotFoundException absent) { /* Previous renderer control. */ }
+            catch (ReflectiveOperationException failure) { throw new IllegalStateException("LOD resource receipt unavailable", failure); }
             javax.imageio.ImageIO.write(image, "png", directory.resolve("scene-" + phase + ".png").toFile());
-            Files.writeString(directory.resolve("scene-" + phase + ".txt"), "width=" + width + "\nheight=" + height + "\nneutralPixels=" + neutralPixels + "\nredPixels=" + redPixels);
+            Files.writeString(directory.resolve("scene-" + phase + ".txt"), "width=" + width + "\nheight=" + height + "\nneutralPixels=" + neutralPixels + "\nredPixels=" + redPixels + "\nyellowPixels=" + yellowPixels + "\nmagentaPixels=" + magentaPixels + "\nseamRgb=" + (image.getRGB(width/2+14*height/720,327*height/720) & 0xffffff));
         } catch (Exception failure) { throw new IllegalStateException("Framebuffer capture failed", failure); }
     }
 }

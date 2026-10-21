@@ -15,7 +15,7 @@ public final class LodFogMixinPlugin implements IMixinConfigPlugin {
         boolean legacy=mixin.endsWith(".compat.SodiumLodFogSourceMixin");
         if(!modern && !legacy) return true;
         try {
-            var node=MixinService.getService().getBytecodeProvider().getClassNode(target,false);
+            var node=MixinService.getService().getBytecodeProvider().getClassNode(target);
             boolean hasModern=node.methods.stream().anyMatch(method->method.name.equals("parseShader")
                 && method.desc.equals("(Ljava/lang/String;Ljava/lang/String;)V") && (method.access&Opcodes.ACC_STATIC)==0);
             return modern==hasModern;

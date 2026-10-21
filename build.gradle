@@ -16,7 +16,12 @@ allprojects {
         mavenLocal()
         mavenCentral()
         maven { url = uri('https://maven.createmod.net') }
-        maven { url = uri('https://maven.ithundxr.dev/snapshots') }
+        maven {
+            url = uri('https://maven.ithundxr.dev/snapshots')
+            // Create documents this repository for Registrate, not general dependencies.
+            // https://wiki.createmod.net/developers/depend-on-create/neoforge-1.21.1
+            content { includeGroup 'com.tterrag.registrate' }
+        }
         maven {
             url = uri('https://maven.ithundxr.dev/mirror')
             content { includeGroup 'com.tterrag.registrate' }

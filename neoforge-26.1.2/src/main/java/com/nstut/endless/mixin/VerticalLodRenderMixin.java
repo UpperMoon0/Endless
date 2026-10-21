@@ -16,8 +16,8 @@ public abstract class VerticalLodRenderMixin {
     private final Matrix4f endless$worldProjection = new Matrix4f();
 
     @ModifyArg(method="renderLevel",at=@At(value="INVOKE",
-        target="Lnet/minecraft/client/renderer/ProjectionMatrixBuffer;getBuffer(Lorg/joml/Matrix4fc;)Lcom/mojang/blaze3d/buffers/GpuBufferSlice;",ordinal=0),index=0)
-    private org.joml.Matrix4fc endless$captureWorldProjection(org.joml.Matrix4fc projection) {
+        target="Lnet/minecraft/client/renderer/ProjectionMatrixBuffer;getBuffer(Lorg/joml/Matrix4f;)Lcom/mojang/blaze3d/buffers/GpuBufferSlice;",ordinal=0),index=0)
+    private Matrix4f endless$captureWorldProjection(Matrix4f projection) {
         endless$worldProjection.set(projection);
         return projection;
     }

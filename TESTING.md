@@ -4,6 +4,20 @@ The release gate requires **Validate** and **Required live verification** to pas
 on the same final commit. A build, a successful login, or a representation smoke
 test alone does not certify real player interaction at large heights.
 
+## Optimized renderer acceptance — PR #32 (2026-10-30)
+
+At exact head `ab6577959154aec7c8427f0933c474b40c18240b`, [Renderer smoke](https://github.com/UpperMoon0/Endless/actions/runs/41092617706) and [Validate](https://github.com/UpperMoon0/Endless/actions/runs/41092617620) succeeded. [Live join](https://github.com/UpperMoon0/Endless/actions/runs/41092617749) **failed overall**; this renderer-only evidence is not a release gate pass. The first returned page of live-join jobs cannot establish which later matrix cell failed.
+
+| Minecraft / loader | Native framebuffer backend lanes | Explicit override artifact IDs |
+| --- | --- | --- |
+| Forge 1.20.1 | Embeddium, Oculus, Oculus 1.7.0 | Oculus `vVuYfukI` |
+| Fabric 1.20.1 | Embeddium, Sodium, Iris | Default preview resolution |
+| Fabric 1.21.1 | Sodium, Sodium 0.8, Iris | Sodium `SMxNOGZ6` |
+| NeoForge 1.21.1 | Embeddium, Sodium, Iris, Sodium 0.8 | Sodium `uMOpc5uV` |
+| NeoForge 26.1.2 | Sodium, Iris | Default preview resolution |
+
+These are the exact 15 workflow lanes, not a blanket certification of renderer families. For lanes without an override, the preview build resolves the renderer dependency; do not infer a numeric version from its family name. Preserve per-lane installed-mod versions, SHA-256 provenance, screenshots, measurements, and clean exact-head `pass.json` from the linked run as the pinned evidence record. The runner requires negative/positive sparse-height fixtures, edit/rebuild and reload, and real native framebuffer captures. The checks do **not** establish arbitrary shaderpack/modpack support, sustained performance, or closure of renderer correctness issues #8–#10. The separate live-join failure remains a release blocker.
+
 ## Layers
 
 | Layer | Coverage | Cost control |

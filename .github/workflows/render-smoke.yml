@@ -9,6 +9,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  renderer-contract:
+    name: Renderer matrix contract
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert required renderer and sparse-height evidence lanes
+        run: python3 -m unittest discover -s tools -p 'test_renderer_matrix_contract.py' -v
+      - name: Assert renderer JAR certification rejects unresolved metadata
+        run: python3 -m unittest discover -s tools -p 'test_renderer_jar_certification.py' -v
+
   framebuffer:
     name: Framebuffer (${{ matrix.target }}, ${{ matrix.backend }})
     runs-on: ubuntu-24.04
